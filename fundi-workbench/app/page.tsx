@@ -1,11 +1,17 @@
 "use client"
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Code2, LayoutGrid, MessageSquare } from 'lucide-react'
 import {
+  addEdge,
   Background,
+  BackgroundVariant,
   Controls,
   ReactFlow,
+  useEdgesState,
+  useNodesState,
+  type Connection,
+  type Edge,
   type Node,
   type NodeTypes,
 } from '@xyflow/react'
@@ -19,17 +25,24 @@ const nodeTypes = {
   arduino: ArduinoNode,
 } satisfies NodeTypes
 
-const initialNodes: Node[] = [
-  {
-    id: 'arduino-1',
-    type: 'arduino',
-    position: { x: 0, y: 0 },
-    data: {},
-  },
-]
-
 export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTabKey>('chat')
+
+  const [nodes, , onNodesChange] = useNodesState<Node>([
+    {
+      id: 'arduino-1',
+      type: 'arduino',
+      position: { x: 0, y: 0 },
+      data: {},
+    },
+  ])
+
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+
+  const onConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  )
 
   const tabs = useMemo(
     () =>
@@ -63,7 +76,7 @@ export default function Home() {
                     : 'bg-slate-950 text-slate-300'
                 )}
               >
-                <Icon className="h-4 w-4" aria-hidden="true" />
+                <Icon className="h-4 w-4" aria-hidden={true} />
                 <span>{tab.label}</span>
               </button>
             )
@@ -88,13 +101,16 @@ export default function Home() {
               <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
               <div className="min-h-0 flex-1">
                 <ReactFlow
-                  nodes={initialNodes}
-                  edges={[]}
+                  nodes={nodes}
+                  edges={edges}
                   nodeTypes={nodeTypes}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
                   fitView
                   className="h-full w-full"
                 >
-                  <Background />
+                  <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
                   <Controls />
                 </ReactFlow>
               </div>
@@ -119,13 +135,16 @@ export default function Home() {
           <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
           <div className="min-h-0 flex-1">
             <ReactFlow
-              nodes={initialNodes}
-              edges={[]}
+              nodes={nodes}
+              edges={edges}
               nodeTypes={nodeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
               fitView
               className="h-full w-full"
             >
-              <Background />
+              <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
               <Controls />
             </ReactFlow>
           </div>
