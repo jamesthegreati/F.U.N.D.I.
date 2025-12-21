@@ -2,10 +2,31 @@
 
 import { useMemo, useState } from 'react'
 import { Code2, LayoutGrid, MessageSquare } from 'lucide-react'
+import {
+  Background,
+  Controls,
+  ReactFlow,
+  type Node,
+  type NodeTypes,
+} from '@xyflow/react'
 
+import ArduinoNode from '@/components/nodes/ArduinoNode'
 import { cn } from '@/utils/cn'
 
 type MobileTabKey = 'chat' | 'code' | 'sim'
+
+const nodeTypes = {
+  arduino: ArduinoNode,
+} satisfies NodeTypes
+
+const initialNodes: Node[] = [
+  {
+    id: 'arduino-1',
+    type: 'arduino',
+    position: { x: 0, y: 0 },
+    data: {},
+  },
+]
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTabKey>('chat')
@@ -65,7 +86,18 @@ export default function Home() {
           {activeTab === 'sim' && (
             <section className="relative flex h-full w-full flex-col overflow-hidden">
               <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
-              <SimulationBody>React Flow Canvas</SimulationBody>
+              <div className="min-h-0 flex-1">
+                <ReactFlow
+                  nodes={initialNodes}
+                  edges={[]}
+                  nodeTypes={nodeTypes}
+                  fitView
+                  className="h-full w-full"
+                >
+                  <Background />
+                  <Controls />
+                </ReactFlow>
+              </div>
             </section>
           )}
         </div>
@@ -85,7 +117,18 @@ export default function Home() {
 
         <section className="relative flex h-full w-[40%] flex-col overflow-hidden">
           <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
-          <SimulationBody>React Flow Canvas</SimulationBody>
+          <div className="min-h-0 flex-1">
+            <ReactFlow
+              nodes={initialNodes}
+              edges={[]}
+              nodeTypes={nodeTypes}
+              fitView
+              className="h-full w-full"
+            >
+              <Background />
+              <Controls />
+            </ReactFlow>
+          </div>
         </section>
       </div>
     </div>
@@ -101,7 +144,7 @@ function PanelHeader({
 }) {
   return (
     <header className="flex h-11 items-center gap-2 border-b border-slate-800 px-3">
-      <Icon className="h-4 w-4 text-slate-300" aria-hidden="true" />
+      <Icon className="h-4 w-4 text-slate-300" aria-hidden={true} />
       <span className="text-sm font-medium text-slate-200">{title}</span>
     </header>
   )
@@ -112,27 +155,6 @@ function PanelBody({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4">
       <div className="text-center text-sm font-medium text-slate-400">
         {children}
-      </div>
-    </div>
-  )
-}
-
-function SimulationBody({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative min-h-0 flex-1 overflow-hidden">
-      <div
-        className={cn(
-          'pointer-events-none absolute inset-0',
-          'text-slate-800/20',
-          'bg-[linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)]',
-          'bg-[size:24px_24px]'
-        )}
-        aria-hidden="true"
-      />
-      <div className="relative flex h-full items-center justify-center px-4">
-        <div className="text-center text-sm font-medium text-slate-400">
-          {children}
-        </div>
       </div>
     </div>
   )
