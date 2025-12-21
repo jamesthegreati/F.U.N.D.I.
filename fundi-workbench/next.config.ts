@@ -1,7 +1,17 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  // Static export: generates HTML/CSS/JS for hosting on GitHub Pages.
+  output: 'export',
 
-export default nextConfig;
+  // GitHub Pages cannot run the Next.js Image Optimization API.
+  images: {
+    unoptimized: true,
+  },
+
+  // If you deploy to a GitHub Project Pages subdirectory (e.g. https://user.github.io/repo),
+  // uncomment and set this to your repo name:
+  // basePath: '/fundi-workbench',
+}
+
+export default nextConfig
