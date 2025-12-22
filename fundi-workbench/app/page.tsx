@@ -27,6 +27,7 @@ const nodeTypes = {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTabKey>('chat')
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
 
   const [nodes, , onNodesChange] = useNodesState<Node>([
     {
@@ -40,9 +41,28 @@ export default function Home() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: Connection) =>
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...params,
+            type: 'default',
+            animated: false,
+            style: { stroke: '#22c55e', strokeWidth: 2.5 },
+          },
+          eds
+        )
+      ),
     [setEdges]
   )
+
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    setSelectedEdge(edge.id)
+  }, [])
+
+  const onPaneClick = useCallback(() => {
+    setSelectedEdge(null)
+  }, [])
 
   const tabs = useMemo(
     () =>
@@ -102,13 +122,29 @@ export default function Home() {
               <div className="min-h-0 flex-1">
                 <ReactFlow
                   nodes={nodes}
-                  edges={edges}
+                  edges={edges.map((edge) => ({
+                    ...edge,
+                    style: {
+                      ...edge.style,
+                      stroke:
+                        edge.id === selectedEdge ? '#10b981' : '#22c55e',
+                      strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
+                    },
+                  }))}
                   nodeTypes={nodeTypes}
                   onNodesChange={onNodesChange}
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
+                  onEdgeClick={onEdgeClick}
+                  onPaneClick={onPaneClick}
                   fitView
                   className="h-full w-full"
+                  defaultEdgeOptions={{
+                    type: 'default',
+                    animated: false,
+                    style: { stroke: '#22c55e', strokeWidth: 2.5 },
+                  }}
+                  connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2.5 }}
                 >
                   <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
                   <Controls />
@@ -136,13 +172,28 @@ export default function Home() {
           <div className="min-h-0 flex-1">
             <ReactFlow
               nodes={nodes}
-              edges={edges}
+              edges={edges.map((edge) => ({
+                ...edge,
+                style: {
+                  ...edge.style,
+                  stroke: edge.id === selectedEdge ? '#10b981' : '#22c55e',
+                  strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
+                },
+              }))}
               nodeTypes={nodeTypes}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onEdgeClick={onEdgeClick}
+              onPaneClick={onPaneClick}
               fitView
               className="h-full w-full"
+              defaultEdgeOptions={{
+                type: 'default',
+                animated: false,
+                style: { stroke: '#22c55e', strokeWidth: 2.5 },
+              }}
+              connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2.5 }}
             >
               <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
               <Controls />

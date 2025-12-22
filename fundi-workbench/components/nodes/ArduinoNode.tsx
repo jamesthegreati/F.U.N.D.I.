@@ -1,220 +1,124 @@
 'use client'
 
 import '@wokwi/elements'
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
 
-const HANDLE_SIZE = 26
+import { ARDUINO_UNO_PINS, type ArduinoPin } from './pin-maps'
 
-const hiddenHandleStyle: CSSProperties = {
-  width: HANDLE_SIZE,
-  height: HANDLE_SIZE,
-  background: 'transparent',
-  border: 'none',
-  opacity: 0,
+// The wokwi-arduino-uno element's internal coordinate system
+// viewBox is "-4 0 72.58 53.34" but pinInfo uses scaled coordinates
+// We need to map pinInfo coords to actual element pixels
+const PIN_COORD_SCALE = {
+  // pinInfo x ranges from ~87 to ~255.5, maps to element width
+  minX: 83,
+  maxX: 259.5,
+  // pinInfo y: 9 = top, 191.5 = bottom
+  minY: 0,
+  maxY: 200,
 }
 
-type UnoPinInfo = {
-  name: string
-  x: number
-  y: number
-}
-
-type PinPercent = {
-  xPct: number
-  yPct: number
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function isUnoPinInfo(value: unknown): value is UnoPinInfo {
-  if (!isRecord(value)) return false
-  return (
-    typeof value.name === 'string' &&
-    typeof value.x === 'number' &&
-    typeof value.y === 'number'
-  )
-}
-
-async function waitForPinInfo(el: HTMLElement, timeoutMs = 5000) {
-  const start = performance.now()
-
-  while (true) {
-    const pinInfo = (el as unknown as { pinInfo?: unknown }).pinInfo
-
-    if (Array.isArray(pinInfo) && pinInfo.every(isUnoPinInfo) && pinInfo.length > 0) {
-      return pinInfo
-    }
-
-    if (performance.now() - start > timeoutMs) {
-      throw new Error('Timed out waiting for wokwi-arduino-uno.pinInfo')
-    }
-
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  }
-}
-
-function toPct(value: number, total: number) {
-  return (value / total) * 100
-}
-
-function clampPct(value: number) {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(100, value))
-}
-
-function getSvgIntrinsicSize(el: HTMLElement) {
-  const root = (el as unknown as { shadowRoot?: ShadowRoot }).shadowRoot
-  const svg = root?.querySelector('svg') as SVGSVGElement | null
-  if (!svg) return null
-
-  const width = svg.width?.baseVal?.value
-  const height = svg.height?.baseVal?.value
-
-  if (
-    typeof width === 'number' &&
-    typeof height === 'number' &&
-    Number.isFinite(width) &&
-    Number.isFinite(height) &&
-    width > 0 &&
-    height > 0
-  ) {
-    return { width, height }
-  }
-
-  const widthAttr = svg.getAttribute('width')
-  const heightAttr = svg.getAttribute('height')
-  const widthNum = widthAttr ? Number(widthAttr) : NaN
-  const heightNum = heightAttr ? Number(heightAttr) : NaN
-
-  if (
-    Number.isFinite(widthNum) &&
-    Number.isFinite(heightNum) &&
-    widthNum > 0 &&
-    heightNum > 0
-  ) {
-    return { width: widthNum, height: heightNum }
-  }
-
-  const vb = svg.viewBox?.baseVal
-  if (vb && vb.width > 0 && vb.height > 0) {
-    return { width: vb.width, height: vb.height }
-  }
-
-  return null
-}
-
-export default function ArduinoNode() {
-  const unoRef = useRef<HTMLElement | null>(null)
-  const [pinMap, setPinMap] = useState<Record<string, PinPercent> | null>(null)
+function ArduinoNode() {
+  const [hoveredPin, setHoveredPin] = useState<string | null>(null)
+  const [elementSize, setElementSize] = useState({ width: 274, height: 200 })
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    let cancelled = false
-
-    async function run() {
-      const el = unoRef.current
-      if (!el) return
-
-      await customElements.whenDefined('wokwi-arduino-uno')
-      const pins = await waitForPinInfo(el)
-      const size = getSvgIntrinsicSize(el)
-      if (!size) return
-
-      const next: Record<string, PinPercent> = {}
-      for (const p of pins) {
-        next[p.name] = {
-          xPct: clampPct(toPct(p.x, size.width)),
-          yPct: clampPct(toPct(p.y, size.height)),
+    const updateSize = () => {
+      if (containerRef.current) {
+        const wokwiElement = containerRef.current.querySelector('wokwi-arduino-uno')
+        if (wokwiElement) {
+          const rect = wokwiElement.getBoundingClientRect()
+          if (rect.width > 0 && rect.height > 0) {
+            setElementSize({ width: rect.width, height: rect.height })
+          }
         }
       }
-
-      // Choose the bottom-most GND pin to align with "GND (bottom)".
-      const gndPins = pins.filter((p) => p.name.startsWith('GND'))
-      if (gndPins.length > 0) {
-        const lowest = gndPins.reduce((acc, cur) => (cur.y > acc.y ? cur : acc))
-        next.GND = {
-          xPct: clampPct(toPct(lowest.x, size.width)),
-          yPct: clampPct(toPct(lowest.y, size.height)),
-        }
-      }
-
-      if (!cancelled) setPinMap(next)
     }
 
-    void run()
+    // Wait for web component to render
+    const timer = setTimeout(updateSize, 100)
+    window.addEventListener('resize', updateSize)
 
     return () => {
-      cancelled = true
+      clearTimeout(timer)
+      window.removeEventListener('resize', updateSize)
     }
   }, [])
 
-  const pin13 = pinMap?.['13']
-  const pin2 = pinMap?.['2']
-  const gnd = pinMap?.GND
+  // Convert pinInfo coordinates to pixel position
+  const getPinPosition = (pin: ArduinoPin) => {
+    // Map x from pinInfo range to element width percentage
+    const xPercent = ((pin.x - PIN_COORD_SCALE.minX) / (PIN_COORD_SCALE.maxX - PIN_COORD_SCALE.minX)) * 100
 
-  const handleBaseStyle = useMemo<CSSProperties>(
-    () => ({
-      ...hiddenHandleStyle,
-      position: 'absolute',
-      transform: 'translate(-50%, -50%)',
-      zIndex: 10,
-      pointerEvents: 'all',
-      cursor: 'crosshair',
-    }),
-    []
-  )
+    // Map y: 9 = ~4.5%, 191.5 = ~95.75%
+    const yPercent = (pin.y / PIN_COORD_SCALE.maxY) * 100
+
+    return {
+      left: `${xPercent}%`,
+      top: `${yPercent}%`,
+    }
+  }
 
   return (
-    <div className="relative overflow-hidden rounded-md border border-slate-800 bg-slate-950">
-      <div className="p-3">
-        <div className="relative inline-block">
-          <wokwi-arduino-uno ref={unoRef as unknown as React.RefObject<HTMLElement>} />
+    <div className="relative" ref={containerRef}>
+      <wokwi-arduino-uno />
 
-          {/* Pin 13 */}
-          {pin13 && (
+      {ARDUINO_UNO_PINS.map((pin) => {
+        const isHovered = hoveredPin === pin.id
+        const position = getPinPosition(pin)
+        const isTopRow = pin.row === 'top'
+
+        return (
+          <div
+            key={pin.id}
+            className="absolute"
+            style={{
+              left: position.left,
+              top: position.top,
+              transform: 'translate(-50%, -50%)',
+            }}
+            onMouseEnter={() => setHoveredPin(pin.id)}
+            onMouseLeave={() => setHoveredPin(null)}
+          >
             <Handle
-              id="pin-13"
-              type="source"
-              position={Position.Right}
+              id={pin.id}
+              type={pin.type}
+              position={isTopRow ? Position.Top : Position.Bottom}
               style={{
-                ...handleBaseStyle,
-                left: `${pin13.xPct}%`,
-                top: `${pin13.yPct}%`,
+                position: 'relative',
+                width: 8,
+                height: 8,
+                background: isHovered ? 'rgba(34, 197, 94, 0.95)' : 'rgba(34, 197, 94, 0.6)',
+                border: isHovered ? '1.5px solid rgb(22, 163, 74)' : '1px solid rgba(22, 163, 74, 0.7)',
+                borderRadius: '50%',
+                cursor: 'crosshair',
+                transition: 'all 0.1s ease',
+                boxShadow: isHovered
+                  ? '0 0 6px 1px rgba(34, 197, 94, 0.5)'
+                  : 'none',
+                transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+                zIndex: isHovered ? 100 : 10,
               }}
             />
-          )}
-
-          {/* Pin 2 */}
-          {pin2 && (
-            <Handle
-              id="pin-2"
-              type="source"
-              position={Position.Right}
-              style={{
-                ...handleBaseStyle,
-                left: `${pin2.xPct}%`,
-                top: `${pin2.yPct}%`,
-              }}
-            />
-          )}
-
-          {/* GND (bottom-most) */}
-          {gnd && (
-            <Handle
-              id="gnd"
-              type="source"
-              position={Position.Bottom}
-              style={{
-                ...handleBaseStyle,
-                left: `${gnd.xPct}%`,
-                top: `${gnd.yPct}%`,
-              }}
-            />
-          )}
-        </div>
-      </div>
+            {isHovered && (
+              <div
+                className="pointer-events-none absolute z-50 whitespace-nowrap rounded bg-slate-900/95 px-1.5 py-0.5 text-[10px] font-medium text-green-400 shadow-md ring-1 ring-green-500/40"
+                style={{
+                  left: '50%',
+                  top: isTopRow ? 'calc(100% + 4px)' : 'auto',
+                  bottom: isTopRow ? 'auto' : 'calc(100% + 4px)',
+                  transform: 'translateX(-50%)',
+                }}
+              >
+                {pin.id.replace('.1', '').replace('.2', '').replace('.3', '')}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
+
+export default memo(ArduinoNode)
