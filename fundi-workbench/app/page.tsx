@@ -17,6 +17,7 @@ import {
 } from '@xyflow/react'
 
 import ArduinoNode from '@/components/nodes/ArduinoNode'
+import PartSelector from '@/components/PartSelector'
 import { cn } from '@/utils/cn'
 
 type MobileTabKey = 'chat' | 'code' | 'sim'
@@ -158,8 +159,10 @@ export default function Home() {
       {/* Desktop (>=768px): fixed 3-column layout */}
       <div className="hidden h-full md:flex">
         <section className="flex h-full w-[25%] flex-col overflow-hidden border-r border-slate-800">
-          <PanelHeader icon={MessageSquare} title="Chat Interface" />
-          <PanelBody>Chat Area</PanelBody>
+          <PanelHeader icon={MessageSquare} title="Component Picker" />
+          <div className="flex-1 overflow-auto p-4">
+            <PartSelector />
+          </div>
         </section>
 
         <section className="flex h-full w-[35%] flex-col overflow-hidden border-r border-slate-800">

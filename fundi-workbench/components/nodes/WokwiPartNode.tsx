@@ -2,21 +2,37 @@
 
 import '@wokwi/elements';
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
 
 interface PinData {
     id: string;
     x: number;
     y: number;
-    row: 'top' | 'bottom';
+    row: 'top' | 'bottom' | 'left' | 'right';
 }
 
-function ArduinoNode() {
+interface WokwiPartNodeProps {
+    partType: WokwiPartType;
+}
+
+/**
+ * Generic Wokwi Part Node - renders any Wokwi element with pin overlays
+ * 
+ * Different Wokwi elements use different coordinate systems:
+ * - Arduino (Uno, Mega, Nano): viewBox in mm, pinInfo in CSS pixels (96 DPI)
+ * - ESP32: viewBox in pixels (not matching mm dimensions), pinInfo in same pixels
+ * 
+ * We detect the coordinate system by comparing viewBox dimensions to mm dimensions.
+ * If they match, the viewBox is in mm and we need to convert to pixels.
+ */
+function WokwiPartNode({ partType }: WokwiPartNodeProps) {
     const [hoveredPin, setHoveredPin] = useState<string | null>(null);
     const [pins, setPins] = useState<PinData[]>([]);
-    const [svgDimensions, setSvgDimensions] = useState({ width: 274, height: 201 });
+    const [svgDimensions, setSvgDimensions] = useState({ width: 100, height: 100 });
     const containerRef = useRef<HTMLDivElement>(null);
     const elementRef = useRef<HTMLElement | null>(null);
+
+    const partConfig = WOKWI_PARTS[partType];
 
     const calculatePins = useCallback(() => {
         const element = elementRef.current as HTMLElement & {
@@ -29,27 +45,59 @@ function ArduinoNode() {
         if (!svg) return;
 
         const viewBoxAttr = svg.getAttribute('viewBox');
+        const widthAttr = svg.getAttribute('width') || '';
+        const heightAttr = svg.getAttribute('height') || '';
+
         if (!viewBoxAttr) return;
 
-        // ViewBox: "-4 0 72.58 53.34" (mm)
-        const [, , vbW_mm, vbH_mm] = viewBoxAttr.split(/[\s,]+/).map(parseFloat);
-        if (vbW_mm === 0 || vbH_mm === 0) return;
+        // Parse viewBox: "minX minY width height"
+        const [, , vbW, vbH] = viewBoxAttr.split(/[\s,]+/).map(parseFloat);
+        if (!vbW || !vbH) return;
 
-        // Convert mm to px (96 DPI)
+        // Parse mm dimensions if present
+        const widthMM = widthAttr.includes('mm') ? parseFloat(widthAttr) : null;
+        const heightMM = heightAttr.includes('mm') ? parseFloat(heightAttr) : null;
+
+        // Detect if viewBox is in mm by checking if it matches the mm dimensions
+        // Arduino: viewBox="-4 0 72.58 53.34" with width="72.58mm" height="53.34mm" -> viewBox IS in mm
+        // ESP32: viewBox="0 0 107 201" with width="28.2mm" height="54.053mm" -> viewBox is NOT in mm
+        const viewBoxMatchesMM = widthMM !== null && heightMM !== null &&
+            Math.abs(vbW - widthMM) < 1 && Math.abs(vbH - heightMM) < 1;
+
         const MM_TO_PX = 96 / 25.4;
-        const vbW_px = vbW_mm * MM_TO_PX;
-        const vbH_px = vbH_mm * MM_TO_PX;
 
-        setSvgDimensions({ width: vbW_px, height: vbH_px });
+        let overlayWidth: number;
+        let overlayHeight: number;
 
-        // Use pinInfo coordinates DIRECTLY - they're likely already in the right space
+        if (viewBoxMatchesMM) {
+            // ViewBox is in mm, convert to pixels to match pinInfo coordinates
+            overlayWidth = vbW * MM_TO_PX;
+            overlayHeight = vbH * MM_TO_PX;
+        } else {
+            // ViewBox is already in the correct coordinate space (like ESP32)
+            overlayWidth = vbW;
+            overlayHeight = vbH;
+        }
+
+        setSvgDimensions({ width: overlayWidth, height: overlayHeight });
+
+        // Map pins - pinInfo coordinates work directly in the overlay's space
         const mappedPins: PinData[] = element.pinInfo.map((pin) => {
-            const isTop = pin.y < vbH_px / 2;
+            // Determine which edge the pin is closest to
+            const relX = pin.x / overlayWidth;
+            const relY = pin.y / overlayHeight;
+
+            let row: 'top' | 'bottom' | 'left' | 'right';
+            if (relX < 0.15) row = 'left';
+            else if (relX > 0.85) row = 'right';
+            else if (relY < 0.5) row = 'top';
+            else row = 'bottom';
+
             return {
                 id: pin.name,
-                x: pin.x,  // Use directly
-                y: pin.y,  // Use directly
-                row: isTop ? 'top' : 'bottom',
+                x: pin.x,
+                y: pin.y,
+                row,
             };
         });
 
@@ -58,9 +106,9 @@ function ArduinoNode() {
 
     useEffect(() => {
         const initElement = async () => {
-            await customElements.whenDefined('wokwi-arduino-uno');
+            await customElements.whenDefined(partConfig.element);
 
-            const element = containerRef.current?.querySelector('wokwi-arduino-uno');
+            const element = containerRef.current?.querySelector(partConfig.element);
             if (!element) return;
 
             elementRef.current = element as HTMLElement;
@@ -83,7 +131,7 @@ function ArduinoNode() {
             observer.disconnect();
             window.removeEventListener('resize', calculatePins);
         };
-    }, [calculatePins]);
+    }, [calculatePins, partConfig.element]);
 
     return (
         <div
@@ -94,10 +142,13 @@ function ArduinoNode() {
                 lineHeight: 0,
             }}
         >
-            {/* The Arduino Board */}
-            <wokwi-arduino-uno style={{ display: 'block' }} />
+            {/* Dynamically render the Wokwi element */}
+            {partType === 'arduino-uno' && <wokwi-arduino-uno style={{ display: 'block' }} />}
+            {partType === 'esp32-devkit-v1' && <wokwi-esp32-devkit-v1 style={{ display: 'block' }} />}
+            {partType === 'arduino-mega' && <wokwi-arduino-mega style={{ display: 'block' }} />}
+            {partType === 'arduino-nano' && <wokwi-arduino-nano style={{ display: 'block' }} />}
 
-            {/* SVG Overlay */}
+            {/* SVG Overlay - viewBox matches the pinInfo coordinate space */}
             <svg
                 style={{
                     position: 'absolute',
@@ -137,9 +188,9 @@ function ArduinoNode() {
                                 <g>
                                     <rect
                                         x={pin.x - 15}
-                                        y={pin.row === 'top' ? pin.y + 5 : pin.y - 15}
+                                        y={pin.row === 'top' || pin.row === 'left' ? pin.y + 6 : pin.y - 18}
                                         width={30}
-                                        height={10}
+                                        height={12}
                                         rx={2}
                                         fill="rgba(15, 23, 42, 0.95)"
                                         stroke="rgba(34, 197, 94, 0.5)"
@@ -147,10 +198,10 @@ function ArduinoNode() {
                                     />
                                     <text
                                         x={pin.x}
-                                        y={pin.row === 'top' ? pin.y + 12.5 : pin.y - 7.5}
+                                        y={pin.row === 'top' || pin.row === 'left' ? pin.y + 15 : pin.y - 9}
                                         textAnchor="middle"
                                         fill="#4ade80"
-                                        fontSize={5}
+                                        fontSize={6}
                                         fontFamily="monospace"
                                     >
                                         {pin.id}
@@ -161,18 +212,8 @@ function ArduinoNode() {
                     );
                 })}
             </svg>
-
-            {pins.map((pin) => (
-                <Handle
-                    key={pin.id}
-                    id={pin.id}
-                    type="source"
-                    position={pin.row === 'top' ? Position.Top : Position.Bottom}
-                    style={{ opacity: 0, pointerEvents: 'none' }}
-                />
-            ))}
         </div>
     );
 }
 
-export default memo(ArduinoNode);
+export default memo(WokwiPartNode);

@@ -7,6 +7,18 @@ declare module 'react' {
                 React.HTMLAttributes<HTMLElement>,
                 HTMLElement
             >;
+            'wokwi-esp32-devkit-v1': React.DetailedHTMLProps<
+                React.HTMLAttributes<HTMLElement>,
+                HTMLElement
+            >;
+            'wokwi-arduino-mega': React.DetailedHTMLProps<
+                React.HTMLAttributes<HTMLElement>,
+                HTMLElement
+            >;
+            'wokwi-arduino-nano': React.DetailedHTMLProps<
+                React.HTMLAttributes<HTMLElement>,
+                HTMLElement
+            >;
         }
     }
 }
