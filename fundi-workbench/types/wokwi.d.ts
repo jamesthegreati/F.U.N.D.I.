@@ -1,10 +1,6 @@
 import type React from 'react';
 
-declare module '@wokwi/elements' {
-    // Just ensuring the module is recognized
-}
-
-declare global {
+declare module 'react' {
     namespace JSX {
         interface IntrinsicElements {
             'wokwi-arduino-uno': React.DetailedHTMLProps<
