@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { nanoid } from 'nanoid'
 
 export type CircuitPart = {
   id: string
@@ -15,15 +16,29 @@ export type CircuitConnection = {
   color: string
 }
 
+export interface Connection {
+  id: string
+  from: { partId: string; pinId: string }
+  to: { partId: string; pinId: string }
+  color: string
+  points?: { x: number; y: number }[]
+}
+
 export type AppState = {
   code: string
   circuitParts: CircuitPart[]
   circuitConnections: CircuitConnection[]
+  connections: Connection[]
   isRunning: boolean
 
   updateCode: (newCode: string) => void
   updateCircuit: (nodes: unknown, edges: unknown) => void
   toggleSimulation: () => void
+
+  addConnection: (conn: Omit<Connection, 'id'>) => string
+  removeConnection: (id: string) => void
+  updateWireColor: (id: string, color: string) => void
+  setConnectionPoints: (id: string, points: Connection['points']) => void
 }
 
 const defaultCode =
@@ -91,6 +106,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   code: defaultCode,
   circuitParts: [],
   circuitConnections: [],
+  connections: [],
   isRunning: false,
 
   updateCode: (newCode) => {
@@ -106,5 +122,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleSimulation: () => {
     set({ isRunning: !get().isRunning })
+  },
+
+  addConnection: (conn) => {
+    const id = nanoid()
+    set({ connections: [...get().connections, { ...conn, id }] })
+    return id
+  },
+
+  removeConnection: (id) => {
+    set({ connections: get().connections.filter((c) => c.id !== id) })
+  },
+
+  updateWireColor: (id, color) => {
+    set({
+      connections: get().connections.map((c) =>
+        c.id === id ? { ...c, color } : c
+      ),
+    })
+  },
+
+  setConnectionPoints: (id, points) => {
+    set({
+      connections: get().connections.map((c) =>
+        c.id === id ? { ...c, points } : c
+      ),
+    })
   },
 }))

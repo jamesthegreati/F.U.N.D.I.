@@ -170,6 +170,9 @@ function ArduinoNode({ id: nodeId, data }: ArduinoNodeProps) {
                         <div
                             key={pin.id}
                             className="nodrag"
+                            data-fundi-pin="true"
+                            data-node-id={nodeId}
+                            data-pin-id={pin.id}
                             style={{
                                 position: 'absolute',
                                 left: `${leftPct}%`,

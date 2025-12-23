@@ -7,6 +7,100 @@
 
 import type { WirePoint } from '@/types/wire';
 
+type FirstLeg = 'horizontal' | 'vertical';
+
+function dedupeColinear(points: WirePoint[]): WirePoint[] {
+    if (points.length <= 2) return points;
+
+    const result: WirePoint[] = [points[0]];
+    for (let i = 1; i < points.length - 1; i++) {
+        const prev = result[result.length - 1];
+        const curr = points[i];
+        const next = points[i + 1];
+
+        const sameAsPrev = prev.x === curr.x && prev.y === curr.y;
+        if (sameAsPrev) continue;
+
+        const colinearHorizontal = prev.y === curr.y && curr.y === next.y;
+        const colinearVertical = prev.x === curr.x && curr.x === next.x;
+        if (colinearHorizontal || colinearVertical) {
+            continue;
+        }
+
+        result.push(curr);
+    }
+
+    const last = points[points.length - 1];
+    const tail = result[result.length - 1];
+    if (tail.x !== last.x || tail.y !== last.y) {
+        result.push(last);
+    }
+    return result;
+}
+
+/**
+ * Simplify a polyline by removing duplicate points and collapsing colinear points.
+ * Useful for rendering wires while keeping raw editing points in state.
+ */
+export function simplifyPolylinePoints(points: WirePoint[]): WirePoint[] {
+    return dedupeColinear(points);
+}
+
+/**
+ * Convert an array of points to an SVG path `d` string.
+ * Uses straight line segments between points.
+ */
+export function pointsToPathD(points: WirePoint[]): string {
+    if (points.length === 0) return '';
+    const [first, ...rest] = points;
+    return `M ${first.x} ${first.y}` + rest.map((p) => ` L ${p.x} ${p.y}`).join('');
+}
+
+/**
+ * Wokwi-like orthogonal routing between two points.
+ * - Produces only horizontal/vertical segments.
+ * - Optionally threads through `waypoints` (manual bends).
+ * - Uses a simple 2-segment strategy per hop.
+ */
+export function calculateOrthogonalPoints(
+    start: WirePoint,
+    end: WirePoint,
+    waypoints: WirePoint[] = [],
+    options: { firstLeg?: FirstLeg } = {}
+): WirePoint[] {
+    const firstLeg = options.firstLeg ?? 'horizontal';
+    const all = [start, ...waypoints, end];
+    const out: WirePoint[] = [start];
+
+    for (let i = 1; i < all.length; i++) {
+        const a = all[i - 1];
+        const b = all[i];
+
+        // Same point.
+        if (a.x === b.x && a.y === b.y) continue;
+
+        if (firstLeg === 'horizontal') {
+            const mid: WirePoint = { x: b.x, y: a.y };
+            if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+        } else {
+            const mid: WirePoint = { x: a.x, y: b.y };
+            if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+        }
+        out.push(b);
+    }
+
+    return dedupeColinear(out);
+}
+
+export function calculateOrthogonalPathD(
+    start: WirePoint,
+    end: WirePoint,
+    waypoints: WirePoint[] = [],
+    options: { firstLeg?: FirstLeg } = {}
+): string {
+    return pointsToPathD(calculateOrthogonalPoints(start, end, waypoints, options));
+}
+
 /**
  * Calculate the orthogonal path between two points with optional waypoints.
  * Returns an array of points forming the complete path.

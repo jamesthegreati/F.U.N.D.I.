@@ -3,6 +3,7 @@
 import '@wokwi/elements';
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
+import type { WirePoint } from '@/types/wire';
 
 interface PinData {
     id: string;
@@ -17,15 +18,15 @@ interface WokwiPartNodeData {
 }
 
 interface WokwiPartNodeProps {
-    id: string;
-    data: WokwiPartNodeData;
+    id?: string;
+    data?: WokwiPartNodeData;
     partType?: WokwiPartType; // Can be passed directly or via data
 }
 
 /**
  * Generic Wokwi Part Node - renders any Wokwi element with pin overlays
  */
-function WokwiPartNode({ id: nodeId, data, partType: propPartType }: WokwiPartNodeProps) {
+function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }: WokwiPartNodeProps) {
     const onPinClick = data?.onPinClick;
     const getCanvasRect = data?.getCanvasRect;
     const partType = propPartType || (data as any)?.partType || 'arduino-uno';
@@ -63,6 +64,8 @@ function WokwiPartNode({ id: nodeId, data, partType: propPartType }: WokwiPartNo
         },
         [onPinClick, nodeId, getCanvasRect, svgDimensions]
     );
+
+    const calculatePins = useCallback(() => {
         const element = elementRef.current as HTMLElement & {
             pinInfo?: { name: string; x: number; y: number }[]
         };
@@ -89,8 +92,11 @@ function WokwiPartNode({ id: nodeId, data, partType: propPartType }: WokwiPartNo
         // Detect if viewBox is in mm by checking if it matches the mm dimensions
         // Arduino: viewBox="-4 0 72.58 53.34" with width="72.58mm" height="53.34mm" -> viewBox IS in mm
         // ESP32: viewBox="0 0 107 201" with width="28.2mm" height="54.053mm" -> viewBox is NOT in mm
-        const viewBoxMatchesMM = widthMM !== null && heightMM !== null &&
-            Math.abs(vbW - widthMM) < 1 && Math.abs(vbH - heightMM) < 1;
+        const viewBoxMatchesMM =
+            widthMM !== null &&
+            heightMM !== null &&
+            Math.abs(vbW - widthMM) < 1 &&
+            Math.abs(vbH - heightMM) < 1;
 
         const MM_TO_PX = 96 / 25.4;
 
@@ -200,6 +206,9 @@ function WokwiPartNode({ id: nodeId, data, partType: propPartType }: WokwiPartNo
                         <div
                             key={pin.id}
                             className="nodrag"
+                            data-fundi-pin="true"
+                            data-node-id={nodeId}
+                            data-pin-id={pin.id}
                             style={{
                                 position: 'absolute',
                                 left: `${leftPct}%`,

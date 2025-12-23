@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Code2, LayoutGrid, MessageSquare } from 'lucide-react'
 import {
   addEdge,
@@ -18,9 +18,7 @@ import {
 
 import ArduinoNode from '@/components/nodes/ArduinoNode'
 import WokwiPartNode from '@/components/nodes/WokwiPartNode'
-import WireLayer from '@/components/WireLayer'
-import { WiringProvider, useWiring } from '@/store/WiringContext'
-import type { WirePoint } from '@/types/wire'
+import WiringLayer from '@/components/WiringLayer'
 import { cn } from '@/utils/cn'
 
 type MobileTabKey = 'chat' | 'code' | 'sim'
@@ -32,59 +30,10 @@ const nodeTypes = {
 
 function SimulationCanvas() {
   const canvasRef = useRef<HTMLDivElement | null>(null)
-  const [pinPositions, setPinPositions] = useState<Map<string, WirePoint>>(
-    () => new Map()
-  )
-
-  const { state, startWire, completeWire, cancelWire, updatePreview } =
-    useWiring()
 
   const getCanvasRect = useCallback(() => {
     return canvasRef.current?.getBoundingClientRect() ?? null
   }, [])
-
-  const handlePinClick = useCallback(
-    (nodeId: string, pinId: string, position: WirePoint) => {
-      setPinPositions((prev) => {
-        const next = new Map(prev)
-        next.set(`${nodeId}:${pinId}`, position)
-        return next
-      })
-
-      if (state.mode === 'creating') {
-        const active = state.activeWireId
-        const activeWire = active
-          ? state.wires.find((w) => w.id === active)
-          : null
-
-        // Clicking the same pin again cancels (simple, predictable UX)
-        if (
-          activeWire &&
-          activeWire.sourcePin.nodeId === nodeId &&
-          activeWire.sourcePin.pinId === pinId
-        ) {
-          cancelWire()
-          return
-        }
-
-        completeWire({ nodeId, pinId }, position)
-        return
-      }
-
-      startWire({ nodeId, pinId }, position)
-    },
-    [state.mode, state.activeWireId, state.wires, startWire, completeWire, cancelWire]
-  )
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (state.mode !== 'creating') return
-      const rect = canvasRef.current?.getBoundingClientRect()
-      if (!rect) return
-      updatePreview({ x: e.clientX - rect.left, y: e.clientY - rect.top })
-    },
-    [state.mode, updatePreview]
-  )
 
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
 
@@ -94,7 +43,6 @@ function SimulationCanvas() {
       type: 'arduino',
       position: { x: 0, y: 0 },
       data: {
-        onPinClick: handlePinClick,
         getCanvasRect,
       },
     },
@@ -109,7 +57,6 @@ function SimulationCanvas() {
             ...node,
             data: {
               ...node.data,
-              onPinClick: handlePinClick,
               getCanvasRect,
             },
           }
@@ -117,7 +64,7 @@ function SimulationCanvas() {
         return node
       })
     )
-  }, [handlePinClick, getCanvasRect, setNodes])
+  }, [getCanvasRect, setNodes])
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
@@ -150,9 +97,8 @@ function SimulationCanvas() {
       ref={canvasRef}
       className={cn(
         'relative h-full w-full',
-        state.mode === 'creating' ? 'cursor-crosshair' : 'cursor-default'
+        'cursor-default'
       )}
-      onMouseMove={handleMouseMove}
     >
       <ReactFlow
         nodes={nodes}
@@ -184,7 +130,7 @@ function SimulationCanvas() {
         <Controls />
       </ReactFlow>
 
-      <WireLayer pinPositions={pinPositions} containerRef={canvasRef} />
+      <WiringLayer containerRef={canvasRef} />
     </div>
   )
 }
@@ -248,9 +194,7 @@ export default function Home() {
             <section className="relative flex h-full w-full flex-col overflow-hidden">
               <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
               <div className="min-h-0 flex-1">
-                <WiringProvider>
-                  <SimulationCanvas />
-                </WiringProvider>
+                <SimulationCanvas />
               </div>
             </section>
           )}
@@ -272,9 +216,7 @@ export default function Home() {
         <section className="relative flex h-full w-[40%] flex-col overflow-hidden">
           <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
           <div className="min-h-0 flex-1">
-            <WiringProvider>
-              <SimulationCanvas />
-            </WiringProvider>
+            <SimulationCanvas />
           </div>
         </section>
       </div>
