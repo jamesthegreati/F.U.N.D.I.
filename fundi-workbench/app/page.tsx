@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Code2, LayoutGrid, MessageSquare } from 'lucide-react'
 import {
   addEdge,
@@ -17,27 +17,107 @@ import {
 } from '@xyflow/react'
 
 import ArduinoNode from '@/components/nodes/ArduinoNode'
-import PartSelector from '@/components/PartSelector'
+import WokwiPartNode from '@/components/nodes/WokwiPartNode'
+import WireLayer from '@/components/WireLayer'
+import { WiringProvider, useWiring } from '@/store/WiringContext'
+import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
 
 type MobileTabKey = 'chat' | 'code' | 'sim'
 
 const nodeTypes = {
   arduino: ArduinoNode,
+  wokwi: WokwiPartNode,
 } satisfies NodeTypes
 
-export default function Home() {
-  const [activeTab, setActiveTab] = useState<MobileTabKey>('chat')
+function SimulationCanvas() {
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  const [pinPositions, setPinPositions] = useState<Map<string, WirePoint>>(
+    () => new Map()
+  )
+
+  const { state, startWire, completeWire, cancelWire, updatePreview } =
+    useWiring()
+
+  const getCanvasRect = useCallback(() => {
+    return canvasRef.current?.getBoundingClientRect() ?? null
+  }, [])
+
+  const handlePinClick = useCallback(
+    (nodeId: string, pinId: string, position: WirePoint) => {
+      setPinPositions((prev) => {
+        const next = new Map(prev)
+        next.set(`${nodeId}:${pinId}`, position)
+        return next
+      })
+
+      if (state.mode === 'creating') {
+        const active = state.activeWireId
+        const activeWire = active
+          ? state.wires.find((w) => w.id === active)
+          : null
+
+        // Clicking the same pin again cancels (simple, predictable UX)
+        if (
+          activeWire &&
+          activeWire.sourcePin.nodeId === nodeId &&
+          activeWire.sourcePin.pinId === pinId
+        ) {
+          cancelWire()
+          return
+        }
+
+        completeWire({ nodeId, pinId }, position)
+        return
+      }
+
+      startWire({ nodeId, pinId }, position)
+    },
+    [state.mode, state.activeWireId, state.wires, startWire, completeWire, cancelWire]
+  )
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (state.mode !== 'creating') return
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+      updatePreview({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+    },
+    [state.mode, updatePreview]
+  )
+
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
 
-  const [nodes, , onNodesChange] = useNodesState<Node>([
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([
     {
       id: 'arduino-1',
       type: 'arduino',
       position: { x: 0, y: 0 },
-      data: {},
+      data: {
+        onPinClick: handlePinClick,
+        getCanvasRect,
+      },
     },
   ])
+
+  // Update node data when handlers change (e.g. when wiring mode changes)
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.type === 'arduino' || node.type === 'wokwi') {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              onPinClick: handlePinClick,
+              getCanvasRect,
+            },
+          }
+        }
+        return node
+      })
+    )
+  }, [handlePinClick, getCanvasRect, setNodes])
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
@@ -64,6 +144,53 @@ export default function Home() {
   const onPaneClick = useCallback(() => {
     setSelectedEdge(null)
   }, [])
+
+  return (
+    <div
+      ref={canvasRef}
+      className={cn(
+        'relative h-full w-full',
+        state.mode === 'creating' ? 'cursor-crosshair' : 'cursor-default'
+      )}
+      onMouseMove={handleMouseMove}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges.map((edge) => ({
+          ...edge,
+          style: {
+            ...edge.style,
+            stroke: edge.id === selectedEdge ? '#10b981' : '#22c55e',
+            strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
+          },
+        }))}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onEdgeClick={onEdgeClick}
+        onPaneClick={onPaneClick}
+        fitView
+        className="h-full w-full"
+        style={{ cursor: 'inherit' }}
+        defaultEdgeOptions={{
+          type: 'default',
+          animated: false,
+          style: { stroke: '#22c55e', strokeWidth: 2.5 },
+        }}
+        connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2.5 }}
+      >
+        <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
+        <Controls />
+      </ReactFlow>
+
+      <WireLayer pinPositions={pinPositions} containerRef={canvasRef} />
+    </div>
+  )
+}
+
+export default function Home() {
+  const [activeTab, setActiveTab] = useState<MobileTabKey>('chat')
 
   const tabs = useMemo(
     () =>
@@ -121,35 +248,9 @@ export default function Home() {
             <section className="relative flex h-full w-full flex-col overflow-hidden">
               <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
               <div className="min-h-0 flex-1">
-                <ReactFlow
-                  nodes={nodes}
-                  edges={edges.map((edge) => ({
-                    ...edge,
-                    style: {
-                      ...edge.style,
-                      stroke:
-                        edge.id === selectedEdge ? '#10b981' : '#22c55e',
-                      strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
-                    },
-                  }))}
-                  nodeTypes={nodeTypes}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onConnect={onConnect}
-                  onEdgeClick={onEdgeClick}
-                  onPaneClick={onPaneClick}
-                  fitView
-                  className="h-full w-full"
-                  defaultEdgeOptions={{
-                    type: 'default',
-                    animated: false,
-                    style: { stroke: '#22c55e', strokeWidth: 2.5 },
-                  }}
-                  connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2.5 }}
-                >
-                  <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
-                  <Controls />
-                </ReactFlow>
+                <WiringProvider>
+                  <SimulationCanvas />
+                </WiringProvider>
               </div>
             </section>
           )}
@@ -159,10 +260,8 @@ export default function Home() {
       {/* Desktop (>=768px): fixed 3-column layout */}
       <div className="hidden h-full md:flex">
         <section className="flex h-full w-[25%] flex-col overflow-hidden border-r border-slate-800">
-          <PanelHeader icon={MessageSquare} title="Component Picker" />
-          <div className="flex-1 overflow-auto p-4">
-            <PartSelector />
-          </div>
+          <PanelHeader icon={MessageSquare} title="Chat Interface" />
+          <PanelBody>Chat Area</PanelBody>
         </section>
 
         <section className="flex h-full w-[35%] flex-col overflow-hidden border-r border-slate-800">
@@ -173,34 +272,9 @@ export default function Home() {
         <section className="relative flex h-full w-[40%] flex-col overflow-hidden">
           <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
           <div className="min-h-0 flex-1">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges.map((edge) => ({
-                ...edge,
-                style: {
-                  ...edge.style,
-                  stroke: edge.id === selectedEdge ? '#10b981' : '#22c55e',
-                  strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
-                },
-              }))}
-              nodeTypes={nodeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onEdgeClick={onEdgeClick}
-              onPaneClick={onPaneClick}
-              fitView
-              className="h-full w-full"
-              defaultEdgeOptions={{
-                type: 'default',
-                animated: false,
-                style: { stroke: '#22c55e', strokeWidth: 2.5 },
-              }}
-              connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2.5 }}
-            >
-              <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
-              <Controls />
-            </ReactFlow>
+            <WiringProvider>
+              <SimulationCanvas />
+            </WiringProvider>
           </div>
         </section>
       </div>

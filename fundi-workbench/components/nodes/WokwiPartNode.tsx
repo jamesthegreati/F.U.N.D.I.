@@ -11,21 +11,25 @@ interface PinData {
     row: 'top' | 'bottom' | 'left' | 'right';
 }
 
+interface WokwiPartNodeData {
+    onPinClick?: (nodeId: string, pinId: string, position: WirePoint) => void;
+    getCanvasRect?: () => DOMRect | null;
+}
+
 interface WokwiPartNodeProps {
-    partType: WokwiPartType;
+    id: string;
+    data: WokwiPartNodeData;
+    partType?: WokwiPartType; // Can be passed directly or via data
 }
 
 /**
  * Generic Wokwi Part Node - renders any Wokwi element with pin overlays
- * 
- * Different Wokwi elements use different coordinate systems:
- * - Arduino (Uno, Mega, Nano): viewBox in mm, pinInfo in CSS pixels (96 DPI)
- * - ESP32: viewBox in pixels (not matching mm dimensions), pinInfo in same pixels
- * 
- * We detect the coordinate system by comparing viewBox dimensions to mm dimensions.
- * If they match, the viewBox is in mm and we need to convert to pixels.
  */
-function WokwiPartNode({ partType }: WokwiPartNodeProps) {
+function WokwiPartNode({ id: nodeId, data, partType: propPartType }: WokwiPartNodeProps) {
+    const onPinClick = data?.onPinClick;
+    const getCanvasRect = data?.getCanvasRect;
+    const partType = propPartType || (data as any)?.partType || 'arduino-uno';
+
     const [hoveredPin, setHoveredPin] = useState<string | null>(null);
     const [pins, setPins] = useState<PinData[]>([]);
     const [svgDimensions, setSvgDimensions] = useState({ width: 100, height: 100 });
@@ -34,7 +38,31 @@ function WokwiPartNode({ partType }: WokwiPartNodeProps) {
 
     const partConfig = WOKWI_PARTS[partType];
 
-    const calculatePins = useCallback(() => {
+    const handlePinClick = useCallback(
+        (e: React.MouseEvent, pin: PinData) => {
+            e.stopPropagation();
+            if (!onPinClick || !elementRef.current) return;
+
+            const element = elementRef.current;
+            const elementRect = element.getBoundingClientRect();
+
+            // Calculate scale: how much the element is scaled from its internal coordinate space
+            const scaleX = elementRect.width / svgDimensions.width;
+            const scaleY = elementRect.height / svgDimensions.height;
+
+            // Transform pin coordinates to screen coordinates
+            const screenX = elementRect.left + pin.x * scaleX;
+            const screenY = elementRect.top + pin.y * scaleY;
+
+            const canvasRect = getCanvasRect?.();
+            const canvasRelative = canvasRect
+                ? { x: screenX - canvasRect.left, y: screenY - canvasRect.top }
+                : { x: screenX, y: screenY };
+
+            onPinClick(nodeId, pin.id, canvasRelative);
+        },
+        [onPinClick, nodeId, getCanvasRect, svgDimensions]
+    );
         const element = elementRef.current as HTMLElement & {
             pinInfo?: { name: string; x: number; y: number }[]
         };
@@ -148,6 +176,57 @@ function WokwiPartNode({ partType }: WokwiPartNodeProps) {
             {partType === 'arduino-mega' && <wokwi-arduino-mega style={{ display: 'block' }} />}
             {partType === 'arduino-nano' && <wokwi-arduino-nano style={{ display: 'block' }} />}
 
+            {/* Pin hitboxes (Wokwi-style): big invisible clickable targets */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'none',
+                    zIndex: 20,
+                }}
+            >
+                {pins.map((pin) => {
+                    const leftPct = svgDimensions.width
+                        ? (pin.x / svgDimensions.width) * 100
+                        : 0;
+                    const topPct = svgDimensions.height
+                        ? (pin.y / svgDimensions.height) * 100
+                        : 0;
+
+                    return (
+                        <div
+                            key={pin.id}
+                            className="nodrag"
+                            style={{
+                                position: 'absolute',
+                                left: `${leftPct}%`,
+                                top: `${topPct}%`,
+                                width: 14,
+                                height: 14,
+                                transform: 'translate(-50%, -50%)',
+                                borderRadius: 9999,
+                                pointerEvents: 'auto',
+                                cursor: 'pointer',
+                                background: 'transparent',
+                                touchAction: 'none',
+                                zIndex: 30,
+                            }}
+                            onPointerDown={(e) => {
+                                // Prevent ReactFlow node dragging from stealing the interaction
+                                e.stopPropagation();
+                            }}
+                            onMouseEnter={() => setHoveredPin(pin.id)}
+                            onMouseLeave={() => setHoveredPin(null)}
+                            onClick={(e) => handlePinClick(e, pin)}
+                            aria-label={`Pin ${pin.id}`}
+                        />
+                    );
+                })}
+            </div>
+
             {/* SVG Overlay - viewBox matches the pinInfo coordinate space */}
             <svg
                 style={{
@@ -158,6 +237,7 @@ function WokwiPartNode({ partType }: WokwiPartNodeProps) {
                     height: '100%',
                     pointerEvents: 'none',
                     overflow: 'visible',
+                    zIndex: 10,
                 }}
                 viewBox={`0 0 ${svgDimensions.width} ${svgDimensions.height}`}
             >
@@ -166,15 +246,7 @@ function WokwiPartNode({ partType }: WokwiPartNodeProps) {
 
                     return (
                         <g key={pin.id}>
-                            <circle
-                                cx={pin.x}
-                                cy={pin.y}
-                                r={6}
-                                fill="transparent"
-                                style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                                onMouseEnter={() => setHoveredPin(pin.id)}
-                                onMouseLeave={() => setHoveredPin(null)}
-                            />
+                            {/* Visual pin indicator */}
                             <circle
                                 cx={pin.x}
                                 cy={pin.y}
