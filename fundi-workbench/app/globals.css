@@ -38,8 +38,10 @@ body {
 }
 
 /* Glass Panel Utility */
-@layer utilities {
-  .glass-panel {
-    @apply backdrop-blur-md bg-panel/70 border border-brass/20 shadow-2xl;
-  }
+.glass-panel {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(21, 27, 43, 0.7);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 }

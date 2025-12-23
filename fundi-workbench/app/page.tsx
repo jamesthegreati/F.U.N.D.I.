@@ -356,7 +356,6 @@ export default function Home() {
     pause: simPause,
     stop: simStop,
     isRunning: simIsRunning,
-    pinStates,
   } = useSimulation(hex, compiledBoard ?? '')
 
   useEffect(() => {
