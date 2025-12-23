@@ -1,15 +1,43 @@
 'use client';
 
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useStore } from '@xyflow/react';
 import { useAppStore } from '@/store/useAppStore';
 import type { WirePoint } from '@/types/wire';
-import { DEFAULT_WIRE_COLOR } from '@/types/wire';
-import { calculateOrthogonalPoints, pointsToPathD, simplifyPolylinePoints } from '@/utils/wireRouting';
+import {
+  calculateOrthogonalPoints,
+  pointsToPathD,
+  findSegmentIndex,
+  moveSegment,
+  snapPointToGrid,
+} from '@/utils/wireRouting';
 
 type PinRef = { partId: string; pinId: string };
 
 interface WiringLayerProps {
   containerRef: React.RefObject<HTMLElement | null>;
+}
+
+type Mode = 'idle' | 'creating' | 'dragging-segment';
+
+const HIT_STROKE = 15;
+
+// Wokwi-like keyboard palette (0-9).
+const WOKWI_COLOR_BY_DIGIT: Record<string, string> = {
+  '0': '#000000', // black (GND)
+  '1': '#8b4513', // brown
+  '2': '#ef4444', // red (VCC)
+  '3': '#f97316', // orange
+  '4': '#eab308', // yellow
+  '5': '#22c55e', // green
+  '6': '#3b82f6', // blue
+  '7': '#8b5cf6', // violet
+  '8': '#9ca3af', // gray
+  '9': '#ffffff', // white
+};
+
+function isDigitKey(key: string): key is keyof typeof WOKWI_COLOR_BY_DIGIT {
+  return Object.prototype.hasOwnProperty.call(WOKWI_COLOR_BY_DIGIT, key);
 }
 
 function clampToContainer(point: WirePoint, rect: DOMRect): WirePoint {
@@ -22,6 +50,12 @@ function clampToContainer(point: WirePoint, rect: DOMRect): WirePoint {
 function getRelativePoint(e: PointerEvent, container: HTMLElement): WirePoint {
   const rect = container.getBoundingClientRect();
   return clampToContainer({ x: e.clientX - rect.left, y: e.clientY - rect.top }, rect);
+}
+
+function isEventInsideContainer(e: PointerEvent, container: HTMLElement): boolean {
+  const t = e.target as Node | null;
+  if (!t) return false;
+  return container.contains(t);
 }
 
 function getPinElFromPoint(x: number, y: number): HTMLElement | null {
@@ -52,65 +86,53 @@ function samePin(a: PinRef | null, b: PinRef | null): boolean {
   return a.partId === b.partId && a.pinId === b.pinId;
 }
 
-function distanceToSegment(point: WirePoint, p1: WirePoint, p2: WirePoint): number {
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const lengthSquared = dx * dx + dy * dy;
-
-  if (lengthSquared === 0) {
-    return Math.sqrt((point.x - p1.x) ** 2 + (point.y - p1.y) ** 2);
-  }
-
-  let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / lengthSquared;
-  t = Math.max(0, Math.min(1, t));
-
-  const projX = p1.x + t * dx;
-  const projY = p1.y + t * dy;
-  return Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
+function stripEndpoints(points: WirePoint[]): WirePoint[] {
+  if (points.length <= 2) return [];
+  return points.slice(1, -1);
 }
 
-function findNearestSegmentIndex(points: WirePoint[], p: WirePoint): number {
-  if (points.length < 2) return 0;
-  let bestIndex = 0;
-  let best = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < points.length - 1; i++) {
-    const d = distanceToSegment(p, points[i], points[i + 1]);
-    if (d < best) {
-      best = d;
-      bestIndex = i;
-    }
-  }
-  return bestIndex;
+function normalizePointsForStore(points: WirePoint[]): WirePoint[] | undefined {
+  const inner = stripEndpoints(points);
+  return inner.length ? inner : undefined;
+}
+
+function getGridSizeForZoom(zoom: number): number {
+  // Simple heuristic: coarser grid when zoomed out.
+  return zoom < 0.75 ? 20 : 10;
 }
 
 function WiringLayer({ containerRef }: WiringLayerProps) {
   const connections = useAppStore((s) => s.connections);
   const addConnection = useAppStore((s) => s.addConnection);
   const removeConnection = useAppStore((s) => s.removeConnection);
-  const setConnectionPoints = useAppStore((s) => s.setConnectionPoints);
+  const updateWireColor = useAppStore((s) => s.updateWireColor);
+  const updateWire = useAppStore((s) => s.updateWire);
 
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  const dragRef = useRef<{
+  const zoom = useStore((s) => s.transform[2]);
+  const gridSize = useMemo(() => getGridSizeForZoom(zoom), [zoom]);
+
+  const modeRef = useRef<Mode>('idle');
+
+  const creatingRef = useRef<{
     from: PinRef;
     fromPoint: WirePoint;
+    waypoints: WirePoint[];
     cursor: WirePoint;
-    hovered: PinRef | null;
+    hoveredPin: PinRef | null;
     hoveredPoint: WirePoint | null;
     color: string;
   } | null>(null);
 
-  const bendRef = useRef<{
-    connectionId: string;
-    // Original intermediate points (for ESC revert)
-    originalPoints: WirePoint[] | undefined;
-    // Indices (in the intermediate points array) of the two inserted points
-    inserted: [number, number];
-    orientation: 'horizontal' | 'vertical';
-    fixedA: number;
-    fixedB: number;
-    finishOnPointerUp: boolean;
+  const segmentDragRef = useRef<{
+    wireId: string;
+    segmentIndex: number;
+    startMouse: WirePoint;
+    startPoints: WirePoint[];
+    disableSnap: boolean;
   } | null>(null);
 
   const [, forceTick] = useState(0);
@@ -131,143 +153,170 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
     return () => ro.disconnect();
   }, [containerRef]);
 
-  // Global pointer wiring.
+  const getPinPoint = useCallback(
+    (pin: PinRef): WirePoint | null => {
+      const container = containerRef.current;
+      if (!container) return null;
+
+      const selector = `[data-fundi-pin="true"][data-node-id="${CSS.escape(pin.partId)}"][data-pin-id="${CSS.escape(pin.pinId)}"]`;
+      const el = container.querySelector(selector) as HTMLElement | null;
+      if (!el) return null;
+      return getPinCenterInContainer(el, container);
+    },
+    [containerRef]
+  );
+
+  const wireGeometry = useMemo(() => {
+    return connections
+      .map((c) => {
+        const start = getPinPoint(c.from);
+        const end = getPinPoint(c.to);
+        if (!start || !end) return null;
+
+        const waypoints = c.points ?? [];
+        const points = calculateOrthogonalPoints(start, end, waypoints, { firstLeg: 'horizontal' });
+        const d = pointsToPathD(points);
+        return { id: c.id, color: c.color, points, d };
+      })
+      .filter((x): x is { id: string; color: string; points: WirePoint[]; d: string } => Boolean(x));
+  }, [connections, getPinPoint]);
+
+  // Global pointer + keyboard interactions.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const onPointerDownCapture = (e: PointerEvent) => {
-      // If we're in persistent bend mode (double-click), any normal left click commits the bend
-      // and exits bend mode (wire stays). Esc still cancels/reverts.
-      if (bendRef.current && !bendRef.current.finishOnPointerUp && e.button === 0) {
-        const pinEl = (e.target as HTMLElement | null)?.closest?.('[data-fundi-pin="true"]');
-        if (!pinEl) {
-          bendRef.current = null;
-          forceTick((n) => n + 1);
-        }
-      }
-
-      // Only start on pin elements.
-      const pinEl = (e.target as HTMLElement | null)?.closest?.('[data-fundi-pin="true"]') as HTMLElement | null;
-      if (!pinEl) return;
-
-      const pinRef = getPinRefFromEl(pinEl);
-      if (!pinRef) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      const fromPoint = getPinCenterInContainer(pinEl, container);
-      const cursor = getRelativePoint(e, container);
-
-      dragRef.current = {
-        from: pinRef,
-        fromPoint,
-        cursor,
-        hovered: null,
-        hoveredPoint: null,
-        color: DEFAULT_WIRE_COLOR,
-      };
-
-      // Ensure we keep receiving move/up even if pointer leaves.
-      try {
-        pinEl.setPointerCapture(e.pointerId);
-      } catch {
-        // Ignore; not all targets allow capture here.
-      }
-
-      forceTick((n) => n + 1);
-    };
-
     const onPointerMoveCapture = (e: PointerEvent) => {
-      const cursor = getRelativePoint(e, container);
+      if (!container) return;
+      if (!isEventInsideContainer(e, container)) return;
 
-      if (bendRef.current) {
-        const bend = bendRef.current;
-        const connection = connections.find((c) => c.id === bend.connectionId);
-        if (connection) {
-          const currentPoints = (connection.points ?? []).slice();
-          const [i1, i2] = bend.inserted;
+      if (modeRef.current === 'creating' && creatingRef.current) {
+        const cursorRaw = getRelativePoint(e, container);
+        const cursor = e.shiftKey ? cursorRaw : snapPointToGrid(cursorRaw, gridSize);
 
-          if (bend.orientation === 'horizontal') {
-            if (currentPoints[i1]) currentPoints[i1] = { x: bend.fixedA, y: cursor.y };
-            if (currentPoints[i2]) currentPoints[i2] = { x: bend.fixedB, y: cursor.y };
-          } else {
-            if (currentPoints[i1]) currentPoints[i1] = { x: cursor.x, y: bend.fixedA };
-            if (currentPoints[i2]) currentPoints[i2] = { x: cursor.x, y: bend.fixedB };
-          }
-
-          setConnectionPoints(bend.connectionId, currentPoints);
-          forceTick((n) => (n + 1) % 1000000);
-        }
-        return;
-      }
-
-      if (dragRef.current) {
         const pinEl = getPinElFromPoint(e.clientX, e.clientY);
         const hoveredRef = pinEl ? getPinRefFromEl(pinEl) : null;
 
-        let hovered: PinRef | null = null;
+        let hoveredPin: PinRef | null = null;
         let hoveredPoint: WirePoint | null = null;
-        if (hoveredRef && !samePin(hoveredRef, dragRef.current.from)) {
-          hovered = hoveredRef;
+        if (hoveredRef && !samePin(hoveredRef, creatingRef.current.from)) {
+          hoveredPin = hoveredRef;
           hoveredPoint = pinEl ? getPinCenterInContainer(pinEl, container) : null;
         }
 
-        dragRef.current = {
-          ...dragRef.current,
+        creatingRef.current = {
+          ...creatingRef.current,
           cursor,
-          hovered,
+          hoveredPin,
           hoveredPoint,
         };
+        forceTick((n) => (n + 1) % 1000000);
+      }
 
-        // Repaint preview smoothly.
+      if (modeRef.current === 'dragging-segment' && segmentDragRef.current) {
+        const curr = getRelativePoint(e, container);
+        const drag = segmentDragRef.current;
+        const delta = { x: curr.x - drag.startMouse.x, y: curr.y - drag.startMouse.y };
+
+        const moved = moveSegment(drag.startPoints, drag.segmentIndex, delta, {
+          snapTo: gridSize,
+          disableSnap: drag.disableSnap,
+        });
+
+        updateWire(drag.wireId, normalizePointsForStore(moved));
         forceTick((n) => (n + 1) % 1000000);
       }
     };
 
-    const onPointerUpCapture = (e: PointerEvent) => {
-      if (bendRef.current) {
-        // Commit bend by ending the drag; points stay in store.
-        if (bendRef.current.finishOnPointerUp) {
+    const onPointerDownCapture = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      if (!isEventInsideContainer(e, container)) return;
+
+      const pinEl = (e.target as HTMLElement | null)?.closest?.('[data-fundi-pin="true"]') as HTMLElement | null;
+      const pinRef = pinEl ? getPinRefFromEl(pinEl) : null;
+
+      // If we're creating and click a pin, complete the wire.
+      if (modeRef.current === 'creating' && creatingRef.current) {
+        if (pinEl && pinRef && !samePin(pinRef, creatingRef.current.from)) {
           e.preventDefault();
           e.stopPropagation();
-          bendRef.current = null;
+
+          addConnection({
+            from: creatingRef.current.from,
+            to: pinRef,
+            color: creatingRef.current.color,
+            points: creatingRef.current.waypoints.length
+              ? creatingRef.current.waypoints
+              : undefined,
+          });
+
+          creatingRef.current = null;
+          modeRef.current = 'idle';
           forceTick((n) => n + 1);
+          return;
         }
-        return;
+
+        // Otherwise pin a waypoint at current cursor (empty space click).
+        if (!pinEl) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const pRaw = getRelativePoint(e, container);
+          const p = e.shiftKey ? pRaw : snapPointToGrid(pRaw, gridSize);
+          creatingRef.current = {
+            ...creatingRef.current,
+            waypoints: [...creatingRef.current.waypoints, p],
+            cursor: p,
+          };
+          forceTick((n) => n + 1);
+          return;
+        }
       }
 
-      const drag = dragRef.current;
-      if (!drag) return;
+      // Start creating from a pin.
+      if (pinEl && pinRef) {
+        e.preventDefault();
+        e.stopPropagation();
 
-      e.preventDefault();
-      e.stopPropagation();
+        const fromPointRaw = getPinCenterInContainer(pinEl, container);
+        const fromPoint = snapPointToGrid(fromPointRaw, gridSize);
+        const cursorRaw = getRelativePoint(e, container);
+        const cursor = e.shiftKey ? cursorRaw : snapPointToGrid(cursorRaw, gridSize);
 
-      if (drag.hovered) {
-        addConnection({
-          from: drag.from,
-          to: drag.hovered,
-          color: drag.color,
-        });
+        creatingRef.current = {
+          from: pinRef,
+          fromPoint,
+          waypoints: [],
+          cursor,
+          hoveredPin: null,
+          hoveredPoint: null,
+          color: WOKWI_COLOR_BY_DIGIT['5'],
+        };
+
+        modeRef.current = 'creating';
+        setSelectedId(null);
+        forceTick((n) => n + 1);
       }
+    };
 
-      dragRef.current = null;
-      forceTick((n) => n + 1);
+    const onPointerUpCapture = () => {
+      if (modeRef.current === 'dragging-segment') {
+        segmentDragRef.current = null;
+        modeRef.current = 'idle';
+        forceTick((n) => n + 1);
+      }
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (bendRef.current) {
-          // Cancel bend-in-progress: restore original points.
-          const { connectionId, originalPoints } = bendRef.current;
-          setConnectionPoints(connectionId, originalPoints);
-          bendRef.current = null;
+        if (modeRef.current === 'creating') {
+          creatingRef.current = null;
+          modeRef.current = 'idle';
           forceTick((n) => n + 1);
-          return;
         }
-        if (dragRef.current) {
-          dragRef.current = null;
+        if (modeRef.current === 'dragging-segment') {
+          segmentDragRef.current = null;
+          modeRef.current = 'idle';
           forceTick((n) => n + 1);
         }
         if (selectedId) setSelectedId(null);
@@ -276,6 +325,16 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         removeConnection(selectedId);
         setSelectedId(null);
+      }
+
+      if (isDigitKey(e.key)) {
+        const color = WOKWI_COLOR_BY_DIGIT[e.key];
+        if (modeRef.current === 'creating' && creatingRef.current) {
+          creatingRef.current = { ...creatingRef.current, color };
+          forceTick((n) => n + 1);
+        } else if (selectedId) {
+          updateWireColor(selectedId, color);
+        }
       }
     };
 
@@ -290,211 +349,148 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
       window.removeEventListener('pointerup', onPointerUpCapture, true);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [addConnection, connections, containerRef, removeConnection, selectedId, setConnectionPoints]);
+  }, [addConnection, containerRef, gridSize, removeConnection, selectedId, updateWire, updateWireColor]);
 
-  const getPinPoint = useCallback(
-    (pin: PinRef): WirePoint | null => {
-      const container = containerRef.current;
-      if (!container) return null;
-
-      const selector = `[data-fundi-pin="true"][data-node-id="${CSS.escape(pin.partId)}"][data-pin-id="${CSS.escape(pin.pinId)}"]`;
-      const el = container.querySelector(selector) as HTMLElement | null;
-      if (!el) return null;
-      return getPinCenterInContainer(el, container);
-    },
-    [containerRef]
-  );
-
-  const renderedConnections = useMemo(() => {
-    return connections
-      .map((c) => {
-        const a = getPinPoint(c.from);
-        const b = getPinPoint(c.to);
-        if (!a || !b) return null;
-
-        // If the connection has manual points, treat them as intermediate polyline vertices.
-        // Otherwise, generate a default orthogonal polyline.
-        const rawPoints = c.points && c.points.length > 0
-          ? [a, ...c.points, b]
-          : calculateOrthogonalPoints(a, b, [], { firstLeg: 'horizontal' });
-
-        const points = simplifyPolylinePoints(rawPoints);
-        const d = pointsToPathD(points);
-        return { id: c.id, d, color: c.color, a, b, points };
-      })
-      .filter(
-        (x): x is { id: string; d: string; color: string; a: WirePoint; b: WirePoint; points: WirePoint[] } => Boolean(x)
-      );
-  }, [connections, getPinPoint]);
-
-  const drag = dragRef.current;
+  const creating = creatingRef.current;
   const preview = useMemo(() => {
-    if (!drag) return null;
-
-    const end = drag.hoveredPoint ?? drag.cursor;
-    const d = pointsToPathD(calculateOrthogonalPoints(drag.fromPoint, end, [], { firstLeg: 'vertical' }));
-    return { d, color: drag.color };
-  }, [drag]);
+    if (!creating) return null;
+    const end = creating.hoveredPoint ?? creating.cursor;
+    const points = calculateOrthogonalPoints(creating.fromPoint, end, creating.waypoints, {
+      firstLeg: 'vertical',
+    });
+    return { d: pointsToPathD(points), color: creating.color };
+  }, [creating, forceTick]);
 
   if (dimensions.width === 0 || dimensions.height === 0) return null;
 
   return (
-    <svg
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        pointerEvents: 'none',
-        overflow: 'visible',
-        zIndex: 10,
-      }}
-      viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
-      onPointerDown={() => {
-        // Deselect on background down (doesn't block node interactions due to pointerEvents none).
-        if (!bendRef.current && selectedId) setSelectedId(null);
-      }}
-    >
-      <g style={{ pointerEvents: 'auto' }}>
-        {renderedConnections.map((w) => {
-          const isSelected = selectedId === w.id;
-          const strokeWidth = isSelected ? 3.5 : 2.5;
+    <>
+      <style jsx global>{`
+        @keyframes fundi-wire-dash {
+          to {
+            stroke-dashoffset: -24;
+          }
+        }
+      `}</style>
 
-          const startBend = (clientX: number, clientY: number, pointerId?: number) => {
-            const container = containerRef.current;
-            if (!container) return;
+      <svg
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          overflow: 'visible',
+          zIndex: 10,
+        }}
+        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+        onPointerDown={() => {
+          if (selectedId) setSelectedId(null);
+        }}
+      >
+        <g style={{ pointerEvents: 'auto' }}>
+          {wireGeometry.map((w) => {
+            const isSelected = selectedId === w.id;
+            const isHovered = hoveredId === w.id;
+            const strokeWidth = isSelected ? 3.5 : 2.5;
 
-            const containerRect = container.getBoundingClientRect();
-            const cursor: WirePoint = clampToContainer(
-              { x: clientX - containerRect.left, y: clientY - containerRect.top },
-              containerRect
-            );
-
-            // Build a polyline to bend: use manual points if present, else default orthogonal points.
-            const connection = connections.find((c) => c.id === w.id);
-            if (!connection) return;
-
-            const polyline = connection.points && connection.points.length > 0
-              ? [w.a, ...connection.points, w.b]
-              : calculateOrthogonalPoints(w.a, w.b, [], { firstLeg: 'horizontal' });
-
-            const simplified = simplifyPolylinePoints(polyline);
-            const segIndex = findNearestSegmentIndex(simplified, cursor);
-            const p = simplified[segIndex];
-            const q = simplified[segIndex + 1];
-            if (!p || !q) return;
-
-            const horizontal = p.y === q.y;
-
-            const inserted1: WirePoint = horizontal
-              ? { x: p.x, y: cursor.y }
-              : { x: cursor.x, y: p.y };
-
-            const inserted2: WirePoint = horizontal
-              ? { x: q.x, y: cursor.y }
-              : { x: cursor.x, y: q.y };
-
-            const newFull = simplified.slice();
-            newFull.splice(segIndex + 1, 0, inserted1, inserted2);
-
-            const newIntermediate = newFull.slice(1, -1);
-            const insertedIndices: [number, number] = [segIndex, segIndex + 1];
-
-            bendRef.current = {
-              connectionId: w.id,
-              originalPoints: connection.points,
-              inserted: insertedIndices,
-              orientation: horizontal ? 'horizontal' : 'vertical',
-              fixedA: horizontal ? p.x : p.y,
-              fixedB: horizontal ? q.x : q.y,
-              finishOnPointerUp: true,
-            };
-
-            setSelectedId(w.id);
-            setConnectionPoints(w.id, newIntermediate);
-
-            // Try to capture pointer so drag stays stable.
-            if (typeof pointerId === 'number') {
-              try {
-                (container as any).setPointerCapture?.(pointerId);
-              } catch {
-                // ignore
-              }
-            }
-
-            forceTick((n) => n + 1);
-          };
-
-          return (
-            <g key={w.id}>
-              {/* Hit target */}
-              <path
-                d={w.d}
-                fill="none"
-                stroke="transparent"
-                strokeWidth={12}
-                style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                }}
-                onPointerDown={(e) => {
-                  // Single left click selects.
-                  if (e.button === 0 && e.detail < 2) {
+            return (
+              <g key={w.id}>
+                {/* Hit target (also used for segment dragging) */}
+                <path
+                  d={w.d}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={HIT_STROKE}
+                  style={{ cursor: isSelected ? 'grab' : 'pointer', pointerEvents: 'stroke' }}
+                  onPointerEnter={() => setHoveredId(w.id)}
+                  onPointerLeave={() => setHoveredId((prev) => (prev === w.id ? null : prev))}
+                  onPointerDown={(e) => {
                     e.stopPropagation();
-                    setSelectedId(w.id);
-                    return;
-                  }
-
-                  // Double click OR right click starts a bend drag like Wokwi.
-                  if (e.button === 2 || (e.button === 0 && e.detail >= 2)) {
                     e.preventDefault();
+
+                    setSelectedId(w.id);
+
+                    // Segment dragging only when selected.
+                    const container = containerRef.current;
+                    if (!container) return;
+                    if (selectedId !== w.id) return;
+
+                    const rect = container.getBoundingClientRect();
+                    const click: WirePoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                    const segIdx = findSegmentIndex(w.points, click, HIT_STROKE / 2);
+                    if (segIdx === null) return;
+
+                    segmentDragRef.current = {
+                      wireId: w.id,
+                      segmentIndex: segIdx,
+                      startMouse: click,
+                      startPoints: w.points,
+                      disableSnap: e.shiftKey,
+                    };
+                    modeRef.current = 'dragging-segment';
+                  }}
+                  onDoubleClick={(e) => {
                     e.stopPropagation();
-                    startBend(e.clientX, e.clientY, e.pointerId);
-                    if (bendRef.current) {
-                      // Right-click: drag ends on pointerup. Double-click: persistent bend mode.
-                      bendRef.current.finishOnPointerUp = e.button === 2;
-                    }
-                  }
-                }}
-              />
+                    e.preventDefault();
+                    removeConnection(w.id);
+                    if (selectedId === w.id) setSelectedId(null);
+                  }}
+                />
 
-              {/* Visible wire */}
-              <path
-                d={w.d}
-                fill="none"
-                stroke={w.color}
-                strokeWidth={strokeWidth}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{
-                  pointerEvents: 'none',
-                  transition: 'stroke-width 0.1s ease',
-                  filter: isSelected
-                    ? 'drop-shadow(0 0 4px rgba(139, 92, 246, 0.5))'
-                    : undefined,
-                }}
-              />
-            </g>
-          );
-        })}
+                {/* Hover feedback (marching ants) */}
+                {(isHovered || isSelected) && (
+                  <path
+                    d={w.d}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={strokeWidth + 1.25}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray="6 6"
+                    style={{
+                      pointerEvents: 'none',
+                      opacity: 0.25,
+                      animation: 'fundi-wire-dash 1s linear infinite',
+                    }}
+                  />
+                )}
 
-        {/* Preview (ghost) wire */}
-        {preview && (
-          <path
-            d={preview.d}
-            fill="none"
-            stroke={preview.color}
-            strokeWidth={2.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="6 6"
-            opacity={0.85}
-            style={{ pointerEvents: 'none' }}
-          />
-        )}
-      </g>
-    </svg>
+                {/* Visible wire */}
+                <path
+                  d={w.d}
+                  fill="none"
+                  stroke={w.color}
+                  strokeWidth={strokeWidth}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    pointerEvents: 'none',
+                    transition: 'stroke-width 0.1s ease',
+                  }}
+                />
+              </g>
+            );
+          })}
+
+          {/* Preview (ghost) wire */}
+          {preview && (
+            <path
+              d={preview.d}
+              fill="none"
+              stroke={preview.color}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="6 6"
+              opacity={0.9}
+              style={{ pointerEvents: 'none' }}
+            />
+          )}
+        </g>
+      </svg>
+    </>
   );
 }
 

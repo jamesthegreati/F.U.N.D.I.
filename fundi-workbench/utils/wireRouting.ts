@@ -9,6 +9,16 @@ import type { WirePoint } from '@/types/wire';
 
 type FirstLeg = 'horizontal' | 'vertical';
 
+export function snapToGrid(value: number, gridSize: number): number {
+    if (!Number.isFinite(value)) return value;
+    if (!gridSize || gridSize <= 0) return value;
+    return Math.round(value / gridSize) * gridSize;
+}
+
+export function snapPointToGrid(point: WirePoint, gridSize: number): WirePoint {
+    return { x: snapToGrid(point.x, gridSize), y: snapToGrid(point.y, gridSize) };
+}
+
 function dedupeColinear(points: WirePoint[]): WirePoint[] {
     if (points.length <= 2) return points;
 
@@ -39,14 +49,6 @@ function dedupeColinear(points: WirePoint[]): WirePoint[] {
 }
 
 /**
- * Simplify a polyline by removing duplicate points and collapsing colinear points.
- * Useful for rendering wires while keeping raw editing points in state.
- */
-export function simplifyPolylinePoints(points: WirePoint[]): WirePoint[] {
-    return dedupeColinear(points);
-}
-
-/**
  * Convert an array of points to an SVG path `d` string.
  * Uses straight line segments between points.
  */
@@ -54,6 +56,76 @@ export function pointsToPathD(points: WirePoint[]): string {
     if (points.length === 0) return '';
     const [first, ...rest] = points;
     return `M ${first.x} ${first.y}` + rest.map((p) => ` L ${p.x} ${p.y}`).join('');
+}
+
+export function findSegmentIndex(
+    points: WirePoint[],
+    clickPoint: WirePoint,
+    threshold: number = 8
+): number | null {
+    if (points.length < 2) return null;
+    let bestIdx: number | null = null;
+    let bestDist = Infinity;
+
+    for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const dist = distanceToSegment(clickPoint, p1, p2);
+        if (dist <= threshold && dist < bestDist) {
+            bestDist = dist;
+            bestIdx = i;
+        }
+    }
+
+    return bestIdx;
+}
+
+function isHorizontalSegment(a: WirePoint, b: WirePoint): boolean {
+    return a.y === b.y && a.x !== b.x;
+}
+
+function isVerticalSegment(a: WirePoint, b: WirePoint): boolean {
+    return a.x === b.x && a.y !== b.y;
+}
+
+export function moveSegment(
+    points: WirePoint[],
+    segmentIndex: number,
+    delta: WirePoint,
+    options: { snapTo?: number; disableSnap?: boolean } = {}
+): WirePoint[] {
+    if (points.length < 2) return points;
+    if (segmentIndex < 0 || segmentIndex >= points.length - 1) return points;
+
+    const out = points.map((p) => ({ ...p }));
+    const a = out[segmentIndex];
+    const b = out[segmentIndex + 1];
+
+    const isH = isHorizontalSegment(a, b);
+    const isV = isVerticalSegment(a, b);
+
+    if (!isH && !isV) {
+        // Non-orthogonal; refuse to move.
+        return points;
+    }
+
+    if (isH) {
+        let nextY = a.y + delta.y;
+        if (!options.disableSnap && options.snapTo) {
+            nextY = snapToGrid(nextY, options.snapTo);
+        }
+        a.y = nextY;
+        b.y = nextY;
+    } else {
+        let nextX = a.x + delta.x;
+        if (!options.disableSnap && options.snapTo) {
+            nextX = snapToGrid(nextX, options.snapTo);
+        }
+        a.x = nextX;
+        b.x = nextX;
+    }
+
+    return dedupeColinear(out);
 }
 
 /**

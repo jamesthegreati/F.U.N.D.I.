@@ -128,9 +128,9 @@ function SimulationCanvas() {
       >
         <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
         <Controls />
-      </ReactFlow>
 
-      <WiringLayer containerRef={canvasRef} />
+        <WiringLayer containerRef={canvasRef} />
+      </ReactFlow>
     </div>
   )
 }

@@ -38,7 +38,7 @@ export type AppState = {
   addConnection: (conn: Omit<Connection, 'id'>) => string
   removeConnection: (id: string) => void
   updateWireColor: (id: string, color: string) => void
-  setConnectionPoints: (id: string, points: Connection['points']) => void
+  updateWire: (id: string, points: { x: number; y: number }[] | undefined) => void
 }
 
 const defaultCode =
@@ -142,7 +142,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  setConnectionPoints: (id, points) => {
+  updateWire: (id, points) => {
     set({
       connections: get().connections.map((c) =>
         c.id === id ? { ...c, points } : c
