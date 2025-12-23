@@ -10,12 +10,15 @@ import {
   findSegmentIndex,
   moveSegment,
   snapPointToGrid,
+  avoidParallelOverlaps,
 } from '@/utils/wireRouting';
 
 type PinRef = { partId: string; pinId: string };
 
 interface WiringLayerProps {
   containerRef: React.RefObject<HTMLElement | null>;
+  /** Optional transient overrides for inner waypoints (used during part dragging for 60fps). */
+  wirePointOverrides?: Map<string, WirePoint[] | undefined>;
 }
 
 type Mode = 'idle' | 'creating' | 'dragging-segment';
@@ -35,6 +38,10 @@ const WOKWI_COLOR_BY_DIGIT: Record<string, string> = {
   '8': '#9ca3af', // gray
   '9': '#ffffff', // white
 };
+
+const WOKWI_COLOR_PALETTE: Array<{ key: string; color: string }> = Object.entries(WOKWI_COLOR_BY_DIGIT).map(
+  ([key, color]) => ({ key, color })
+);
 
 function isDigitKey(key: string): key is keyof typeof WOKWI_COLOR_BY_DIGIT {
   return Object.prototype.hasOwnProperty.call(WOKWI_COLOR_BY_DIGIT, key);
@@ -101,9 +108,10 @@ function getGridSizeForZoom(zoom: number): number {
   return zoom < 0.75 ? 20 : 10;
 }
 
-function WiringLayer({ containerRef }: WiringLayerProps) {
+function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
   const connections = useAppStore((s) => s.connections);
   const addConnection = useAppStore((s) => s.addConnection);
+  const allocateNextWireColor = useAppStore((s) => s.allocateNextWireColor);
   const removeConnection = useAppStore((s) => s.removeConnection);
   const updateWireColor = useAppStore((s) => s.updateWireColor);
   const updateWire = useAppStore((s) => s.updateWire);
@@ -113,6 +121,9 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const zoom = useStore((s) => s.transform[2]);
+  // Subscribe to node changes so wire endpoints update in real-time while parts move.
+  // Using the store's nodes array reference is enough to invalidate memos during drags.
+  const flowNodes = useStore((s) => (s as any).nodes as unknown[]);
   const gridSize = useMemo(() => getGridSizeForZoom(zoom), [zoom]);
 
   const modeRef = useRef<Mode>('idle');
@@ -153,33 +164,75 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
     return () => ro.disconnect();
   }, [containerRef]);
 
+  // Precompute all pin centers once per render to keep 60fps during drags.
+  const pinCenters = useMemo(() => {
+    const container = containerRef.current;
+    if (!container) return new Map<string, WirePoint>();
+
+    const containerRect = container.getBoundingClientRect();
+    const els = container.querySelectorAll<HTMLElement>('[data-fundi-pin="true"][data-node-id][data-pin-id]');
+    const next = new Map<string, WirePoint>();
+    els.forEach((el) => {
+      const partId = el.getAttribute('data-node-id');
+      const pinId = el.getAttribute('data-pin-id');
+      if (!partId || !pinId) return;
+      const r = el.getBoundingClientRect();
+      next.set(`${partId}:${pinId}`, {
+        x: r.left + r.width / 2 - containerRect.left,
+        y: r.top + r.height / 2 - containerRect.top,
+      });
+    });
+    return next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerRef, dimensions.width, dimensions.height, zoom, flowNodes]);
+
   const getPinPoint = useCallback(
     (pin: PinRef): WirePoint | null => {
-      const container = containerRef.current;
-      if (!container) return null;
-
-      const selector = `[data-fundi-pin="true"][data-node-id="${CSS.escape(pin.partId)}"][data-pin-id="${CSS.escape(pin.pinId)}"]`;
-      const el = container.querySelector(selector) as HTMLElement | null;
-      if (!el) return null;
-      return getPinCenterInContainer(el, container);
+      return pinCenters.get(`${pin.partId}:${pin.pinId}`) ?? null;
     },
-    [containerRef]
+    [pinCenters]
   );
 
   const wireGeometry = useMemo(() => {
-    return connections
+    const base = connections
       .map((c) => {
         const start = getPinPoint(c.from);
         const end = getPinPoint(c.to);
         if (!start || !end) return null;
 
-        const waypoints = c.points ?? [];
+        const waypoints = wirePointOverrides?.has(c.id)
+          ? wirePointOverrides.get(c.id) ?? []
+          : c.points ?? [];
+
         const points = calculateOrthogonalPoints(start, end, waypoints, { firstLeg: 'horizontal' });
-        const d = pointsToPathD(points);
-        return { id: c.id, color: c.color, points, d };
+        return { id: c.id, color: c.color, points };
       })
-      .filter((x): x is { id: string; color: string; points: WirePoint[]; d: string } => Boolean(x));
-  }, [connections, getPinPoint]);
+      .filter((x): x is { id: string; color: string; points: WirePoint[] } => Boolean(x));
+
+    // Prevent PARALLEL overlaps between different wires (perpendicular crossings OK).
+    const adjusted = avoidParallelOverlaps(
+      base.map((w) => ({ id: w.id, points: w.points })),
+      { gridSize }
+    );
+
+    return base.map((w) => {
+      const points = adjusted.get(w.id) ?? w.points;
+      return { ...w, points, d: pointsToPathD(points) };
+    });
+  }, [connections, getPinPoint, wirePointOverrides, gridSize]);
+
+  const selectedWire = useMemo(() => {
+    if (!selectedId) return null;
+    return wireGeometry.find((w) => w.id === selectedId) ?? null;
+  }, [selectedId, wireGeometry]);
+
+  const selectedMidpoint = useMemo(() => {
+    if (!selectedWire) return null;
+    const pts = selectedWire.points;
+    if (pts.length < 2) return null;
+    const i = Math.floor(pts.length / 2);
+    return pts[i];
+  }, [selectedWire]);
 
   // Global pointer + keyboard interactions.
   useEffect(() => {
@@ -231,6 +284,17 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
     const onPointerDownCapture = (e: PointerEvent) => {
       if (e.button !== 0) return;
       if (!isEventInsideContainer(e, container)) return;
+
+      // Click-away deselect: clicking anywhere else in the canvas clears wire selection,
+      // except when interacting with the wire toolbar or wire hit targets.
+      if (selectedId) {
+        const target = e.target as HTMLElement | null;
+        const insideToolbar = Boolean(target?.closest?.('[data-wire-toolbar="true"]'));
+        const onWire = Boolean(target?.closest?.('[data-wire-hit="true"]'));
+        if (!insideToolbar && !onWire) {
+          setSelectedId(null);
+        }
+      }
 
       const pinEl = (e.target as HTMLElement | null)?.closest?.('[data-fundi-pin="true"]') as HTMLElement | null;
       const pinRef = pinEl ? getPinRefFromEl(pinEl) : null;
@@ -290,7 +354,7 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
           cursor,
           hoveredPin: null,
           hoveredPoint: null,
-          color: WOKWI_COLOR_BY_DIGIT['5'],
+          color: allocateNextWireColor(),
         };
 
         modeRef.current = 'creating';
@@ -349,7 +413,7 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
       window.removeEventListener('pointerup', onPointerUpCapture, true);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [addConnection, containerRef, gridSize, removeConnection, selectedId, updateWire, updateWireColor]);
+  }, [addConnection, allocateNextWireColor, containerRef, gridSize, removeConnection, selectedId, updateWire, updateWireColor]);
 
   const creating = creatingRef.current;
   const preview = useMemo(() => {
@@ -385,9 +449,6 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
           zIndex: 10,
         }}
         viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
-        onPointerDown={() => {
-          if (selectedId) setSelectedId(null);
-        }}
       >
         <g style={{ pointerEvents: 'auto' }}>
           {wireGeometry.map((w) => {
@@ -400,6 +461,8 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
                 {/* Hit target (also used for segment dragging) */}
                 <path
                   d={w.d}
+                  data-wire-hit="true"
+                  data-wire-id={w.id}
                   fill="none"
                   stroke="transparent"
                   strokeWidth={HIT_STROKE}
@@ -490,6 +553,56 @@ function WiringLayer({ containerRef }: WiringLayerProps) {
           )}
         </g>
       </svg>
+
+      {/* Selected wire toolbar (color + delete) */}
+      {selectedWire && selectedMidpoint && (
+        <div
+          data-wire-toolbar="true"
+          className="absolute z-30 flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/90 p-1 shadow-xl backdrop-blur"
+          style={{
+            left: selectedMidpoint.x,
+            top: selectedMidpoint.y,
+            transform: 'translate(-50%, -110%)',
+            pointerEvents: 'auto',
+          }}
+          onPointerDown={(e) => {
+            // Prevent toolbar clicks from being treated as "click away".
+            e.stopPropagation();
+          }}
+        >
+          <div className="flex items-center gap-0.5">
+            {WOKWI_COLOR_PALETTE.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => updateWireColor(selectedWire.id, c.color)}
+                className={
+                  'h-4 w-4 rounded border ' +
+                  (selectedWire.color.toLowerCase() === c.color.toLowerCase()
+                    ? 'border-white'
+                    : 'border-transparent hover:border-slate-500')
+                }
+                style={{ backgroundColor: c.color }}
+                title={`Color ${c.key}`}
+              />
+            ))}
+          </div>
+
+          <div className="mx-1 h-4 w-px bg-slate-800" />
+
+          <button
+            type="button"
+            onClick={() => {
+              removeConnection(selectedWire.id);
+              setSelectedId(null);
+            }}
+            className="rounded px-1.5 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-500/15"
+            title="Delete wire (also: Delete key or double-click)"
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </>
   );
 }

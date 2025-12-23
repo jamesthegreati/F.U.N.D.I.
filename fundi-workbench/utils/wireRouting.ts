@@ -48,6 +48,222 @@ function dedupeColinear(points: WirePoint[]): WirePoint[] {
     return result;
 }
 
+type Orientation = 'H' | 'V';
+
+type Segment = {
+    orientation: Orientation;
+    coord: number; // y for H, x for V
+    min: number;
+    max: number;
+};
+
+function toSegments(points: WirePoint[]): Segment[] {
+    const segs: Segment[] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+        const a = points[i];
+        const b = points[i + 1];
+        if (a.x === b.x && a.y === b.y) continue;
+        if (a.y === b.y) {
+            const min = Math.min(a.x, b.x);
+            const max = Math.max(a.x, b.x);
+            if (min !== max) segs.push({ orientation: 'H', coord: a.y, min, max });
+        } else if (a.x === b.x) {
+            const min = Math.min(a.y, b.y);
+            const max = Math.max(a.y, b.y);
+            if (min !== max) segs.push({ orientation: 'V', coord: a.x, min, max });
+        }
+    }
+    return segs;
+}
+
+function rangesOverlapStrict(aMin: number, aMax: number, bMin: number, bMax: number): boolean {
+    // Strict overlap: touching at a single point is OK.
+    return Math.min(aMax, bMax) > Math.max(aMin, bMin);
+}
+
+function hasParallelOverlap(points: WirePoint[], occupied: Map<string, Segment[]>): boolean {
+    const segs = toSegments(points);
+    for (const s of segs) {
+        const key = `${s.orientation}:${s.coord}`;
+        const list = occupied.get(key);
+        if (!list?.length) continue;
+        for (const o of list) {
+            if (rangesOverlapStrict(s.min, s.max, o.min, o.max)) return true;
+        }
+    }
+    return false;
+}
+
+function addOccupied(points: WirePoint[], occupied: Map<string, Segment[]>): void {
+    for (const s of toSegments(points)) {
+        const key = `${s.orientation}:${s.coord}`;
+        const list = occupied.get(key);
+        if (list) list.push(s);
+        else occupied.set(key, [s]);
+    }
+}
+
+function shiftSegmentKeepingEndpoints(
+    points: WirePoint[],
+    segmentIndex: number,
+    orientation: Orientation,
+    deltaPerp: number
+): WirePoint[] {
+    if (points.length < 2) return points;
+    if (segmentIndex < 0 || segmentIndex >= points.length - 1) return points;
+    if (deltaPerp === 0) return points;
+
+    const out = points.map((p) => ({ ...p }));
+    const lastIdx = out.length - 1;
+
+    if (orientation === 'H') {
+        // Horizontal segment => shift Y.
+        if (segmentIndex === 0) {
+            const p0 = out[0];
+            const p1 = out[1];
+            // Insert a vertical jog at the start point.
+            const jog = { x: p0.x, y: p0.y + deltaPerp };
+            out.splice(1, 0, jog);
+            // Original p1 shifts (now at index 2).
+            out[2].y = jog.y;
+        } else if (segmentIndex === lastIdx - 1) {
+            const pN1 = out[lastIdx - 1];
+            const pN = out[lastIdx];
+            // Insert a vertical jog before the end point.
+            const jog = { x: pN.x, y: pN.y + deltaPerp };
+            out.splice(lastIdx, 0, jog);
+            // Shift previous point to align with jog.
+            out[lastIdx - 1].y = jog.y;
+            // Keep endpoint anchored.
+            out[lastIdx + 1].x = pN.x;
+            out[lastIdx + 1].y = pN.y;
+        } else {
+            out[segmentIndex].y += deltaPerp;
+            out[segmentIndex + 1].y += deltaPerp;
+        }
+    } else {
+        // Vertical segment => shift X.
+        if (segmentIndex === 0) {
+            const p0 = out[0];
+            const p1 = out[1];
+            const jog = { x: p0.x + deltaPerp, y: p0.y };
+            out.splice(1, 0, jog);
+            out[2].x = jog.x;
+        } else if (segmentIndex === lastIdx - 1) {
+            const pN1 = out[lastIdx - 1];
+            const pN = out[lastIdx];
+            const jog = { x: pN.x + deltaPerp, y: pN.y };
+            out.splice(lastIdx, 0, jog);
+            out[lastIdx - 1].x = jog.x;
+            out[lastIdx + 1].x = pN.x;
+            out[lastIdx + 1].y = pN.y;
+        } else {
+            out[segmentIndex].x += deltaPerp;
+            out[segmentIndex + 1].x += deltaPerp;
+        }
+    }
+
+    return dedupeColinear(out);
+}
+
+function segmentOrientation(points: WirePoint[], idx: number): Orientation | null {
+    if (idx < 0 || idx >= points.length - 1) return null;
+    const a = points[idx];
+    const b = points[idx + 1];
+    if (a.y === b.y && a.x !== b.x) return 'H';
+    if (a.x === b.x && a.y !== b.y) return 'V';
+    return null;
+}
+
+/**
+ * Avoids PARALLEL overlaps between different wires.
+ * - Horizontal-on-horizontal overlaps are removed by shifting Y.
+ * - Vertical-on-vertical overlaps are removed by shifting X.
+ * - Perpendicular crossings are allowed.
+ *
+ * This is a rendering-time deconfliction pass: endpoints stay anchored.
+ */
+export function avoidParallelOverlaps(
+    wires: Array<{ id: string; points: WirePoint[] }>,
+    options: { gridSize: number; maxLanes?: number } = { gridSize: 10 }
+): Map<string, WirePoint[]> {
+    const gridSize = options.gridSize || 10;
+    const maxLanes = options.maxLanes ?? 6;
+    const occupied = new Map<string, Segment[]>();
+    const result = new Map<string, WirePoint[]>();
+
+    // Stable, deterministic order: as provided.
+    for (const w of wires) {
+        let pts = dedupeColinear(w.points);
+
+        // If there is no conflict, accept quickly.
+        if (!hasParallelOverlap(pts, occupied)) {
+            addOccupied(pts, occupied);
+            result.set(w.id, pts);
+            continue;
+        }
+
+        // Try shifting each segment into a free lane.
+        let improved = true;
+        let safety = 0;
+        while (improved && safety++ < 8) {
+            improved = false;
+            for (let segIdx = 0; segIdx < pts.length - 1; segIdx++) {
+                const ori = segmentOrientation(pts, segIdx);
+                if (!ori) continue;
+
+                // Fast skip: only attempt if THIS segment overlaps.
+                const segs = toSegments([pts[segIdx], pts[segIdx + 1]]);
+                if (!segs.length) continue;
+                const seg = segs[0];
+                const key = `${seg.orientation}:${seg.coord}`;
+                const list = occupied.get(key);
+                if (!list?.length) continue;
+
+                let overlaps = false;
+                for (const o of list) {
+                    if (rangesOverlapStrict(seg.min, seg.max, o.min, o.max)) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+                if (!overlaps) continue;
+
+                // Determine a deterministic lane preference.
+                const hash =
+                    [...w.id].reduce((acc, ch) => ((acc * 31) ^ ch.charCodeAt(0)) >>> 0, 7) +
+                    segIdx * 97;
+                const preferPositive = (hash & 1) === 0;
+
+                let best: WirePoint[] | null = null;
+                for (let lane = 1; lane <= maxLanes; lane++) {
+                    const d = lane * gridSize;
+                    const deltas = preferPositive ? [d, -d] : [-d, d];
+                    for (const deltaPerp of deltas) {
+                        const candidate = shiftSegmentKeepingEndpoints(pts, segIdx, ori, deltaPerp);
+                        if (!hasParallelOverlap(candidate, occupied)) {
+                            best = candidate;
+                            break;
+                        }
+                    }
+                    if (best) break;
+                }
+
+                if (best) {
+                    pts = best;
+                    improved = true;
+                    break; // re-scan from start with updated geometry
+                }
+            }
+        }
+
+        addOccupied(pts, occupied);
+        result.set(w.id, pts);
+    }
+
+    return result;
+}
+
 /**
  * Convert an array of points to an SVG path `d` string.
  * Uses straight line segments between points.

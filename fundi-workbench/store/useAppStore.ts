@@ -3,11 +3,14 @@ import { nanoid } from 'nanoid'
 
 export type CircuitPart = {
   id: string
+  /** Wokwi part key (e.g. 'arduino-uno') or element type (e.g. 'wokwi-arduino-uno') */
   type: string
   position: {
     x: number
     y: number
   }
+  rotate?: number
+  attrs?: Record<string, string>
 }
 
 export type CircuitConnection = {
@@ -26,26 +29,62 @@ export interface Connection {
 
 export type AppState = {
   code: string
+  diagramJson: string
   circuitParts: CircuitPart[]
   circuitConnections: CircuitConnection[]
   connections: Connection[]
   isRunning: boolean
 
+  nextWireColorIndex: number
+
+  selectedPartIds: string[]
+
   updateCode: (newCode: string) => void
+  setDiagramJson: (json: string) => void
   updateCircuit: (nodes: unknown, edges: unknown) => void
   toggleSimulation: () => void
 
+  addPart: (part: {
+    type: string
+    position: { x: number; y: number }
+    rotate?: number
+    attrs?: Record<string, string>
+  }) => string
+  updatePartsPositions: (updates: Array<{ id: string; x: number; y: number }>) => void
+
+  setSelectedPartIds: (ids: string[]) => void
+  toggleSelectedPartId: (id: string) => void
+  clearSelectedParts: () => void
+
   addConnection: (conn: Omit<Connection, 'id'>) => string
+  allocateNextWireColor: () => string
   removeConnection: (id: string) => void
   updateWireColor: (id: string, color: string) => void
   updateWire: (id: string, points: { x: number; y: number }[] | undefined) => void
 }
+
+const DEFAULT_WIRE_COLOR_CYCLE = [
+  '#22c55e', // green
+  '#3b82f6', // blue
+  '#ef4444', // red
+  '#eab308', // yellow
+  '#8b5cf6', // violet
+  '#f97316', // orange
+  '#06b6d4', // cyan
+  '#ec4899', // pink
+  '#000000', // black
+  '#ffffff', // white
+] as const
 
 const defaultCode =
   'void setup() { pinMode(13, OUTPUT); } void loop() { digitalWrite(13, HIGH); delay(1000); digitalWrite(13, LOW); delay(1000); }'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function isNotNull<T>(value: T | null): value is T {
+  return value !== null
 }
 
 function toCircuitParts(nodes: unknown): CircuitPart[] {
@@ -56,7 +95,15 @@ function toCircuitParts(nodes: unknown): CircuitPart[] {
       if (!isRecord(node)) return null
 
       const id = typeof node.id === 'string' ? node.id : ''
-      const type = typeof node.type === 'string' ? node.type : 'unknown'
+      const nodeType = typeof node.type === 'string' ? node.type : 'unknown'
+
+      // Try to carry Wokwi partType from node data (for node.type === 'wokwi').
+      const data = isRecord(node.data) ? node.data : null
+      const dataPartType = data && typeof data.partType === 'string' ? data.partType : null
+
+      const type =
+        (nodeType === 'wokwi' && dataPartType) ? dataPartType :
+        (nodeType === 'arduino' ? 'arduino-uno' : nodeType)
       const position = isRecord(node.position) ? node.position : {}
       const x = typeof position.x === 'number' ? position.x : 0
       const y = typeof position.y === 'number' ? position.y : 0
@@ -67,9 +114,11 @@ function toCircuitParts(nodes: unknown): CircuitPart[] {
         id,
         type,
         position: { x, y },
+        rotate: 0,
+        attrs: {},
       } satisfies CircuitPart
     })
-    .filter((part): part is CircuitPart => Boolean(part))
+    .filter(isNotNull)
 }
 
 function toCircuitConnections(edges: unknown): CircuitConnection[] {
@@ -99,18 +148,27 @@ function toCircuitConnections(edges: unknown): CircuitConnection[] {
         color: colorCandidate || 'currentColor',
       } satisfies CircuitConnection
     })
-    .filter((conn): conn is CircuitConnection => Boolean(conn))
+    .filter(isNotNull)
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   code: defaultCode,
+  diagramJson: '',
   circuitParts: [],
   circuitConnections: [],
   connections: [],
   isRunning: false,
 
+  nextWireColorIndex: 0,
+
+  selectedPartIds: [],
+
   updateCode: (newCode) => {
     set({ code: newCode })
+  },
+
+  setDiagramJson: (json) => {
+    set({ diagramJson: json })
   },
 
   updateCircuit: (nodes, edges) => {
@@ -124,10 +182,59 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isRunning: !get().isRunning })
   },
 
+  addPart: (part) => {
+    const id = nanoid()
+    const next: CircuitPart = {
+      id,
+      type: part.type,
+      position: { x: part.position.x, y: part.position.y },
+      rotate: part.rotate ?? 0,
+      attrs: part.attrs ?? {},
+    }
+    set({ circuitParts: [...get().circuitParts, next] })
+    return id
+  },
+
+  updatePartsPositions: (updates) => {
+    if (!updates.length) return
+    const byId = new Map(updates.map((u) => [u.id, u]))
+    set({
+      circuitParts: get().circuitParts.map((p) => {
+        const u = byId.get(p.id)
+        if (!u) return p
+        return { ...p, position: { x: u.x, y: u.y } }
+      }),
+    })
+  },
+
+  setSelectedPartIds: (ids) => {
+    set({ selectedPartIds: [...new Set(ids)] })
+  },
+
+  toggleSelectedPartId: (id) => {
+    const curr = get().selectedPartIds
+    if (curr.includes(id)) {
+      set({ selectedPartIds: curr.filter((x) => x !== id) })
+    } else {
+      set({ selectedPartIds: [...curr, id] })
+    }
+  },
+
+  clearSelectedParts: () => {
+    set({ selectedPartIds: [] })
+  },
+
   addConnection: (conn) => {
     const id = nanoid()
     set({ connections: [...get().connections, { ...conn, id }] })
     return id
+  },
+
+  allocateNextWireColor: () => {
+    const idx = get().nextWireColorIndex
+    const color = DEFAULT_WIRE_COLOR_CYCLE[idx % DEFAULT_WIRE_COLOR_CYCLE.length]
+    set({ nextWireColorIndex: idx + 1 })
+    return color
   },
 
   removeConnection: (id) => {

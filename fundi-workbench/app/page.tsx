@@ -8,6 +8,8 @@ import {
   BackgroundVariant,
   Controls,
   ReactFlow,
+  ReactFlowProvider,
+  useStore,
   useEdgesState,
   useNodesState,
   type Connection,
@@ -18,7 +20,12 @@ import {
 
 import ArduinoNode from '@/components/nodes/ArduinoNode'
 import WokwiPartNode from '@/components/nodes/WokwiPartNode'
+import ComponentLibrary, { FUNDI_PART_MIME } from '@/components/ComponentLibrary'
+import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
+import { useDiagramSync } from '@/hooks/useDiagramSync'
+import { useAppStore } from '@/store/useAppStore'
+import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
 
 type MobileTabKey = 'chat' | 'code' | 'sim'
@@ -28,8 +35,22 @@ const nodeTypes = {
   wokwi: WokwiPartNode,
 } satisfies NodeTypes
 
-function SimulationCanvas() {
-  const canvasRef = useRef<HTMLDivElement | null>(null)
+function translatePoints(points: WirePoint[] | undefined, delta: WirePoint): WirePoint[] | undefined {
+  if (!points?.length) return points
+  return points.map((p) => ({ x: p.x + delta.x, y: p.y + delta.y }))
+}
+
+function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLDivElement | null> }) {
+
+  const addPart = useAppStore((s) => s.addPart)
+  const updatePartsPositions = useAppStore((s) => s.updatePartsPositions)
+  const selectedPartIds = useAppStore((s) => s.selectedPartIds)
+  const setSelectedPartIds = useAppStore((s) => s.setSelectedPartIds)
+  const toggleSelectedPartId = useAppStore((s) => s.toggleSelectedPartId)
+  const connections = useAppStore((s) => s.connections)
+  const updateWire = useAppStore((s) => s.updateWire)
+
+  useDiagramSync()
 
   const getCanvasRect = useCallback(() => {
     return canvasRef.current?.getBoundingClientRect() ?? null
@@ -37,16 +58,27 @@ function SimulationCanvas() {
 
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([
-    {
-      id: 'arduino-1',
-      type: 'arduino',
-      position: { x: 0, y: 0 },
-      data: {
-        getCanvasRect,
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+
+  // Seed a default part once.
+  useEffect(() => {
+    if (nodes.length) return
+    const id = addPart({ type: 'arduino-uno', position: { x: 0, y: 0 } })
+    setNodes([
+      {
+        id,
+        type: 'wokwi',
+        position: { x: 0, y: 0 },
+        data: {
+          getCanvasRect,
+          partType: 'arduino-uno',
+        },
+        selected: true,
       },
-    },
-  ])
+    ])
+    setSelectedPartIds([id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Update node data when handlers change (e.g. when wiring mode changes)
   useEffect(() => {
@@ -65,6 +97,12 @@ function SimulationCanvas() {
       })
     )
   }, [getCanvasRect, setNodes])
+
+  // Keep ReactFlow selection in sync with Zustand selection.
+  useEffect(() => {
+    const selectedSet = new Set(selectedPartIds)
+    setNodes((nds) => nds.map((n) => ({ ...n, selected: selectedSet.has(n.id) })))
+  }, [selectedPartIds, setNodes])
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
@@ -92,14 +130,163 @@ function SimulationCanvas() {
     setSelectedEdge(null)
   }, [])
 
+  const onNodeClick = useCallback(
+    (e: React.MouseEvent, node: Node) => {
+      // Avoid selecting while wiring starts from a pin.
+      if ((e.target as HTMLElement | null)?.closest?.('[data-fundi-pin="true"]')) return
+
+      if (e.shiftKey) {
+        toggleSelectedPartId(node.id)
+      } else {
+        setSelectedPartIds([node.id])
+      }
+    },
+    [setSelectedPartIds, toggleSelectedPartId]
+  )
+
+  // Group-drag engine (60fps): transient node positions + transient wire waypoint overrides.
+  const dragStartNodesRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const dragStartWirePointsRef = useRef<Map<string, WirePoint[] | undefined>>(new Map())
+  const dragWireModeRef = useRef<Map<string, 'both' | 'one'>>(new Map())
+  const [wirePointOverrides, setWirePointOverrides] = useState<Map<string, WirePoint[] | undefined> | null>(null)
+
+  const onNodeDragStart = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      // If dragged node isn't selected, make it the only selection.
+      if (!selectedPartIds.includes(node.id)) {
+        setSelectedPartIds([node.id])
+      }
+
+      const selectedSet = new Set(selectedPartIds.includes(node.id) ? selectedPartIds : [node.id])
+
+      dragStartNodesRef.current = new Map(
+        nodes
+          .filter((n) => selectedSet.has(n.id))
+          .map((n) => [n.id, { x: n.position.x, y: n.position.y }])
+      )
+
+      dragStartWirePointsRef.current = new Map()
+      dragWireModeRef.current = new Map()
+      for (const c of connections) {
+        if (!c.points?.length) continue
+        const fromMoving = selectedSet.has(c.from.partId)
+        const toMoving = selectedSet.has(c.to.partId)
+        if (!fromMoving && !toMoving) continue
+        dragStartWirePointsRef.current.set(c.id, c.points)
+        dragWireModeRef.current.set(c.id, fromMoving && toMoving ? 'both' : 'one')
+      }
+    },
+    [connections, nodes, selectedPartIds, setSelectedPartIds]
+  )
+
+  const onNodeDrag = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      const start = dragStartNodesRef.current.get(node.id)
+      if (!start) return
+      const delta = { x: node.position.x - start.x, y: node.position.y - start.y }
+
+      // Move all selected nodes by delta.
+      setNodes((nds) =>
+        nds.map((n) => {
+          const s = dragStartNodesRef.current.get(n.id)
+          if (!s) return n
+          return { ...n, position: { x: s.x + delta.x, y: s.y + delta.y } }
+        })
+      )
+
+      // Maintain wire waypoint structure when both endpoints move, otherwise clear waypoints.
+      const overrides = new Map<string, WirePoint[] | undefined>()
+      for (const [wireId, basePoints] of dragStartWirePointsRef.current.entries()) {
+        const mode = dragWireModeRef.current.get(wireId)
+        if (!mode) continue
+        if (mode === 'both') {
+          overrides.set(wireId, translatePoints(basePoints, delta))
+        } else {
+          overrides.set(wireId, undefined)
+        }
+      }
+      setWirePointOverrides(overrides.size ? overrides : null)
+    },
+    [setNodes]
+  )
+
+  const onNodeDragStop = useCallback(() => {
+    // Commit node positions to store.
+    const updates: Array<{ id: string; x: number; y: number }> = []
+    for (const [id] of dragStartNodesRef.current.entries()) {
+      const n = nodes.find((nn) => nn.id === id)
+      if (!n) continue
+      updates.push({ id, x: n.position.x, y: n.position.y })
+    }
+    updatePartsPositions(updates)
+
+    // Commit waypoint updates/clears.
+    if (wirePointOverrides) {
+      for (const [wireId, pts] of wirePointOverrides.entries()) {
+        updateWire(wireId, pts)
+      }
+    }
+
+    dragStartNodesRef.current = new Map()
+    dragStartWirePointsRef.current = new Map()
+    dragWireModeRef.current = new Map()
+    setWirePointOverrides(null)
+  },
+    [nodes, updatePartsPositions, updateWire, wirePointOverrides]
+  )
+
+  // Drag-to-add: drop handler converts screen -> flow coords using current transform.
+  const transform = useStore((s) => s.transform as [number, number, number])
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      const container = canvasRef.current
+      if (!container) return
+
+      const partType = e.dataTransfer.getData(FUNDI_PART_MIME)
+      if (!partType) return
+
+      e.preventDefault()
+
+      const rect = container.getBoundingClientRect()
+      const p = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      const [tx, ty, zoom] = transform
+      const flow = { x: (p.x - tx) / zoom, y: (p.y - ty) / zoom }
+
+      const id = addPart({ type: partType, position: { x: flow.x, y: flow.y } })
+      setNodes((nds) => [
+        ...nds,
+        {
+          id,
+          type: 'wokwi',
+          position: flow,
+          data: { getCanvasRect, partType },
+          selected: true,
+        },
+      ])
+
+      setSelectedPartIds([id])
+    },
+    [addPart, getCanvasRect, setNodes, setSelectedPartIds, transform]
+  )
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(FUNDI_PART_MIME)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
   return (
     <div
       ref={canvasRef}
-      className={cn(
-        'relative h-full w-full',
-        'cursor-default'
-      )}
+      className={cn('relative h-full w-full', 'cursor-default')}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
     >
+      <ComponentLibrary />
+
+      <SelectionOverlay containerRef={canvasRef} />
+
       <ReactFlow
         nodes={nodes}
         edges={edges.map((edge) => ({
@@ -116,6 +303,10 @@ function SimulationCanvas() {
         onConnect={onConnect}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onNodeClick={onNodeClick}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={onNodeDragStop}
         fitView
         className="h-full w-full"
         style={{ cursor: 'inherit' }}
@@ -129,9 +320,21 @@ function SimulationCanvas() {
         <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
         <Controls />
 
-        <WiringLayer containerRef={canvasRef} />
+        <WiringLayer
+          containerRef={canvasRef}
+          wirePointOverrides={wirePointOverrides ?? undefined}
+        />
       </ReactFlow>
     </div>
+  )
+}
+
+function SimulationCanvas() {
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  return (
+    <ReactFlowProvider>
+      <SimulationCanvasInner canvasRef={canvasRef} />
+    </ReactFlowProvider>
   )
 }
 

@@ -38,6 +38,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const elementRef = useRef<HTMLElement | null>(null);
 
     const partConfig = WOKWI_PARTS[partType];
+    const PartElement = partConfig?.element as any;
 
     const handlePinClick = useCallback(
         (e: React.MouseEvent, pin: PinData) => {
@@ -176,11 +177,8 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 lineHeight: 0,
             }}
         >
-            {/* Dynamically render the Wokwi element */}
-            {partType === 'arduino-uno' && <wokwi-arduino-uno style={{ display: 'block' }} />}
-            {partType === 'esp32-devkit-v1' && <wokwi-esp32-devkit-v1 style={{ display: 'block' }} />}
-            {partType === 'arduino-mega' && <wokwi-arduino-mega style={{ display: 'block' }} />}
-            {partType === 'arduino-nano' && <wokwi-arduino-nano style={{ display: 'block' }} />}
+            {/* Render the Wokwi custom element */}
+            {PartElement ? <PartElement style={{ display: 'block' }} /> : null}
 
             {/* Pin hitboxes (Wokwi-style): big invisible clickable targets */}
             <div
