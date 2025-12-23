@@ -1,0 +1,15 @@
+[33m61caa75[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m feat: implement compilation endpoint and integrate with frontend for Arduino/ESP32 sketches
+[33m676af3a[m feat: add backend structure with FastAPI, circuit generation, and configuration settings. phase3 complete
+[33m168e7e4[m feat: add selection overlay for multi-node selection in wiring layer
+[33mbf2aba5[m pins working final
+[33mdb5057b[m feat: Refactor wiring components and add WiringLayer for improved connection handling
+[33md07f812[m still working on wiring
+[33mff80036[m feat:pins placement working correctl
+[33m1098cef[m feat: Add ArduinoNode component with dynamic Wokwi Arduino Uno pin handles and TypeScript declarations for the custom element.
+[33m80783d6[m feat: add ArduinoNode component to display an interactive Wokwi Arduino Uno with pin handles and corresponding type definitions.
+[33meacf39e[m feat: Add Arduino Uno node with dynamic pin handles and Wokwi element type definitions.
+[33mcd6e512[m still working on pins
+[33ma5870e0[m working on pins:arduino
+[33m5f0704f[m phase 2:complete
+[33m5afff3d[m phase 1:complete
+[33m609e1c5[m First commit
