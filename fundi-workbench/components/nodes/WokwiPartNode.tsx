@@ -171,10 +171,12 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     return (
         <div
             ref={containerRef}
-            className="relative"
+            className="relative glass-panel rounded-md"
             style={{
                 display: 'inline-block',
                 lineHeight: 0,
+                background: '#1a2030',
+                borderColor: 'rgba(212, 175, 55, 0.4)',
             }}
         >
             {/* Render the Wokwi custom element */}
@@ -253,15 +255,19 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
 
                     return (
                         <g key={pin.id}>
-                            {/* Visual pin indicator */}
+                            {/* Visual pin indicator - Copper Pad style */}
                             <circle
                                 cx={pin.x}
                                 cy={pin.y}
-                                r={isHovered ? 3 : 2}
-                                fill={isHovered ? '#22c55e' : 'rgba(34, 197, 94, 0.5)'}
-                                stroke={isHovered ? '#16a34a' : 'rgba(22, 163, 74, 0.7)'}
-                                strokeWidth={0.5}
-                                style={{ transition: 'all 0.1s ease', pointerEvents: 'none' }}
+                                r={isHovered ? 3.5 : 2.5}
+                                fill={isHovered ? '#D4AF37' : '#B87333'}
+                                stroke={isHovered ? '#00F0FF' : '#8B4513'}
+                                strokeWidth={isHovered ? 1 : 0.75}
+                                style={{ 
+                                    transition: 'all 0.1s ease', 
+                                    pointerEvents: 'none',
+                                    filter: isHovered ? 'drop-shadow(0 0 3px #00F0FF)' : 'none'
+                                }}
                             />
                             {isHovered && (
                                 <g>
@@ -271,17 +277,18 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                                         width={30}
                                         height={12}
                                         rx={2}
-                                        fill="rgba(15, 23, 42, 0.95)"
-                                        stroke="rgba(34, 197, 94, 0.5)"
+                                        fill="rgba(21, 27, 43, 0.95)"
+                                        stroke="rgba(212, 175, 55, 0.5)"
                                         strokeWidth={0.5}
                                     />
                                     <text
                                         x={pin.x}
                                         y={pin.row === 'top' || pin.row === 'left' ? pin.y + 15 : pin.y - 9}
                                         textAnchor="middle"
-                                        fill="#4ade80"
+                                        fill="#D4AF37"
                                         fontSize={6}
                                         fontFamily="monospace"
+                                        fontWeight="bold"
                                     >
                                         {pin.id}
                                     </text>

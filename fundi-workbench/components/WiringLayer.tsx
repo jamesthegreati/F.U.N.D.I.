@@ -25,7 +25,7 @@ type Mode = 'idle' | 'creating' | 'dragging-segment';
 
 const HIT_STROKE = 15;
 
-// Wokwi-like keyboard palette (0-9).
+// Wokwi-like keyboard palette (0-9) + Copper default.
 const WOKWI_COLOR_BY_DIGIT: Record<string, string> = {
   '0': '#000000', // black (GND)
   '1': '#8b4513', // brown
@@ -454,7 +454,8 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           {wireGeometry.map((w) => {
             const isSelected = selectedId === w.id;
             const isHovered = hoveredId === w.id;
-            const strokeWidth = isSelected ? 3.5 : 2.5;
+            const strokeWidth = isSelected ? 3.5 : 2;
+            const displayColor = isSelected ? '#00F0FF' : w.color; // Electric cyan when selected
 
             return (
               <g key={w.id}>
@@ -502,19 +503,36 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                   }}
                 />
 
+                {/* Glow effect for selected wire */}
+                {isSelected && (
+                  <path
+                    d={w.d}
+                    fill="none"
+                    stroke="#00F0FF"
+                    strokeWidth={strokeWidth + 3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                      pointerEvents: 'none',
+                      opacity: 0.3,
+                      filter: 'blur(4px)',
+                    }}
+                  />
+                )}
+
                 {/* Hover feedback (marching ants) */}
                 {(isHovered || isSelected) && (
                   <path
                     d={w.d}
                     fill="none"
-                    stroke="#ffffff"
+                    stroke={isSelected ? '#00F0FF' : '#D4AF37'}
                     strokeWidth={strokeWidth + 1.25}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeDasharray="6 6"
                     style={{
                       pointerEvents: 'none',
-                      opacity: 0.25,
+                      opacity: 0.4,
                       animation: 'fundi-wire-dash 1s linear infinite',
                     }}
                   />
@@ -524,13 +542,13 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                 <path
                   d={w.d}
                   fill="none"
-                  stroke={w.color}
+                  stroke={displayColor}
                   strokeWidth={strokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   style={{
                     pointerEvents: 'none',
-                    transition: 'stroke-width 0.1s ease',
+                    transition: 'all 0.2s ease',
                   }}
                 />
               </g>
@@ -558,7 +576,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
       {selectedWire && selectedMidpoint && (
         <div
           data-wire-toolbar="true"
-          className="absolute z-30 flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/90 p-1 shadow-xl backdrop-blur"
+          className="absolute z-30 flex items-center gap-1 glass-panel rounded-lg p-2 shadow-2xl"
           style={{
             left: selectedMidpoint.x,
             top: selectedMidpoint.y,
@@ -577,10 +595,10 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                 type="button"
                 onClick={() => updateWireColor(selectedWire.id, c.color)}
                 className={
-                  'h-4 w-4 rounded border ' +
+                  'h-5 w-5 rounded border-2 transition-all ' +
                   (selectedWire.color.toLowerCase() === c.color.toLowerCase()
-                    ? 'border-white'
-                    : 'border-transparent hover:border-slate-500')
+                    ? 'border-electric scale-110 shadow-lg shadow-electric/50'
+                    : 'border-transparent hover:border-brass hover:scale-105')
                 }
                 style={{ backgroundColor: c.color }}
                 title={`Color ${c.key}`}
@@ -588,7 +606,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
             ))}
           </div>
 
-          <div className="mx-1 h-4 w-px bg-slate-800" />
+          <div className="mx-1 h-5 w-px bg-brass/30" />
 
           <button
             type="button"
@@ -596,7 +614,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
               removeConnection(selectedWire.id);
               setSelectedId(null);
             }}
-            className="rounded px-1.5 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-500/15"
+            className="rounded px-2 py-1 font-mono text-[11px] font-medium text-error hover:bg-error/15 transition-colors"
             title="Delete wire (also: Delete key or double-click)"
           >
             Delete
