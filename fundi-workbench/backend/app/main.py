@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.endpoints.compile import router as compile_router
 from app.api.endpoints.generate import router as generate_router
 from app.core.config import settings
 
@@ -17,6 +18,7 @@ app.add_middleware(
 )
 
 app.include_router(generate_router)
+app.include_router(compile_router)
 
 
 @app.get("/health")

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Code2, LayoutGrid, MessageSquare } from 'lucide-react'
+import { Code2, LayoutGrid, Loader2, MessageSquare, Play } from 'lucide-react'
 import {
   addEdge,
   Background,
@@ -24,6 +24,7 @@ import ComponentLibrary, { FUNDI_PART_MIME } from '@/components/ComponentLibrary
 import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
+import { useSimulation } from '@/hooks/useSimulation'
 import { useAppStore } from '@/store/useAppStore'
 import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
@@ -341,6 +342,30 @@ function SimulationCanvas() {
 export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTabKey>('chat')
 
+  const code = useAppStore((s) => s.code)
+  const updateCode = useAppStore((s) => s.updateCode)
+  const compileAndRun = useAppStore((s) => s.compileAndRun)
+  const isCompiling = useAppStore((s) => s.isCompiling)
+  const compilationError = useAppStore((s) => s.compilationError)
+  const hex = useAppStore((s) => s.hex)
+  const compiledBoard = useAppStore((s) => s.compiledBoard)
+
+  const {
+    run: simRun,
+    pause: simPause,
+    stop: simStop,
+    isRunning: simIsRunning,
+    pinStates,
+  } = useSimulation(hex, compiledBoard ?? '')
+
+  useEffect(() => {
+    if (!hex || !compiledBoard) return
+    if (isCompiling) return
+    if (compilationError) return
+    if (simIsRunning) return
+    simRun()
+  }, [compiledBoard, compilationError, hex, isCompiling, simIsRunning, simRun])
+
   const tabs = useMemo(
     () =>
       [
@@ -389,13 +414,49 @@ export default function Home() {
           )}
           {activeTab === 'code' && (
             <section className="flex h-full w-full flex-col overflow-hidden">
-              <PanelHeader icon={Code2} title="Code Workbench" />
-              <PanelBody>Monaco Editor</PanelBody>
+              <PanelHeader
+                icon={Code2}
+                title="Code Workbench"
+                right={
+                  <RunButton
+                    isCompiling={isCompiling}
+                    onRun={() => void compileAndRun()}
+                  />
+                }
+              />
+              {compilationError && (
+                <ConsoleLine text={compilationError} />
+              )}
+              <div className="min-h-0 flex-1 p-3">
+                <textarea
+                  value={code}
+                  onChange={(e) => updateCode(e.target.value)}
+                  spellCheck={false}
+                  className={cn(
+                    'h-full w-full resize-none rounded-lg border border-slate-800 bg-slate-950 p-3',
+                    'font-mono text-[12px] leading-5 text-slate-100',
+                    'focus:outline-none focus:ring-2 focus:ring-slate-700'
+                  )}
+                />
+              </div>
             </section>
           )}
           {activeTab === 'sim' && (
             <section className="relative flex h-full w-full flex-col overflow-hidden">
-              <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
+              <PanelHeader
+                icon={LayoutGrid}
+                title="Simulation Canvas"
+                right={
+                  <SimControls
+                    hasProgram={Boolean(hex && compiledBoard)}
+                    isRunning={simIsRunning}
+                    onRun={simRun}
+                    onPause={simPause}
+                    onStop={simStop}
+                    pin13={pinStates[13]}
+                  />
+                }
+              />
               <div className="min-h-0 flex-1">
                 <SimulationCanvas />
               </div>
@@ -412,12 +473,48 @@ export default function Home() {
         </section>
 
         <section className="flex h-full w-[35%] flex-col overflow-hidden border-r border-slate-800">
-          <PanelHeader icon={Code2} title="Code Workbench" />
-          <PanelBody>Monaco Editor</PanelBody>
+          <PanelHeader
+            icon={Code2}
+            title="Code Workbench"
+            right={
+              <RunButton
+                isCompiling={isCompiling}
+                onRun={() => void compileAndRun()}
+              />
+            }
+          />
+          {compilationError && (
+            <ConsoleLine text={compilationError} />
+          )}
+          <div className="min-h-0 flex-1 p-3">
+            <textarea
+              value={code}
+              onChange={(e) => updateCode(e.target.value)}
+              spellCheck={false}
+              className={cn(
+                'h-full w-full resize-none rounded-lg border border-slate-800 bg-slate-950 p-3',
+                'font-mono text-[12px] leading-5 text-slate-100',
+                'focus:outline-none focus:ring-2 focus:ring-slate-700'
+              )}
+            />
+          </div>
         </section>
 
         <section className="relative flex h-full w-[40%] flex-col overflow-hidden">
-          <PanelHeader icon={LayoutGrid} title="Simulation Canvas" />
+          <PanelHeader
+            icon={LayoutGrid}
+            title="Simulation Canvas"
+            right={
+              <SimControls
+                hasProgram={Boolean(hex && compiledBoard)}
+                isRunning={simIsRunning}
+                onRun={simRun}
+                onPause={simPause}
+                onStop={simStop}
+                pin13={pinStates[13]}
+              />
+            }
+          />
           <div className="min-h-0 flex-1">
             <SimulationCanvas />
           </div>
@@ -430,15 +527,114 @@ export default function Home() {
 function PanelHeader({
   icon: Icon,
   title,
+  right,
 }: {
   icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   title: string
+  right?: React.ReactNode
 }) {
   return (
     <header className="flex h-11 items-center gap-2 border-b border-slate-800 px-3">
       <Icon className="h-4 w-4 text-slate-300" aria-hidden={true} />
       <span className="text-sm font-medium text-slate-200">{title}</span>
+      {right ? <div className="ml-auto flex items-center gap-2">{right}</div> : null}
     </header>
+  )
+}
+
+function RunButton({
+  isCompiling,
+  onRun,
+}: {
+  isCompiling: boolean
+  onRun: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onRun}
+      disabled={isCompiling}
+      className={cn(
+        'inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium',
+        isCompiling
+          ? 'bg-slate-900 text-slate-300'
+          : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
+      )}
+      title="Compile and run"
+    >
+      {isCompiling ? (
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden={true} />
+      ) : (
+        <Play className="h-4 w-4" aria-hidden={true} />
+      )}
+      <span>Run</span>
+    </button>
+  )
+}
+
+function ConsoleLine({ text }: { text: string }) {
+  return (
+    <div className="border-b border-slate-800 bg-slate-950 px-3 py-2">
+      <pre className="whitespace-pre-wrap break-words text-xs font-medium text-red-300">
+        {text}
+      </pre>
+    </div>
+  )
+}
+
+function SimControls({
+  hasProgram,
+  isRunning,
+  onRun,
+  onPause,
+  onStop,
+  pin13,
+}: {
+  hasProgram: boolean
+  isRunning: boolean
+  onRun: () => void
+  onPause: () => void
+  onStop: () => void
+  pin13: boolean | undefined
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="hidden text-[11px] font-medium text-slate-400 sm:block">
+        Pin 13: <span className="text-slate-200">{pin13 ? 'HIGH' : 'LOW'}</span>
+      </div>
+      <button
+        type="button"
+        onClick={isRunning ? onPause : onRun}
+        disabled={!hasProgram}
+        className={cn(
+          'inline-flex items-center gap-2 rounded-md border border-slate-700 px-2.5 py-1.5 text-sm font-medium',
+          !hasProgram
+            ? 'bg-slate-950 text-slate-500'
+            : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
+        )}
+        title={!hasProgram ? 'Compile first' : isRunning ? 'Pause' : 'Run'}
+      >
+        {isRunning ? (
+          <span className="text-xs">Pause</span>
+        ) : (
+          <span className="text-xs">Run</span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={onStop}
+        disabled={!hasProgram}
+        className={cn(
+          'inline-flex items-center gap-2 rounded-md border border-slate-700 px-2.5 py-1.5 text-sm font-medium',
+          !hasProgram
+            ? 'bg-slate-950 text-slate-500'
+            : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
+        )}
+        title={!hasProgram ? 'Compile first' : 'Stop'}
+      >
+        <span className="text-xs">Stop</span>
+      </button>
+    </div>
   )
 }
 

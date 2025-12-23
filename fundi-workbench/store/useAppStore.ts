@@ -35,6 +35,11 @@ export type AppState = {
   connections: Connection[]
   isRunning: boolean
 
+  isCompiling: boolean
+  compilationError: string | null
+  hex: string | null
+  compiledBoard: string | null
+
   nextWireColorIndex: number
 
   selectedPartIds: string[]
@@ -43,6 +48,8 @@ export type AppState = {
   setDiagramJson: (json: string) => void
   updateCircuit: (nodes: unknown, edges: unknown) => void
   toggleSimulation: () => void
+
+  compileAndRun: () => Promise<void>
 
   addPart: (part: {
     type: string
@@ -151,6 +158,27 @@ function toCircuitConnections(edges: unknown): CircuitConnection[] {
     .filter(isNotNull)
 }
 
+function normalizeBoardType(partType: string): string {
+  if (partType.startsWith('wokwi-')) return partType
+  return `wokwi-${partType}`
+}
+
+function findMicrocontroller(parts: CircuitPart[]): CircuitPart | null {
+  const supported = new Set([
+    'wokwi-arduino-uno',
+    'wokwi-arduino-nano',
+    'wokwi-arduino-mega',
+    'wokwi-esp32-devkit-v1',
+  ])
+
+  for (const p of parts) {
+    const normalized = normalizeBoardType(p.type)
+    if (supported.has(normalized)) return p
+  }
+
+  return null
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   code: defaultCode,
   diagramJson: '',
@@ -158,6 +186,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   circuitConnections: [],
   connections: [],
   isRunning: false,
+
+  isCompiling: false,
+  compilationError: null,
+  hex: null,
+  compiledBoard: null,
 
   nextWireColorIndex: 0,
 
@@ -180,6 +213,52 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleSimulation: () => {
     set({ isRunning: !get().isRunning })
+  },
+
+  compileAndRun: async () => {
+    const mcu = findMicrocontroller(get().circuitParts)
+    if (!mcu) {
+      set({ compilationError: 'No supported microcontroller found in the circuit.', hex: null, compiledBoard: null })
+      return
+    }
+
+    const board = normalizeBoardType(mcu.type)
+
+    set({ isCompiling: true, compilationError: null })
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+      const res = await fetch(`${baseUrl}/api/v1/compile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: get().code, board }),
+      })
+
+      const data = (await res.json().catch(() => null)) as
+        | { success?: boolean; hex?: string | null; error?: string | null }
+        | null
+
+      if (!res.ok) {
+        set({
+          compilationError: (data && (data.error || (!data.success ? 'Compilation failed.' : null))) || res.statusText,
+          hex: null,
+          compiledBoard: null,
+        })
+        return
+      }
+
+      if (!data?.success || !data.hex) {
+        set({ compilationError: data?.error || 'Compilation failed.', hex: null, compiledBoard: null })
+        return
+      }
+
+      set({ hex: data.hex, compiledBoard: board, compilationError: null })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      set({ compilationError: msg || 'Compilation request failed.', hex: null, compiledBoard: null })
+    } finally {
+      set({ isCompiling: false })
+    }
   },
 
   addPart: (part) => {
