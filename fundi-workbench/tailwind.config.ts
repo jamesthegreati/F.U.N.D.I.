@@ -19,6 +19,7 @@ const config: Config = {
         'brass-dim': '#8B735B',
         electric: '#00F0FF',
         parchment: '#E2DBC8',
+        error: '#CF352E',
       },
       fontFamily: {
         heading: ['var(--font-heading)'],
