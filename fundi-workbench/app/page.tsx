@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Code2, LayoutGrid, Loader2, MessageSquare, Play } from 'lucide-react'
+import { ChevronDown, Code2, LayoutGrid, Loader2, MessageSquare, Play } from 'lucide-react'
 import {
   addEdge,
   Background,
@@ -21,6 +21,7 @@ import {
 import ArduinoNode from '@/components/nodes/ArduinoNode'
 import WokwiPartNode from '@/components/nodes/WokwiPartNode'
 import ComponentLibrary, { FUNDI_PART_MIME } from '@/components/ComponentLibrary'
+import ControlDeck from '@/components/ControlDeck'
 import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
@@ -318,7 +319,7 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
         }}
         connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2.5 }}
       >
-        <Background color="#99b3ec" variant={BackgroundVariant.Dots} />
+        <Background color="#8B735B" variant={BackgroundVariant.Dots} />
         <Controls />
 
         <WiringLayer
@@ -355,7 +356,6 @@ export default function Home() {
     pause: simPause,
     stop: simStop,
     isRunning: simIsRunning,
-    pinStates,
   } = useSimulation(hex, compiledBoard ?? '')
 
   useEffect(() => {
@@ -376,11 +376,25 @@ export default function Home() {
     []
   )
 
+  const [codeEditorCollapsed, setCodeEditorCollapsed] = useState(false);
+
   return (
-    <div className="h-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div className="h-screen overflow-hidden bg-void text-parchment">
+      {/* Header - Minimalist with Gold Serif Logo */}
+      <header className="flex h-[60px] items-center justify-between border-b border-brass/20 bg-panel/50 px-6 backdrop-blur-md">
+        <h1 className="font-heading text-2xl font-bold tracking-wider text-brass">
+          FUNDI
+        </h1>
+        <div className="flex items-center gap-2 text-xs font-mono text-brass-dim">
+          <span>Industrial Alchemist</span>
+          <span className="text-brass/40">|</span>
+          <span>IoT Workbench</span>
+        </div>
+      </header>
+
       {/* Mobile (<768px): stacked panels with tabs */}
-      <div className="flex h-full flex-col md:hidden">
-        <div className="flex border-b border-slate-800">
+      <div className="flex h-[calc(100vh-60px)] flex-col md:hidden">
+        <div className="flex border-b border-brass/20 bg-panel">
           {tabs.map((tab) => {
             const Icon = tab.icon
             const isActive = tab.key === activeTab
@@ -392,14 +406,14 @@ export default function Home() {
                 onClick={() => setActiveTab(tab.key)}
                 className={cn(
                   'flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium',
-                  'border-r border-slate-800 last:border-r-0',
+                  'border-r border-brass/20 last:border-r-0 transition-all',
                   isActive
-                    ? 'bg-slate-900 text-slate-100'
-                    : 'bg-slate-950 text-slate-300'
+                    ? 'bg-panel text-brass border-b-2 border-b-brass'
+                    : 'bg-void/50 text-brass-dim hover:text-brass'
                 )}
               >
                 <Icon className="h-4 w-4" aria-hidden={true} />
-                <span>{tab.label}</span>
+                <span className="font-ui">{tab.label}</span>
               </button>
             )
           })}
@@ -408,22 +422,11 @@ export default function Home() {
         <div className="flex h-full min-h-0 flex-1">
           {activeTab === 'chat' && (
             <section className="flex h-full w-full flex-col overflow-hidden">
-              <PanelHeader icon={MessageSquare} title="Chat Interface" />
-              <PanelBody>Chat Area</PanelBody>
+              <PanelBody>Chat Interface Coming Soon</PanelBody>
             </section>
           )}
           {activeTab === 'code' && (
-            <section className="flex h-full w-full flex-col overflow-hidden">
-              <PanelHeader
-                icon={Code2}
-                title="Code Workbench"
-                right={
-                  <RunButton
-                    isCompiling={isCompiling}
-                    onRun={() => void compileAndRun()}
-                  />
-                }
-              />
+            <section className="flex h-full w-full flex-col overflow-hidden bg-void">
               {compilationError && (
                 <ConsoleLine text={compilationError} />
               )}
@@ -433,30 +436,18 @@ export default function Home() {
                   onChange={(e) => updateCode(e.target.value)}
                   spellCheck={false}
                   className={cn(
-                    'h-full w-full resize-none rounded-lg border border-slate-800 bg-slate-950 p-3',
-                    'font-mono text-[12px] leading-5 text-slate-100',
-                    'focus:outline-none focus:ring-2 focus:ring-slate-700'
+                    'h-full w-full resize-none glass-panel rounded-xl p-4',
+                    'font-mono text-sm leading-6 text-parchment',
+                    'focus:outline-none focus:ring-2 focus:ring-electric/50',
+                    'placeholder:text-brass-dim/40'
                   )}
+                  placeholder="// Write your Arduino code here..."
                 />
               </div>
             </section>
           )}
           {activeTab === 'sim' && (
-            <section className="relative flex h-full w-full flex-col overflow-hidden">
-              <PanelHeader
-                icon={LayoutGrid}
-                title="Simulation Canvas"
-                right={
-                  <SimControls
-                    hasProgram={Boolean(hex && compiledBoard)}
-                    isRunning={simIsRunning}
-                    onRun={simRun}
-                    onPause={simPause}
-                    onStop={simStop}
-                    pin13={pinStates[13]}
-                  />
-                }
-              />
+            <section className="relative flex h-full w-full flex-col overflow-hidden bg-void">
               <div className="min-h-0 flex-1">
                 <SimulationCanvas />
               </div>
@@ -465,60 +456,82 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Desktop (>=768px): fixed 3-column layout */}
-      <div className="hidden h-full md:flex">
-        <section className="flex h-full w-[25%] flex-col overflow-hidden border-r border-slate-800">
-          <PanelHeader icon={MessageSquare} title="Chat Interface" />
-          <PanelBody>Chat Area</PanelBody>
-        </section>
+      {/* Desktop (>=768px): The Holy Trinity Bento Grid Layout */}
+      <div className="hidden h-[calc(100vh-60px)] md:grid md:grid-cols-[260px_1fr] md:gap-0">
+        {/* Left Sidebar - Component Library */}
+        <aside className="flex flex-col overflow-hidden border-r border-brass/20 bg-panel/30">
+          {/* Component Library is absolutely positioned in the canvas, no header needed here */}
+        </aside>
 
-        <section className="flex h-full w-[35%] flex-col overflow-hidden border-r border-slate-800">
-          <PanelHeader
-            icon={Code2}
-            title="Code Workbench"
-            right={
-              <RunButton
-                isCompiling={isCompiling}
-                onRun={() => void compileAndRun()}
-              />
-            }
-          />
-          {compilationError && (
-            <ConsoleLine text={compilationError} />
-          )}
-          <div className="min-h-0 flex-1 p-3">
-            <textarea
-              value={code}
-              onChange={(e) => updateCode(e.target.value)}
-              spellCheck={false}
-              className={cn(
-                'h-full w-full resize-none rounded-lg border border-slate-800 bg-slate-950 p-3',
-                'font-mono text-[12px] leading-5 text-slate-100',
-                'focus:outline-none focus:ring-2 focus:ring-slate-700'
-              )}
+        {/* Center - Workbench + Code Editor */}
+        <div className="flex flex-col overflow-hidden">
+          {/* Top - The Workbench (React Flow) */}
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <SimulationCanvas />
+            
+            {/* Floating ControlDeck */}
+            <ControlDeck
+              isCompiling={isCompiling}
+              compilationError={compilationError}
+              onRun={() => void compileAndRun()}
+              hasProgram={Boolean(hex && compiledBoard)}
+              isRunning={simIsRunning}
+              onPause={simPause}
+              onStop={simStop}
             />
           </div>
-        </section>
 
-        <section className="relative flex h-full w-[40%] flex-col overflow-hidden">
-          <PanelHeader
-            icon={LayoutGrid}
-            title="Simulation Canvas"
-            right={
-              <SimControls
-                hasProgram={Boolean(hex && compiledBoard)}
-                isRunning={simIsRunning}
-                onRun={simRun}
-                onPause={simPause}
-                onStop={simStop}
-                pin13={pinStates[13]}
+          {/* Bottom - Code Editor "The Logbook" (Collapsible) */}
+          <div
+            className={cn(
+              'flex flex-col border-t border-brass/20 bg-panel/30 transition-all duration-300',
+              codeEditorCollapsed ? 'h-[50px]' : 'h-[300px]'
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => setCodeEditorCollapsed((v) => !v)}
+              className="flex h-[50px] items-center justify-between px-4 hover:bg-brass/5 transition-colors"
+              aria-expanded={!codeEditorCollapsed}
+            >
+              <div className="flex items-center gap-3">
+                <Code2 className="h-4 w-4 text-brass" aria-hidden={true} />
+                <span className="font-heading text-sm font-bold tracking-wide text-brass">
+                  THE LOGBOOK
+                </span>
+              </div>
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 text-brass-dim transition-transform',
+                  codeEditorCollapsed ? '-rotate-180' : 'rotate-0'
+                )}
+                aria-hidden={true}
               />
-            }
-          />
-          <div className="min-h-0 flex-1">
-            <SimulationCanvas />
+            </button>
+
+            {!codeEditorCollapsed && (
+              <>
+                {compilationError && (
+                  <ConsoleLine text={compilationError} />
+                )}
+                <div className="min-h-0 flex-1 p-3">
+                  <textarea
+                    value={code}
+                    onChange={(e) => updateCode(e.target.value)}
+                    spellCheck={false}
+                    className={cn(
+                      'h-full w-full resize-none glass-panel rounded-xl p-4',
+                      'font-mono text-sm leading-6 text-parchment',
+                      'focus:outline-none focus:ring-2 focus:ring-electric/50',
+                      'placeholder:text-brass-dim/40'
+                    )}
+                    placeholder="// Write your Arduino code here..."
+                  />
+                </div>
+              </>
+            )}
           </div>
-        </section>
+        </div>
       </div>
     </div>
   )
@@ -574,66 +587,10 @@ function RunButton({
 
 function ConsoleLine({ text }: { text: string }) {
   return (
-    <div className="border-b border-slate-800 bg-slate-950 px-3 py-2">
-      <pre className="whitespace-pre-wrap break-words text-xs font-medium text-red-300">
+    <div className="border-b border-brass/20 bg-panel/40 px-4 py-2">
+      <pre className="whitespace-pre-wrap break-words font-mono text-xs font-medium text-error">
         {text}
       </pre>
-    </div>
-  )
-}
-
-function SimControls({
-  hasProgram,
-  isRunning,
-  onRun,
-  onPause,
-  onStop,
-  pin13,
-}: {
-  hasProgram: boolean
-  isRunning: boolean
-  onRun: () => void
-  onPause: () => void
-  onStop: () => void
-  pin13: boolean | undefined
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="hidden text-[11px] font-medium text-slate-400 sm:block">
-        Pin 13: <span className="text-slate-200">{pin13 ? 'HIGH' : 'LOW'}</span>
-      </div>
-      <button
-        type="button"
-        onClick={isRunning ? onPause : onRun}
-        disabled={!hasProgram}
-        className={cn(
-          'inline-flex items-center gap-2 rounded-md border border-slate-700 px-2.5 py-1.5 text-sm font-medium',
-          !hasProgram
-            ? 'bg-slate-950 text-slate-500'
-            : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
-        )}
-        title={!hasProgram ? 'Compile first' : isRunning ? 'Pause' : 'Run'}
-      >
-        {isRunning ? (
-          <span className="text-xs">Pause</span>
-        ) : (
-          <span className="text-xs">Run</span>
-        )}
-      </button>
-      <button
-        type="button"
-        onClick={onStop}
-        disabled={!hasProgram}
-        className={cn(
-          'inline-flex items-center gap-2 rounded-md border border-slate-700 px-2.5 py-1.5 text-sm font-medium',
-          !hasProgram
-            ? 'bg-slate-950 text-slate-500'
-            : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
-        )}
-        title={!hasProgram ? 'Compile first' : 'Stop'}
-      >
-        <span className="text-xs">Stop</span>
-      </button>
     </div>
   )
 }
@@ -641,7 +598,7 @@ function SimControls({
 function PanelBody({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4">
-      <div className="text-center text-sm font-medium text-slate-400">
+      <div className="text-center font-ui text-sm font-medium text-brass-dim">
         {children}
       </div>
     </div>

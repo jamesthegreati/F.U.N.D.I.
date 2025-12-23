@@ -71,6 +71,7 @@ export type AppState = {
 }
 
 const DEFAULT_WIRE_COLOR_CYCLE = [
+  '#B87333', // copper (default)
   '#22c55e', // green
   '#3b82f6', // blue
   '#ef4444', // red
