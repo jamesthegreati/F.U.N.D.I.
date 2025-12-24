@@ -24,15 +24,31 @@ RUN arduino-cli config init \
 # Install the AVR core (Uno, Nano, Mega)
 RUN arduino-cli core install arduino:avr
 
+# Install popular Arduino libraries
+RUN arduino-cli lib install "Servo" \
+    && arduino-cli lib install "Adafruit NeoPixel" \
+    && arduino-cli lib install "LiquidCrystal I2C" \
+    && arduino-cli lib install "DHT sensor library"
+
 # Optional: ESP32 core (large) — uncomment if needed
 # RUN arduino-cli core update-index \
 #     && arduino-cli core install esp32:esp32
+
+# --- Create non-root user for security ---
+RUN useradd --create-home --shell /bin/bash fundi \
+    && mkdir -p /home/fundi/.arduino15 \
+    && cp -r /root/.arduino15/. /home/fundi/.arduino15/ \
+    && chown -R fundi:fundi /home/fundi/.arduino15 \
+    && chown -R fundi:fundi /backend
 
 # --- Python environment ---
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+COPY --chown=fundi:fundi app ./app
+
+# Switch to non-root user
+USER fundi
 
 EXPOSE 8000
 
