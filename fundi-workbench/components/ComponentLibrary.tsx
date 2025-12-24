@@ -37,10 +37,10 @@ export function buildPartCatalog(): CatalogCategory[] {
 
   return (
     [
-      { key: 'mcu', title: 'Microcontrollers', items: base.mcu, icon: Cpu },
-      { key: 'displays', title: 'Displays', items: base.displays, icon: Monitor },
+      { key: 'mcu', title: 'MCU', items: base.mcu, icon: Cpu },
+      { key: 'displays', title: 'Display', items: base.displays, icon: Monitor },
       { key: 'leds', title: 'LEDs', items: base.leds, icon: Lightbulb },
-      { key: 'sensors', title: 'Sensors', items: base.sensors, icon: Gauge },
+      { key: 'sensors', title: 'Input', items: base.sensors, icon: Gauge },
     ] satisfies CatalogCategory[]
   );
 }
@@ -52,24 +52,10 @@ function ComponentLibrary() {
   const activeCategory = categories.find((c) => c.key === active) ?? categories[0];
 
   return (
-    <aside
-      className="absolute left-6 top-6 z-30 w-72 glass-panel-heavy rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden border-alchemist"
-      style={{ pointerEvents: 'auto' }}
-    >
-      {/* Header */}
-      <div className="relative border-b border-brass/20 px-6 py-5 bg-void/40">
-        <div className="absolute right-4 top-4 h-2 w-2 rounded-full bg-brass/20 animate-pulse" />
-        <h2 className="font-heading text-xs font-bold tracking-[0.3em] text-brass uppercase">
-          Component Library
-        </h2>
-        <p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-brass-dim/60">
-          Drag to manifest in workbench
-        </p>
-      </div>
-
-      {/* Category Tabs */}
-      <div className="border-b border-brass/10 bg-void/30">
-        <div className="flex">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Category Tabs - Horizontal Pills */}
+      <div className="shrink-0 border-b border-ide-border pb-3 mb-3">
+        <div className="flex gap-1">
           {categories.map((cat) => {
             const isActive = cat.key === active;
             const Icon = cat.icon;
@@ -80,25 +66,15 @@ function ComponentLibrary() {
                 type="button"
                 onClick={() => setActive(cat.key)}
                 className={cn(
-                  'relative flex-1 px-2 py-4 transition-all duration-300',
-                  'hover:bg-brass/5 group',
+                  'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all',
                   isActive
-                    ? 'text-brass'
-                    : 'text-brass-dim hover:text-brass/80'
+                    ? 'bg-ide-accent/20 text-ide-accent'
+                    : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
                 )}
                 title={cat.title}
               >
-                <div className="flex flex-col items-center gap-2">
-                  <Icon className={cn(
-                    "h-4 w-4 transition-transform duration-300",
-                    isActive ? "scale-110" : "group-hover:scale-105"
-                  )} />
-                  <span className="font-mono text-[8px] uppercase tracking-tighter leading-tight">{cat.title}</span>
-                </div>
-                {/* Gold Underline Indicator */}
-                {isActive && (
-                  <div className="absolute bottom-0 left-2 right-2 h-[1px] bg-brass shadow-[0_0_8px_rgba(212,175,55,0.8)]" />
-                )}
+                <Icon className="h-3.5 w-3.5" />
+                <span>{cat.title}</span>
               </button>
             );
           })}
@@ -106,13 +82,13 @@ function ComponentLibrary() {
       </div>
 
       {/* Component Grid */}
-      <div className="max-h-[60vh] overflow-auto p-4 custom-scrollbar">
+      <div className="min-h-0 flex-1 overflow-auto">
         {activeCategory.items.length === 0 ? (
-          <div className="px-2 py-6 text-center font-mono text-xs text-brass-dim/60">
+          <div className="flex h-full items-center justify-center text-xs text-ide-text-subtle">
             No components in this category yet.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             {activeCategory.items.map((item) => {
               const Icon = activeCategory.icon;
               
@@ -125,46 +101,30 @@ function ComponentLibrary() {
                     e.dataTransfer.setData(FUNDI_PART_MIME, item.id);
                   }}
                   className={cn(
-                    'group relative flex aspect-square cursor-grab flex-col items-center justify-center',
-                    'rounded-xl border transition-all duration-300',
-                    'bg-void/40 border-brass/10',
-                    'hover:border-brass/40 hover:bg-brass/5 hover:shadow-[0_0_20px_rgba(212,175,55,0.1)]',
+                    'group relative flex cursor-grab flex-col items-center justify-center',
+                    'rounded-lg border p-3 transition-all duration-200',
+                    'bg-ide-panel-surface border-ide-border',
+                    'hover:border-ide-accent/50 hover:bg-ide-panel-hover',
                     'active:cursor-grabbing active:scale-95'
                   )}
                   title={item.description ?? item.name}
                 >
-                  {/* Decorative corner on hover */}
-                  <div className="absolute right-1 top-1 h-2 w-2 border-r border-t border-brass/0 group-hover:border-brass/40 transition-all" />
+                  {/* Icon */}
+                  <Icon className="h-6 w-6 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
                   
-                  {/* Large Centered Icon */}
-                  <Icon className="h-8 w-8 text-brass-dim/60 transition-all duration-300 group-hover:scale-110 group-hover:text-brass" />
-                  
-                  {/* Label at Bottom */}
-                  <div className="mt-3 px-2 text-center">
-                    <div className="font-mono text-[9px] uppercase tracking-widest leading-tight text-parchment/60 group-hover:text-parchment transition-colors">
+                  {/* Label */}
+                  <div className="mt-2 text-center">
+                    <div className="font-mono text-[10px] text-ide-text-muted group-hover:text-ide-text transition-colors leading-tight">
                       {item.name}
                     </div>
                   </div>
-
-                  {/* Tooltip on hover */}
-                  {item.description && (
-                    <div className="pointer-events-none absolute -top-2 left-1/2 z-50 hidden w-48 -translate-x-1/2 -translate-y-full rounded-lg border border-brass/30 bg-panel/95 px-3 py-2 shadow-xl backdrop-blur-md group-hover:block">
-                      <p className="font-mono text-[10px] leading-relaxed text-parchment/90">
-                        {item.description}
-                      </p>
-                      <div className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-brass/30 bg-panel/95" />
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
-      
-      {/* Footer Decoration */}
-      <div className="h-1 bg-gradient-to-r from-transparent via-brass/20 to-transparent" />
-    </aside>
+    </div>
   );
 }
 

@@ -22,36 +22,36 @@ export function TerminalPanel({
   const [activeTab, setActiveTab] = useState<TerminalTab>('assistant')
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-zinc-950">
+    <div className="flex h-full flex-col overflow-hidden bg-ide-panel-bg">
       {/* Tab header */}
-      <div className="flex h-8 shrink-0 items-center border-b border-zinc-800 bg-zinc-900/50">
+      <div className="flex h-9 shrink-0 items-center border-b border-ide-border bg-ide-panel-surface">
         <button
           type="button"
           onClick={() => setActiveTab('serial')}
           className={cn(
-            'flex h-full items-center gap-1.5 px-3 text-[11px] font-medium uppercase tracking-wider transition-colors',
+            'flex h-full items-center gap-1.5 px-3 text-xs font-medium transition-colors',
             activeTab === 'serial'
-              ? 'border-b-2 border-emerald-500 text-emerald-400'
-              : 'text-zinc-500 hover:text-zinc-300'
+              ? 'border-b-2 border-ide-success text-ide-success'
+              : 'text-ide-text-muted hover:text-ide-text'
           )}
         >
-          <Terminal className="h-3 w-3" />
+          <Terminal className="h-3.5 w-3.5" />
           <span>Serial</span>
           {isSimulationRunning && (
-            <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+            <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-ide-success" />
           )}
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('assistant')}
           className={cn(
-            'flex h-full items-center gap-1.5 px-3 text-[11px] font-medium uppercase tracking-wider transition-colors',
+            'flex h-full items-center gap-1.5 px-3 text-xs font-medium transition-colors',
             activeTab === 'assistant'
-              ? 'border-b-2 border-amber-500 text-amber-400'
-              : 'text-zinc-500 hover:text-zinc-300'
+              ? 'border-b-2 border-ide-accent text-ide-accent'
+              : 'text-ide-text-muted hover:text-ide-text'
           )}
         >
-          <Bot className="h-3 w-3" />
+          <Bot className="h-3.5 w-3.5" />
           <span>Assistant</span>
         </button>
       </div>

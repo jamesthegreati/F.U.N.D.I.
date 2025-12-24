@@ -40,28 +40,28 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
   }, [])
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950">
+    <div className="flex h-full flex-col bg-ide-panel-bg">
       {/* Header toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-3 py-1.5">
+      <div className="flex shrink-0 items-center justify-between border-b border-ide-border px-3 py-1.5">
         <div className="flex items-center gap-3">
           {/* Status indicator */}
           <div className="flex items-center gap-1.5">
             <div
               className={cn(
                 'h-2 w-2 rounded-full',
-                isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'
+                isRunning ? 'bg-ide-success animate-pulse' : 'bg-ide-text-subtle'
               )}
             />
-            <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+            <span className="text-[10px] font-medium text-ide-text-muted">
               {isRunning ? 'Connected' : 'Disconnected'}
             </span>
           </div>
 
-          {/* Baud rate selector (visual only for now) */}
+          {/* Baud rate selector */}
           <select
             value={baudRate}
             onChange={(e) => setBaudRate(Number(e.target.value))}
-            className="h-6 rounded border border-zinc-700 bg-zinc-800 px-1.5 text-[10px] text-zinc-400 outline-none hover:border-zinc-600 focus:border-zinc-500"
+            className="h-6 rounded border border-ide-border bg-ide-panel-surface px-1.5 text-[10px] text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent"
           >
             <option value={9600}>9600 baud</option>
             <option value={19200}>19200 baud</option>
@@ -80,8 +80,8 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
             className={cn(
               'flex h-6 w-6 items-center justify-center rounded transition-colors',
               autoScroll
-                ? 'bg-emerald-500/20 text-emerald-400'
-                : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
+                ? 'bg-ide-success/20 text-ide-success'
+                : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
             )}
           >
             <ArrowDownToLine className="h-3.5 w-3.5" />
@@ -92,7 +92,7 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
             type="button"
             onClick={onClear}
             title="Clear output"
-            className="flex h-6 w-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+            className="flex h-6 w-6 items-center justify-center rounded text-ide-text-muted transition-colors hover:bg-ide-panel-hover hover:text-ide-text"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
@@ -106,10 +106,10 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
         className="min-h-0 flex-1 overflow-y-auto px-3 py-2 font-mono text-xs"
       >
         {serialOutput.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-zinc-600">
+          <div className="flex h-full items-center justify-center text-ide-text-subtle">
             <div className="text-center">
               <p className="mb-1">Serial Monitor</p>
-              <p className="text-zinc-700">
+              <p className="text-ide-text-subtle/70">
                 {isRunning
                   ? 'Waiting for serial output...'
                   : 'Run simulation to see output'}
@@ -118,7 +118,7 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
           </div>
         ) : (
           serialOutput.map((line, index) => (
-            <div key={index} className="leading-relaxed text-emerald-400">
+            <div key={index} className="leading-relaxed text-ide-success">
               {line || '\u00A0'}
             </div>
           ))
