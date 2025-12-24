@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Code2, LayoutGrid, Loader2, MessageSquare, Play } from 'lucide-react'
+import { ChevronDown, Code2, LayoutGrid, Terminal, Bot, Settings } from 'lucide-react'
 import {
   addEdge,
   Background,
@@ -21,7 +21,8 @@ import {
 import ArduinoNode from '@/components/nodes/ArduinoNode'
 import WokwiPartNode from '@/components/nodes/WokwiPartNode'
 import ComponentLibrary, { FUNDI_PART_MIME } from '@/components/ComponentLibrary'
-import ControlDeck from '@/components/ControlDeck'
+import FloatingControlBar from '@/components/FloatingControlBar'
+import StatusBadge from '@/components/StatusBadge'
 import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
@@ -31,6 +32,7 @@ import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
 
 type MobileTabKey = 'chat' | 'code' | 'sim'
+type RightPanelTab = 'terminal' | 'ai'
 
 const nodeTypes = {
   arduino: ArduinoNode,
@@ -281,7 +283,7 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
   return (
     <div
       ref={canvasRef}
-      className={cn('relative h-full w-full', 'cursor-default')}
+      className={cn('relative h-full w-full bg-pro-bg', 'cursor-default')}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
@@ -295,8 +297,8 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
           ...edge,
           style: {
             ...edge.style,
-            stroke: 'var(--electric)',
-            strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
+            stroke: 'var(--pro-text-muted)',
+            strokeWidth: edge.id === selectedEdge ? 3 : 2,
           },
         }))}
         nodeTypes={nodeTypes}
@@ -311,15 +313,15 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
         onNodeDragStop={onNodeDragStop}
         fitView
         className="h-full w-full"
-        style={{ cursor: 'inherit' }}
+        style={{ cursor: 'inherit', background: 'transparent' }}
         defaultEdgeOptions={{
           type: 'default',
           animated: false,
-          style: { stroke: 'var(--electric)', strokeWidth: 2.5 },
+          style: { stroke: 'var(--pro-text-muted)', strokeWidth: 2 },
         }}
-        connectionLineStyle={{ stroke: 'var(--electric)', strokeWidth: 2.5 }}
+        connectionLineStyle={{ stroke: 'var(--pro-accent)', strokeWidth: 2 }}
       >
-        <Background color="var(--brass-dim)" variant={BackgroundVariant.Dots} />
+        <Background color="#D4D4D8" variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls />
 
         <WiringLayer
@@ -341,7 +343,8 @@ function SimulationCanvas() {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<MobileTabKey>('chat')
+  const [activeTab, setActiveTab] = useState<MobileTabKey>('sim')
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('terminal')
 
   const code = useAppStore((s) => s.code)
   const updateCode = useAppStore((s) => s.updateCode)
@@ -369,9 +372,9 @@ export default function Home() {
   const tabs = useMemo(
     () =>
       [
-        { key: 'chat' as const, label: 'Chat', icon: MessageSquare },
+        { key: 'chat' as const, label: 'AI', icon: Bot },
         { key: 'code' as const, label: 'Code', icon: Code2 },
-        { key: 'sim' as const, label: 'Sim', icon: LayoutGrid },
+        { key: 'sim' as const, label: 'Circuit', icon: LayoutGrid },
       ],
     []
   )
@@ -379,50 +382,44 @@ export default function Home() {
   const [codeEditorCollapsed, setCodeEditorCollapsed] = useState(false);
 
   return (
-    <div className="h-screen overflow-hidden bg-void text-parchment scanlines">
-      {/* Decorative Background Elements */}
-      <div className="fixed -left-20 -top-20 h-64 w-64 rounded-full bg-brass/5 blur-[100px]" />
-      <div className="fixed -right-20 -bottom-20 h-96 w-96 rounded-full bg-electric/5 blur-[120px]" />
-
-      {/* Header - Refined Alchemist Aesthetic */}
-      <header className="relative z-50 flex h-[64px] items-center justify-between border-b border-brass/20 bg-panel/40 px-8 backdrop-blur-xl">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="absolute -inset-1 rounded-full bg-brass/20 blur-sm animate-pulse" />
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-brass/40 bg-void shadow-[inset_0_0_10px_rgba(212,175,55,0.2)]">
-              <span className="font-heading text-xl font-bold text-brass">F</span>
-            </div>
+    <div className="relative h-screen overflow-hidden bg-pro-bg text-pro-text">
+      {/* Header - Minimal Command Center Style (48px) */}
+      <header className="relative z-50 flex h-12 items-center justify-between border-b border-pro-border bg-pro-surface/80 px-4 backdrop-blur-md">
+        {/* Left - Project Title */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-pro-accent">
+            <span className="text-sm font-bold text-white">F</span>
           </div>
           <div>
-            <h1 className="font-heading text-2xl font-bold tracking-[0.2em] text-brass drop-shadow-[0_0_14px_rgba(212,175,55,0.18)]">
+            <h1 className="text-sm font-semibold text-pro-text">
               FUNDI
             </h1>
-            <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-brass-dim">
-              <span>Industrial Alchemist</span>
-              <span className="h-1 w-1 rounded-full bg-brass/30" />
-              <span>IoT Workbench</span>
-            </div>
+            <p className="text-[10px] text-pro-text-muted">
+              IoT Workbench
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="hidden items-center gap-4 md:flex">
-            <div className="flex flex-col items-end">
-              <span className="font-mono text-[10px] text-brass-dim">SYSTEM STATUS</span>
-              <span className="font-mono text-[10px] text-electric">OPERATIONAL</span>
-            </div>
-            <div className="h-8 w-[1px] bg-brass/20" />
-            <div className="flex flex-col items-end">
-              <span className="font-mono text-[10px] text-brass-dim">LATENCY</span>
-              <span className="font-mono text-[10px] text-parchment/60">12ms</span>
-            </div>
-          </div>
+        {/* Center - Device Status */}
+        <div className="hidden md:block">
+          <StatusBadge deviceName="Nano Banana Pro" isConnected={true} />
+        </div>
+
+        {/* Right - User/Settings */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-pro-text-muted hover:bg-pro-bg-subtle hover:text-pro-text transition-colors"
+            title="Settings"
+          >
+            <Settings className="h-4 w-4" aria-hidden={true} />
+          </button>
         </div>
       </header>
 
       {/* Mobile (<768px): stacked panels with tabs */}
-      <div className="flex h-[calc(100vh-64px)] flex-col md:hidden">
-        <div className="flex border-b border-brass/20 bg-panel">
+      <div className="flex h-[calc(100vh-48px)] flex-col md:hidden">
+        <div className="flex border-b border-pro-border bg-pro-surface">
           {tabs.map((tab) => {
             const Icon = tab.icon
             const isActive = tab.key === activeTab
@@ -434,14 +431,14 @@ export default function Home() {
                 onClick={() => setActiveTab(tab.key)}
                 className={cn(
                   'flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium',
-                  'border-r border-brass/20 last:border-r-0 transition-all',
+                  'border-r border-pro-border last:border-r-0 transition-all',
                   isActive
-                    ? 'bg-panel text-brass border-b-2 border-b-brass'
-                    : 'bg-void/50 text-brass-dim hover:text-brass'
+                    ? 'bg-pro-surface text-pro-accent border-b-2 border-b-pro-accent'
+                    : 'bg-pro-bg text-pro-text-muted hover:text-pro-text'
                 )}
               >
                 <Icon className="h-4 w-4" aria-hidden={true} />
-                <span className="font-ui">{tab.label}</span>
+                <span>{tab.label}</span>
               </button>
             )
           })}
@@ -449,12 +446,12 @@ export default function Home() {
 
         <div className="flex h-full min-h-0 flex-1">
           {activeTab === 'chat' && (
-            <section className="flex h-full w-full flex-col overflow-hidden">
-              <PanelBody>Chat Interface Coming Soon</PanelBody>
+            <section className="flex h-full w-full flex-col overflow-hidden bg-pro-bg">
+              <PanelBody>AI Assistant Coming Soon</PanelBody>
             </section>
           )}
           {activeTab === 'code' && (
-            <section className="flex h-full w-full flex-col overflow-hidden bg-void">
+            <section className="flex h-full w-full flex-col overflow-hidden bg-pro-bg">
               {compilationError && (
                 <ConsoleLine text={compilationError} />
               )}
@@ -464,10 +461,10 @@ export default function Home() {
                   onChange={(e) => updateCode(e.target.value)}
                   spellCheck={false}
                   className={cn(
-                    'h-full w-full resize-none glass-panel rounded-xl p-4',
-                    'font-mono text-sm leading-6 text-parchment',
-                    'focus:outline-none focus:ring-2 focus:ring-electric/50',
-                    'placeholder:text-brass-dim/40'
+                    'h-full w-full resize-none pro-card p-4',
+                    'font-mono text-sm leading-6 text-pro-text',
+                    'focus:outline-none focus:ring-2 focus:ring-pro-accent/30',
+                    'placeholder:text-pro-text-subtle'
                   )}
                   placeholder="// Write your Arduino code here..."
                 />
@@ -475,25 +472,34 @@ export default function Home() {
             </section>
           )}
           {activeTab === 'sim' && (
-            <section className="relative flex h-full w-full flex-col overflow-hidden bg-void">
+            <section className="relative flex h-full w-full flex-col overflow-hidden bg-pro-bg">
               <div className="min-h-0 flex-1">
                 <SimulationCanvas />
               </div>
+              {/* Mobile Floating Control Bar */}
+              <FloatingControlBar
+                isCompiling={isCompiling}
+                compilationError={compilationError}
+                onRun={() => void compileAndRun()}
+                hasProgram={Boolean(hex && compiledBoard)}
+                isRunning={simIsRunning}
+                onPause={simPause}
+                onStop={simStop}
+              />
             </section>
           )}
         </div>
       </div>
 
-      {/* Desktop (>=768px): The Holy Trinity Bento Grid Layout */}
-      <div className="hidden h-[calc(100vh-64px)] md:grid md:grid-cols-[1fr] md:gap-0">
-        {/* Center - Workbench + Code Editor */}
-        <div className="flex flex-col overflow-hidden">
-          {/* Top - The Workbench (React Flow) */}
+      {/* Desktop (>=768px): Command Center Grid Layout */}
+      <div className="hidden h-[calc(100vh-48px)] md:grid md:grid-cols-[60%_40%]">
+        {/* Left (60%) - The Workbench (React Flow) */}
+        <div className="relative flex flex-col overflow-hidden border-r border-pro-border">
           <div className="relative min-h-0 flex-1 overflow-hidden">
             <SimulationCanvas />
             
-            {/* Floating ControlDeck */}
-            <ControlDeck
+            {/* Floating Control Bar */}
+            <FloatingControlBar
               isCompiling={isCompiling}
               compilationError={compilationError}
               onRun={() => void compileAndRun()}
@@ -503,73 +509,121 @@ export default function Home() {
               onStop={simStop}
             />
           </div>
+        </div>
 
-          {/* Bottom - Code Editor "The Logbook" (Collapsible) */}
+        {/* Right (40%) - Vertical Split: Code Editor + Terminal/AI */}
+        <div className="flex flex-col overflow-hidden bg-pro-bg">
+          {/* Top - Code Editor "The Logbook" (Collapsible) */}
           <div
             className={cn(
-              'relative z-40 flex flex-col border-t border-brass/20 bg-panel/60 backdrop-blur-xl transition-all duration-500 ease-in-out',
-              codeEditorCollapsed ? 'h-[50px]' : 'h-[350px]'
+              'relative flex flex-col border-b border-pro-border bg-pro-surface transition-all duration-300 ease-in-out',
+              codeEditorCollapsed ? 'h-11' : 'flex-1'
             )}
           >
             <button
               type="button"
               onClick={() => setCodeEditorCollapsed((v) => !v)}
-              className="flex h-[50px] items-center justify-between px-6 hover:bg-brass/5 transition-colors"
+              className="flex h-11 shrink-0 items-center justify-between px-4 hover:bg-pro-bg-subtle transition-colors border-b border-pro-border"
               aria-expanded={!codeEditorCollapsed}
             >
-              <div className="flex items-center gap-4">
-                <div className={cn(
-                  "h-2 w-2 rounded-full transition-all duration-300",
-                  codeEditorCollapsed ? "bg-brass/40" : "bg-electric animate-pulse shadow-[0_0_8px_rgba(0,240,255,0.5)]"
-                )} />
-                <Code2 className="h-4 w-4 text-brass" aria-hidden={true} />
-                <span className="font-heading text-xs font-bold tracking-[0.2em] text-brass">
-                  THE LOGBOOK
+              <div className="flex items-center gap-3">
+                <Code2 className="h-4 w-4 text-pro-text-muted" aria-hidden={true} />
+                <span className="text-sm font-medium text-pro-text">
+                  Code Editor
                 </span>
+                {!codeEditorCollapsed && (
+                  <span className="rounded-full bg-pro-bg-subtle px-2 py-0.5 text-[10px] font-medium text-pro-text-muted">
+                    sketch.ino
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-4">
-                <span className="font-mono text-[10px] text-brass-dim uppercase tracking-widest">
-                  {codeEditorCollapsed ? "Expand Editor" : "Collapse Editor"}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    'h-4 w-4 text-brass-dim transition-transform duration-500',
-                    codeEditorCollapsed ? '-rotate-180' : 'rotate-0'
-                  )}
-                  aria-hidden={true}
-                />
-              </div>
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 text-pro-text-muted transition-transform duration-300',
+                  codeEditorCollapsed ? 'rotate-180' : 'rotate-0'
+                )}
+                aria-hidden={true}
+              />
             </button>
 
             {!codeEditorCollapsed && (
-              <div className="flex flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {compilationError && (
                   <ConsoleLine text={compilationError} />
                 )}
-                <div className="min-h-0 flex-1 p-4">
-                  <div className="relative h-full w-full">
-                    {/* Decorative corner accents for the editor */}
-                    <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-brass/30" />
-                    <div className="absolute -right-1 -top-1 h-4 w-4 border-r-2 border-t-2 border-brass/30" />
-                    <div className="absolute -bottom-1 -left-1 h-4 w-4 border-b-2 border-l-2 border-brass/30" />
-                    <div className="absolute -bottom-1 -right-1 h-4 w-4 border-b-2 border-r-2 border-brass/30" />
-                    
-                    <textarea
-                      value={code}
-                      onChange={(e) => updateCode(e.target.value)}
-                      spellCheck={false}
-                      className={cn(
-                        'h-full w-full resize-none bg-void/40 p-6',
-                        'font-mono text-sm leading-7 text-parchment/90',
-                        'focus:outline-none focus:ring-1 focus:ring-brass/20',
-                        'placeholder:text-brass-dim/30 border border-brass/10 rounded-sm'
-                      )}
-                      placeholder="// Write your Arduino code here..."
-                    />
-                  </div>
+                <div className="min-h-0 flex-1 p-3">
+                  <textarea
+                    value={code}
+                    onChange={(e) => updateCode(e.target.value)}
+                    spellCheck={false}
+                    className={cn(
+                      'h-full w-full resize-none rounded-lg bg-pro-bg p-4',
+                      'font-mono text-sm leading-6 text-pro-text',
+                      'border border-pro-border',
+                      'focus:outline-none focus:ring-2 focus:ring-pro-accent/20 focus:border-pro-accent/30',
+                      'placeholder:text-pro-text-subtle'
+                    )}
+                    placeholder="// Write your Arduino code here..."
+                  />
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Bottom - Terminal/AI Tabs */}
+          <div
+            className={cn(
+              'flex flex-col overflow-hidden bg-pro-surface',
+              codeEditorCollapsed ? 'flex-1' : 'h-[280px]'
+            )}
+          >
+            {/* Tab Headers */}
+            <div className="flex h-11 shrink-0 items-center border-b border-pro-border px-2">
+              <button
+                type="button"
+                onClick={() => setRightPanelTab('terminal')}
+                className={cn(
+                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  rightPanelTab === 'terminal'
+                    ? 'bg-pro-bg-subtle text-pro-text'
+                    : 'text-pro-text-muted hover:text-pro-text'
+                )}
+              >
+                <Terminal className="h-3.5 w-3.5" aria-hidden={true} />
+                <span>Serial Monitor</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRightPanelTab('ai')}
+                className={cn(
+                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  rightPanelTab === 'ai'
+                    ? 'bg-pro-bg-subtle text-pro-text'
+                    : 'text-pro-text-muted hover:text-pro-text'
+                )}
+              >
+                <Bot className="h-3.5 w-3.5" aria-hidden={true} />
+                <span>AI Assistant</span>
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {rightPanelTab === 'terminal' ? (
+                <div className="flex h-full flex-col rounded-lg bg-pro-bg border border-pro-border p-4">
+                  <div className="flex-1 font-mono text-xs text-pro-text-muted">
+                    <p className="text-pro-text-subtle">Serial Monitor ready...</p>
+                    <p className="mt-2 text-pro-text-subtle">Waiting for connection.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center rounded-lg bg-pro-bg border border-pro-border p-4">
+                  <Bot className="h-8 w-8 text-pro-text-subtle mb-3" aria-hidden={true} />
+                  <p className="text-sm font-medium text-pro-text-muted">AI Assistant</p>
+                  <p className="text-xs text-pro-text-subtle mt-1">Coming soon...</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -577,58 +631,10 @@ export default function Home() {
   )
 }
 
-function PanelHeader({
-  icon: Icon,
-  title,
-  right,
-}: {
-  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
-  title: string
-  right?: React.ReactNode
-}) {
-  return (
-    <header className="flex h-11 items-center gap-2 border-b border-slate-800 px-3">
-      <Icon className="h-4 w-4 text-slate-300" aria-hidden={true} />
-      <span className="text-sm font-medium text-slate-200">{title}</span>
-      {right ? <div className="ml-auto flex items-center gap-2">{right}</div> : null}
-    </header>
-  )
-}
-
-function RunButton({
-  isCompiling,
-  onRun,
-}: {
-  isCompiling: boolean
-  onRun: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onRun}
-      disabled={isCompiling}
-      className={cn(
-        'inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium',
-        isCompiling
-          ? 'bg-slate-900 text-slate-300'
-          : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
-      )}
-      title="Compile and run"
-    >
-      {isCompiling ? (
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden={true} />
-      ) : (
-        <Play className="h-4 w-4" aria-hidden={true} />
-      )}
-      <span>Run</span>
-    </button>
-  )
-}
-
 function ConsoleLine({ text }: { text: string }) {
   return (
-    <div className="border-b border-brass/20 bg-panel/40 px-4 py-2">
-      <pre className="whitespace-pre-wrap break-words font-mono text-xs font-medium text-error">
+    <div className="border-b border-pro-error/20 bg-pro-error/5 px-4 py-2">
+      <pre className="whitespace-pre-wrap break-words font-mono text-xs font-medium text-pro-error">
         {text}
       </pre>
     </div>
@@ -638,7 +644,7 @@ function ConsoleLine({ text }: { text: string }) {
 function PanelBody({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4">
-      <div className="text-center font-ui text-sm font-medium text-brass-dim">
+      <div className="text-center text-sm font-medium text-pro-text-muted">
         {children}
       </div>
     </div>
