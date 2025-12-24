@@ -53,6 +53,7 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
   const toggleSelectedPartId = useAppStore((s) => s.toggleSelectedPartId)
   const connections = useAppStore((s) => s.connections)
   const updateWire = useAppStore((s) => s.updateWire)
+  const circuitParts = useAppStore((s) => s.circuitParts)
 
   useDiagramSync()
 
@@ -63,10 +64,15 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  
+  // Track if we've initialized to prevent re-seeding
+  const initializedRef = useRef(false)
 
   // Seed a default part once.
   useEffect(() => {
+    if (initializedRef.current) return
     if (nodes.length) return
+    initializedRef.current = true
     const id = addPart({ type: 'arduino-uno', position: { x: 0, y: 0 } })
     setNodes([
       {
@@ -83,6 +89,29 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
     setSelectedPartIds([id])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Sync ReactFlow nodes with circuitParts from store (for AI-generated circuits)
+  useEffect(() => {
+    // Skip if not initialized yet
+    if (!initializedRef.current) return
+    
+    // Convert circuitParts to ReactFlow nodes
+    const newNodes: Node[] = circuitParts.map((part) => ({
+      id: part.id,
+      type: 'wokwi',
+      position: { x: part.position.x, y: part.position.y },
+      data: {
+        getCanvasRect,
+        partType: part.type.replace('wokwi-', ''), // Remove wokwi- prefix if present
+      },
+      selected: selectedPartIds.includes(part.id),
+    }))
+    
+    // Only update if different from current nodes
+    if (newNodes.length > 0 && JSON.stringify(newNodes.map(n => n.id).sort()) !== JSON.stringify(nodes.map(n => n.id).sort())) {
+      setNodes(newNodes)
+    }
+  }, [circuitParts, getCanvasRect, nodes, selectedPartIds, setNodes])
 
   // Update node data when handlers change (e.g. when wiring mode changes)
   useEffect(() => {

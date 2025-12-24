@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Mic, MicOff, Camera, GraduationCap, Wrench } from 'lucide-react'
 import { useAppStore, type TerminalEntry } from '@/store/useAppStore'
 import { cn } from '@/utils/cn'
 
@@ -65,10 +65,16 @@ export function CommandInterface() {
   const terminalHistory = useAppStore((s) => s.terminalHistory)
   const isAiLoading = useAppStore((s) => s.isAiLoading)
   const submitCommand = useAppStore((s) => s.submitCommand)
+  const teacherMode = useAppStore((s) => s.teacherMode)
+  const setTeacherMode = useAppStore((s) => s.setTeacherMode)
 
   const [input, setInput] = useState('')
+  const [isListening, setIsListening] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null)
 
   // Auto-scroll to bottom when new entries arrive
   useEffect(() => {
@@ -80,6 +86,34 @@ export function CommandInterface() {
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus()
+  }, [])
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      if (SpeechRecognitionAPI) {
+        recognitionRef.current = new SpeechRecognitionAPI()
+        recognitionRef.current.continuous = false
+        recognitionRef.current.interimResults = false
+        recognitionRef.current.lang = 'en-US'
+
+        recognitionRef.current.onresult = (event: { results: { transcript: string }[][] }) => {
+          const transcript = event.results[0][0].transcript
+          setInput((prev) => prev + ' ' + transcript)
+          setIsListening(false)
+        }
+
+        recognitionRef.current.onerror = () => {
+          setIsListening(false)
+        }
+
+        recognitionRef.current.onend = () => {
+          setIsListening(false)
+        }
+      }
+    }
   }, [])
 
   const handleSubmit = useCallback(
@@ -99,11 +133,86 @@ export function CommandInterface() {
     }
   }, [])
 
+  const toggleVoiceInput = useCallback(() => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in this browser.')
+      return
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop()
+      setIsListening(false)
+    } else {
+      recognitionRef.current.start()
+      setIsListening(true)
+    }
+  }, [isListening])
+
+  const handleImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+
+      try {
+        const reader = new FileReader()
+        reader.onload = async (event) => {
+          const base64 = event.target?.result as string
+          await submitCommand(input || 'Analyze this circuit image and recreate it virtually', base64)
+          setInput('')
+        }
+        reader.readAsDataURL(file)
+      } catch (err) {
+        console.error('Error reading image:', err)
+      }
+
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    },
+    [input, submitCommand]
+  )
+
   return (
     <div
       className="flex h-full flex-col bg-zinc-950 font-mono"
       onClick={() => inputRef.current?.focus()}
     >
+      {/* Mode toggle bar */}
+      <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/30 px-3 py-1.5">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setTeacherMode(false)}
+            className={cn(
+              'flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
+              !teacherMode
+                ? 'bg-emerald-500/20 text-emerald-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            <Wrench className="h-3 w-3" />
+            Builder
+          </button>
+          <button
+            type="button"
+            onClick={() => setTeacherMode(true)}
+            className={cn(
+              'flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
+              teacherMode
+                ? 'bg-amber-500/20 text-amber-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            <GraduationCap className="h-3 w-3" />
+            Teacher
+          </button>
+        </div>
+        <span className="text-[9px] text-zinc-600">
+          {teacherMode ? 'AI explains concepts' : 'AI builds circuits'}
+        </span>
+      </div>
+
       {/* History area */}
       <div
         ref={scrollRef}
@@ -113,7 +222,8 @@ export function CommandInterface() {
           <div className="flex h-full items-center justify-center text-xs text-zinc-600">
             <div className="text-center">
               <p className="mb-1">FUNDI AI Assistant</p>
-              <p className="text-zinc-700">Type a prompt or /help for commands</p>
+              <p className="text-zinc-700">Type a prompt, use voice 🎤, or upload an image 📷</p>
+              <p className="mt-2 text-zinc-700">Type /help for commands</p>
             </div>
           </div>
         )}
@@ -128,11 +238,50 @@ export function CommandInterface() {
         )}
       </div>
 
-      {/* Input line */}
+      {/* Input line with multimodal buttons */}
       <form
         onSubmit={handleSubmit}
         className="flex shrink-0 items-center gap-2 border-t border-zinc-800 bg-zinc-900/50 px-3 py-2"
       >
+        {/* Image upload button */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleImageUpload}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isAiLoading}
+          className={cn(
+            'flex h-6 w-6 items-center justify-center rounded text-zinc-500 transition-colors',
+            'hover:bg-zinc-800 hover:text-zinc-300',
+            'disabled:cursor-not-allowed disabled:opacity-50'
+          )}
+          title="Upload circuit image"
+        >
+          <Camera className="h-3.5 w-3.5" />
+        </button>
+
+        {/* Voice input button */}
+        <button
+          type="button"
+          onClick={toggleVoiceInput}
+          disabled={isAiLoading}
+          className={cn(
+            'flex h-6 w-6 items-center justify-center rounded transition-colors',
+            isListening
+              ? 'bg-red-500/20 text-red-400 animate-pulse'
+              : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300',
+            'disabled:cursor-not-allowed disabled:opacity-50'
+          )}
+          title={isListening ? 'Stop listening' : 'Start voice input'}
+        >
+          {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+        </button>
+
         <span className="text-emerald-500">{'>'}</span>
         <input
           ref={inputRef}
@@ -141,7 +290,13 @@ export function CommandInterface() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isAiLoading}
-          placeholder={isAiLoading ? 'Generating...' : 'Enter prompt or /command...'}
+          placeholder={
+            isListening
+              ? 'Listening...'
+              : isAiLoading
+                ? 'Generating...'
+                : 'Enter prompt or /command...'
+          }
           className={cn(
             'flex-1 bg-transparent text-xs text-zinc-200 outline-none',
             'placeholder:text-zinc-600',
