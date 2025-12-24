@@ -22,36 +22,36 @@ export function TerminalPanel({
   const [activeTab, setActiveTab] = useState<TerminalTab>('assistant')
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-ide-panel-bg">
+    <div className="flex h-full flex-col overflow-hidden bg-ide-panel-bg transition-colors">
       {/* Tab header */}
-      <div className="flex h-9 shrink-0 items-center border-b border-ide-border bg-ide-panel-surface">
+      <div className="flex h-11 shrink-0 items-center border-b border-ide-border bg-ide-panel-surface transition-colors">
         <button
           type="button"
           onClick={() => setActiveTab('serial')}
           className={cn(
-            'flex h-full items-center gap-1.5 px-3 text-xs font-medium transition-colors',
+            'flex h-full items-center gap-2 px-4 text-xs font-medium transition-all duration-200',
             activeTab === 'serial'
               ? 'border-b-2 border-ide-success text-ide-success'
               : 'text-ide-text-muted hover:text-ide-text'
           )}
         >
-          <Terminal className="h-3.5 w-3.5" />
+          <Terminal className="h-4 w-4" />
           <span>Serial</span>
           {isSimulationRunning && (
-            <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-ide-success" />
+            <span className="ml-1 h-2 w-2 animate-pulse rounded-full bg-ide-success" />
           )}
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('assistant')}
           className={cn(
-            'flex h-full items-center gap-1.5 px-3 text-xs font-medium transition-colors',
+            'flex h-full items-center gap-2 px-4 text-xs font-medium transition-all duration-200',
             activeTab === 'assistant'
               ? 'border-b-2 border-ide-accent text-ide-accent'
               : 'text-ide-text-muted hover:text-ide-text'
           )}
         >
-          <Bot className="h-3.5 w-3.5" />
+          <Bot className="h-4 w-4" />
           <span>Assistant</span>
         </button>
       </div>

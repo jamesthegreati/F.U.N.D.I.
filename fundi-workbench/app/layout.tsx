@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 
 import '@xyflow/react/dist/style.css'
 import './globals.css'
+import { ThemeProvider } from '@/components/ThemeProvider'
 
 export const metadata: Metadata = {
   title: "FUNDI - IoT Workbench",
@@ -14,9 +15,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    // suppressHydrationWarning is needed because the theme class may differ
+    // between server (dark) and client (user's preference) on initial render
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body className="font-ui bg-ide-panel-bg text-ide-text antialiased">
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );
