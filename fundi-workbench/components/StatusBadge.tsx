@@ -11,43 +11,43 @@ interface StatusBadgeProps {
 
 /**
  * StatusBadge - Pill component showing device connection status
- * Clean, minimal design with subtle status indication
+ * Dark IDE theme compatible
  */
 export default function StatusBadge({
-  deviceName = 'Nano Banana Pro',
+  deviceName = 'Arduino Uno',
   isConnected = true,
   className,
 }: StatusBadgeProps) {
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-2 rounded-full',
-        'bg-pro-surface border border-pro-border',
-        'px-3 py-1.5 shadow-pro-sm',
+        'inline-flex items-center gap-2 rounded-md',
+        'bg-ide-panel-bg border border-ide-border',
+        'px-2.5 py-1',
         'transition-all duration-200',
         className,
       )}
     >
       {/* Device Icon */}
-      <Cpu className="h-3.5 w-3.5 text-pro-text-muted" aria-hidden={true} />
+      <Cpu className="h-3.5 w-3.5 text-ide-text-muted" aria-hidden={true} />
 
       {/* Device Name */}
-      <span className="text-xs font-medium text-pro-text">{deviceName}</span>
+      <span className="text-xs font-medium text-ide-text">{deviceName}</span>
 
       {/* Divider */}
-      <div className="h-3 w-px bg-pro-border" />
+      <div className="h-3 w-px bg-ide-border" />
 
       {/* Connection Status */}
       <div className="flex items-center gap-1.5">
         {isConnected ? (
           <>
-            <Wifi className="h-3 w-3 text-pro-success" aria-hidden={true} />
-            <span className="text-xs font-medium text-pro-success">Connected</span>
+            <Wifi className="h-3 w-3 text-ide-success" aria-hidden={true} />
+            <span className="text-xs font-medium text-ide-success">Connected</span>
           </>
         ) : (
           <>
-            <WifiOff className="h-3 w-3 text-pro-text-subtle" aria-hidden={true} />
-            <span className="text-xs font-medium text-pro-text-subtle">Disconnected</span>
+            <WifiOff className="h-3 w-3 text-ide-text-subtle" aria-hidden={true} />
+            <span className="text-xs font-medium text-ide-text-subtle">Disconnected</span>
           </>
         )}
       </div>
@@ -55,8 +55,8 @@ export default function StatusBadge({
       {/* Active indicator dot when connected */}
       {isConnected && (
         <div className="relative ml-0.5">
-          <div className="h-1.5 w-1.5 rounded-full bg-pro-success" />
-          <div className="absolute inset-0 h-1.5 w-1.5 rounded-full bg-pro-success animate-ping opacity-75" />
+          <div className="h-1.5 w-1.5 rounded-full bg-ide-success" />
+          <div className="absolute inset-0 h-1.5 w-1.5 rounded-full bg-ide-success animate-ping opacity-75" />
         </div>
       )}
     </div>
