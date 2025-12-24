@@ -29,13 +29,13 @@ function ChatMessage({ entry }: { entry: TerminalEntry }) {
         const lang = match?.[1] || ''
         const code = match?.[2] ?? part.slice(3, -3)
         return (
-          <div key={i} className="my-2 rounded-lg overflow-hidden border border-ide-border">
+          <div key={i} className="my-2.5 rounded-xl overflow-hidden border border-ide-border">
             {lang && (
-              <div className="px-3 py-1 bg-ide-panel-bg text-[10px] font-medium text-ide-text-muted border-b border-ide-border">
+              <div className="px-4 py-1.5 bg-ide-panel-bg text-xs font-medium text-ide-text-muted border-b border-ide-border">
                 {lang}
               </div>
             )}
-            <pre className="p-3 overflow-x-auto bg-ide-panel-bg/50 text-xs text-ide-success">
+            <pre className="p-4 overflow-x-auto bg-ide-panel-bg/50 text-xs text-ide-success">
               <code>{code.trim()}</code>
             </pre>
           </div>
@@ -52,28 +52,28 @@ function ChatMessage({ entry }: { entry: TerminalEntry }) {
 
   return (
     <div className={cn(
-      'mb-3 animate-fade-in',
+      'mb-4 animate-fade-in',
       isUser && 'flex justify-end'
     )}>
       <div className={cn(
-        'max-w-[85%] rounded-lg px-3 py-2',
+        'max-w-[85%] rounded-xl px-4 py-3',
         isUser 
-          ? 'bg-ide-accent/20 text-ide-text border border-ide-accent/30' 
+          ? 'bg-ide-accent/15 text-ide-text border border-ide-accent/25' 
           : isError
-            ? 'bg-ide-error/10 text-ide-error border border-ide-error/30'
+            ? 'bg-ide-error/10 text-ide-error border border-ide-error/25'
             : isAi
               ? 'bg-ide-panel-surface text-ide-text border border-ide-border'
               : 'bg-ide-panel-hover/50 text-ide-text-muted'
       )}>
         {/* Header */}
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2.5 mb-2">
           <span className={cn(
-            'text-[10px] font-medium',
+            'text-xs font-medium',
             isUser ? 'text-ide-accent' : isAi ? 'text-ide-accent' : isError ? 'text-ide-error' : 'text-ide-text-subtle'
           )}>
             {isUser ? 'You' : isAi ? 'FUNDI AI' : isError ? 'Error' : 'System'}
           </span>
-          <span className="text-[9px] text-ide-text-subtle">{formatTimestamp(entry.timestamp)}</span>
+          <span className="text-[10px] text-ide-text-subtle">{formatTimestamp(entry.timestamp)}</span>
         </div>
         {/* Content */}
         <div className="text-sm leading-relaxed">{renderContent(entry.content)}</div>
@@ -198,40 +198,40 @@ export function CommandInterface() {
 
   return (
     <div
-      className="flex h-full flex-col bg-ide-panel-bg"
+      className="flex h-full flex-col bg-ide-panel-bg transition-colors"
       onClick={() => inputRef.current?.focus()}
     >
       {/* Mode toggle bar - Segmented Control */}
-      <div className="flex items-center justify-between border-b border-ide-border bg-ide-panel-surface px-3 py-2">
-        <div className="flex items-center rounded-lg bg-ide-panel-bg p-0.5">
+      <div className="flex items-center justify-between border-b border-ide-border bg-ide-panel-surface px-4 py-2.5 transition-colors">
+        <div className="flex items-center rounded-xl bg-ide-panel-bg p-1">
           <button
             type="button"
             onClick={() => setTeacherMode(false)}
             className={cn(
-              'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+              'flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-all duration-200',
               !teacherMode
-                ? 'bg-ide-success/20 text-ide-success shadow-sm'
+                ? 'bg-ide-success/15 text-ide-success shadow-sm'
                 : 'text-ide-text-muted hover:text-ide-text'
             )}
           >
-            <Wrench className="h-3.5 w-3.5" />
+            <Wrench className="h-4 w-4" />
             Builder
           </button>
           <button
             type="button"
             onClick={() => setTeacherMode(true)}
             className={cn(
-              'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+              'flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-all duration-200',
               teacherMode
-                ? 'bg-ide-accent/20 text-ide-accent shadow-sm'
+                ? 'bg-ide-accent/15 text-ide-accent shadow-sm'
                 : 'text-ide-text-muted hover:text-ide-text'
             )}
           >
-            <GraduationCap className="h-3.5 w-3.5" />
+            <GraduationCap className="h-4 w-4" />
             Teacher
           </button>
         </div>
-        <span className="text-[10px] text-ide-text-subtle">
+        <span className="text-xs text-ide-text-subtle">
           {teacherMode ? 'Explains concepts' : 'Builds circuits'}
         </span>
       </div>
@@ -239,19 +239,19 @@ export function CommandInterface() {
       {/* Chat history area */}
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
         {terminalHistory.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <div className="text-center max-w-xs">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-ide-accent/10">
-                <Wrench className="h-6 w-6 text-ide-accent" />
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-ide-accent/10">
+                <Wrench className="h-7 w-7 text-ide-accent" />
               </div>
-              <h3 className="text-sm font-medium text-ide-text mb-1">FUNDI AI Assistant</h3>
-              <p className="text-xs text-ide-text-muted mb-3">
+              <h3 className="text-base font-medium text-ide-text mb-2">FUNDI AI Assistant</h3>
+              <p className="text-sm text-ide-text-muted mb-4">
                 Describe the circuit you want to build, upload an image, or use voice input.
               </p>
-              <p className="text-[10px] text-ide-text-subtle">
+              <p className="text-xs text-ide-text-subtle">
                 Type /help for commands
               </p>
             </div>
@@ -261,7 +261,7 @@ export function CommandInterface() {
           <ChatMessage key={entry.id} entry={entry} />
         ))}
         {isAiLoading && (
-          <div className="flex items-center gap-2 py-2 text-sm text-ide-accent animate-pulse">
+          <div className="flex items-center gap-2.5 py-3 text-sm text-ide-accent animate-pulse">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>Generating...</span>
           </div>
@@ -269,9 +269,9 @@ export function CommandInterface() {
       </div>
 
       {/* Input area - GitHub-style Comment Box */}
-      <div className="shrink-0 border-t border-ide-border bg-ide-panel-surface p-3">
+      <div className="shrink-0 border-t border-ide-border bg-ide-panel-surface p-4 transition-colors">
         <form onSubmit={handleSubmit}>
-          <div className="rounded-lg border border-ide-border bg-ide-panel-bg overflow-hidden focus-within:border-ide-accent/50 focus-within:ring-1 focus-within:ring-ide-accent/20 transition-all">
+          <div className="rounded-xl border border-ide-border bg-ide-panel-bg overflow-hidden focus-within:border-ide-accent/50 focus-within:ring-2 focus-within:ring-ide-accent/20 transition-all duration-200">
             {/* Text input */}
             <textarea
               ref={inputRef}
@@ -297,8 +297,8 @@ export function CommandInterface() {
             />
 
             {/* Bottom toolbar */}
-            <div className="flex items-center justify-between border-t border-ide-border px-2 py-1.5">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between border-t border-ide-border px-3 py-2">
+              <div className="flex items-center gap-1.5">
                 {/* Image upload button */}
                 <input
                   ref={fileInputRef}
@@ -312,7 +312,7 @@ export function CommandInterface() {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isAiLoading}
                   className={cn(
-                    'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+                    'flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200',
                     'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text',
                     'disabled:cursor-not-allowed disabled:opacity-50'
                   )}
@@ -327,7 +327,7 @@ export function CommandInterface() {
                   onClick={toggleVoiceInput}
                   disabled={isAiLoading}
                   className={cn(
-                    'relative flex h-7 w-7 items-center justify-center rounded-md transition-all',
+                    'relative flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200',
                     isListening
                       ? 'mic-recording text-ide-error'
                       : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text',
@@ -342,7 +342,7 @@ export function CommandInterface() {
                   )}
                   {/* Pulse ring when recording */}
                   {isListening && (
-                    <span className="absolute inset-0 rounded-md animate-pulse-ring bg-ide-error/30" />
+                    <span className="absolute inset-0 rounded-lg animate-pulse-ring bg-ide-error/30" />
                   )}
                 </button>
               </div>
@@ -352,13 +352,13 @@ export function CommandInterface() {
                 type="submit"
                 disabled={isAiLoading || !input.trim()}
                 className={cn(
-                  'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-all btn-press',
+                  'flex h-8 items-center gap-2 rounded-lg px-4 text-xs font-medium transition-all duration-200 btn-press',
                   input.trim() && !isAiLoading
-                    ? 'bg-ide-accent text-white hover:bg-ide-accent-hover'
+                    ? 'bg-ide-accent text-white hover:bg-ide-accent-hover shadow-sm'
                     : 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
                 )}
               >
-                <Send className="h-3.5 w-3.5" />
+                <Send className="h-4 w-4" />
                 <span>Send</span>
               </button>
             </div>

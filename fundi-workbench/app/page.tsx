@@ -46,6 +46,7 @@ import StatusBadge from '@/components/StatusBadge'
 import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
 import { TerminalPanel } from '@/components/terminal'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
 import { useSimulation } from '@/hooks/useSimulation'
 import { useAppStore } from '@/store/useAppStore'
@@ -77,11 +78,11 @@ function CanvasToolbar({
   onResetView: () => void
 }) {
   return (
-    <div className="absolute top-4 right-4 z-40 flex items-center gap-1 glass-panel rounded-lg p-1">
+    <div className="absolute top-4 right-4 z-40 flex items-center gap-0.5 glass-panel rounded-xl p-1">
       <button
         type="button"
         onClick={onZoomIn}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-all duration-200"
         title="Zoom In"
       >
         <ZoomIn className="h-4 w-4" />
@@ -89,7 +90,7 @@ function CanvasToolbar({
       <button
         type="button"
         onClick={onZoomOut}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-all duration-200"
         title="Zoom Out"
       >
         <ZoomOut className="h-4 w-4" />
@@ -98,7 +99,7 @@ function CanvasToolbar({
       <button
         type="button"
         onClick={onFitView}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-all duration-200"
         title="Fit View"
       >
         <Maximize2 className="h-4 w-4" />
@@ -106,7 +107,7 @@ function CanvasToolbar({
       <button
         type="button"
         onClick={onResetView}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-all duration-200"
         title="Reset View"
       >
         <RotateCcw className="h-4 w-4" />
@@ -135,19 +136,19 @@ function UnifiedActionBar({
 }) {
   return (
     <div className="absolute bottom-6 left-1/2 z-50 -translate-x-1/2 animate-slide-up">
-      <div className="floating-bar flex items-center gap-2 px-3 py-2">
+      <div className="floating-bar flex items-center gap-2.5 px-3 py-2.5">
         {/* Primary Run Button */}
         <button
           type="button"
           onClick={onRun}
           disabled={isCompiling}
           className={cn(
-            'group relative flex items-center gap-2 rounded-lg px-4 py-2',
+            'group relative flex items-center gap-2.5 rounded-xl px-5 py-2.5',
             'text-sm font-semibold transition-all duration-200',
             'btn-press',
             isCompiling
               ? 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
-              : 'bg-ide-success text-white hover:bg-ide-success/90 shadow-lg shadow-ide-success/20',
+              : 'bg-ide-success text-white hover:bg-ide-success/90 shadow-lg shadow-ide-success/25',
           )}
           title="Compile and run"
         >
@@ -170,7 +171,7 @@ function UnifiedActionBar({
           onClick={onStop}
           disabled={!hasProgram}
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-lg',
+            'flex h-10 w-10 items-center justify-center rounded-xl',
             'transition-all duration-200 btn-press',
             !hasProgram
               ? 'text-ide-text-subtle cursor-not-allowed'
@@ -181,13 +182,13 @@ function UnifiedActionBar({
           <Square className="h-4 w-4" />
         </button>
 
-        <div className="mx-1 h-6 w-px bg-ide-border" />
+        <div className="mx-1 h-7 w-px bg-ide-border" />
 
         {/* Status Indicator */}
-        <div className="flex items-center gap-2 rounded-lg bg-ide-panel-bg/80 px-3 py-1.5">
+        <div className="flex items-center gap-2.5 rounded-xl bg-ide-panel-bg/80 px-4 py-2">
           <div
             className={cn(
-              'h-2 w-2 rounded-full transition-colors duration-300',
+              'h-2.5 w-2.5 rounded-full transition-colors duration-300',
               isCompiling
                 ? 'bg-ide-warning animate-pulse'
                 : compilationError
@@ -580,9 +581,9 @@ function CodeEditorPanel({
   ]
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-ide-panel-surface">
+    <div className="flex h-full flex-col overflow-hidden bg-ide-panel-surface transition-colors">
       {/* Tab bar */}
-      <div className="flex h-9 shrink-0 items-center border-b border-ide-border bg-ide-panel-bg">
+      <div className="flex h-10 shrink-0 items-center border-b border-ide-border bg-ide-panel-bg transition-colors">
         {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = tab.key === activeTab
@@ -592,7 +593,7 @@ function CodeEditorPanel({
               type="button"
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'flex h-full items-center gap-1.5 border-r border-ide-border px-3 text-xs font-medium transition-colors',
+                'flex h-full items-center gap-2 border-r border-ide-border px-4 text-xs font-medium transition-all duration-200',
                 isActive
                   ? 'bg-ide-panel-surface text-ide-text border-b-2 border-b-ide-accent'
                   : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
@@ -607,7 +608,7 @@ function CodeEditorPanel({
 
       {/* Error banner */}
       {compilationError && (
-        <div className="shrink-0 border-b border-ide-error/30 bg-ide-error/10 px-4 py-2">
+        <div className="shrink-0 border-b border-ide-error/30 bg-ide-error/10 px-4 py-2.5">
           <pre className="whitespace-pre-wrap break-words font-mono text-xs text-ide-error">
             {compilationError}
           </pre>
@@ -615,17 +616,18 @@ function CodeEditorPanel({
       )}
 
       {/* Editor content */}
-      <div className="min-h-0 flex-1 p-2">
+      <div className="min-h-0 flex-1 p-3">
         <textarea
           value={code}
           onChange={(e) => onCodeChange(e.target.value)}
           spellCheck={false}
           className={cn(
-            'h-full w-full resize-none rounded-md bg-ide-panel-bg p-4',
+            'h-full w-full resize-none rounded-xl bg-ide-panel-bg p-4',
             'font-mono text-sm leading-6 text-ide-text',
             'border border-ide-border',
-            'focus:outline-none focus:ring-1 focus:ring-ide-accent/50 focus:border-ide-accent/50',
-            'placeholder:text-ide-text-subtle'
+            'focus:outline-none focus:ring-2 focus:ring-ide-accent/30 focus:border-ide-accent/50',
+            'placeholder:text-ide-text-subtle',
+            'transition-all duration-200'
           )}
           placeholder="// Write your Arduino code here..."
         />
@@ -648,9 +650,9 @@ function LeftPanel() {
   ]
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-ide-panel-bg">
+    <div className="flex h-full flex-col overflow-hidden bg-ide-panel-bg transition-colors">
       {/* Tab header */}
-      <div className="flex h-10 shrink-0 items-center border-b border-ide-border bg-ide-panel-surface">
+      <div className="flex h-11 shrink-0 items-center border-b border-ide-border bg-ide-panel-surface transition-colors">
         {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = tab.key === activeTab
@@ -660,13 +662,13 @@ function LeftPanel() {
               type="button"
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'flex h-full items-center gap-1.5 px-3 text-xs font-medium transition-colors',
+                'flex h-full items-center gap-2 px-4 text-xs font-medium transition-all duration-200',
                 isActive
                   ? 'text-ide-accent border-b-2 border-ide-accent'
                   : 'text-ide-text-muted hover:text-ide-text'
               )}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="h-4 w-4" />
               <span>{tab.label}</span>
             </button>
           )
@@ -683,8 +685,9 @@ function LeftPanel() {
         {activeTab === 'files' && (
           <div className="flex h-full items-center justify-center text-ide-text-subtle">
             <div className="text-center">
-              <FolderTree className="mx-auto h-8 w-8 mb-2 opacity-50" />
-              <p className="text-xs">Project files</p>
+              <FolderTree className="mx-auto h-10 w-10 mb-3 opacity-50" />
+              <p className="text-sm">Project files</p>
+              <p className="text-xs text-ide-text-subtle/70 mt-1">Coming soon</p>
             </div>
           </div>
         )}
@@ -754,16 +757,16 @@ export default function Home() {
   }, [compiledBoard, compilationError, hex, isCompiling, simIsRunning, simRun])
 
   return (
-    <div className="relative h-screen overflow-hidden bg-ide-panel-bg text-ide-text">
-      {/* Global Header - Compact Command Center (40px) */}
-      <header className="relative z-50 flex h-10 items-center justify-between border-b border-ide-border bg-ide-panel-surface px-3">
+    <div className="relative h-screen overflow-hidden bg-ide-panel-bg text-ide-text transition-colors">
+      {/* Global Header - Compact Command Center (44px) */}
+      <header className="relative z-50 flex h-11 items-center justify-between border-b border-ide-border bg-ide-panel-surface px-4 transition-colors">
         {/* Left - Logo & Project */}
         <div className="flex items-center gap-3">
           {/* Collapse toggle */}
           <button
             type="button"
             onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-all duration-200"
             title={leftPanelCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {leftPanelCollapsed ? (
@@ -773,15 +776,15 @@ export default function Home() {
             )}
           </button>
 
-          <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-ide-accent">
-              <span className="text-xs font-bold text-white">F</span>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-ide-accent to-ide-accent-dim shadow-sm">
+              <span className="text-sm font-bold text-white">F</span>
             </div>
             <div>
-              <h1 className="text-xs font-semibold text-ide-text leading-none">
+              <h1 className="text-sm font-semibold text-ide-text leading-none tracking-tight">
                 FUNDI
               </h1>
-              <p className="text-[9px] text-ide-text-muted leading-none mt-0.5">
+              <p className="text-[10px] text-ide-text-muted leading-none mt-0.5">
                 IoT Workbench
               </p>
             </div>
@@ -792,18 +795,19 @@ export default function Home() {
         <StatusBadge deviceName="Arduino Uno" isConnected={true} />
 
         {/* Right - Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
-            className="flex h-7 items-center gap-1.5 rounded-md bg-ide-accent/10 px-3 text-xs font-medium text-ide-accent hover:bg-ide-accent/20 transition-colors"
+            className="flex h-8 items-center gap-2 rounded-lg bg-ide-accent/10 px-3 text-xs font-medium text-ide-accent hover:bg-ide-accent/20 transition-all duration-200"
             title="Publish to Gallery"
           >
             <Share2 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Publish</span>
           </button>
+          <ThemeToggle />
           <button
             type="button"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-all duration-200"
             title="Settings"
           >
             <Settings className="h-4 w-4" />
@@ -812,7 +816,7 @@ export default function Home() {
       </header>
 
       {/* Main IDE Layout - Resizable Panels */}
-      <div className="h-[calc(100vh-40px)]">
+      <div className="h-[calc(100vh-44px)]">
         <PanelGroup direction="horizontal" className="h-full">
           {/* Left Panel - Component Library (collapsible) */}
           {!leftPanelCollapsed && (
@@ -821,7 +825,7 @@ export default function Home() {
                 defaultSize={20} 
                 minSize={15} 
                 maxSize={35}
-                className="bg-ide-panel-bg"
+                className="bg-ide-panel-bg transition-colors"
               >
                 <LeftPanel />
               </Panel>

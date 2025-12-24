@@ -11,7 +11,7 @@ interface StatusBadgeProps {
 
 /**
  * StatusBadge - Pill component showing device connection status
- * Dark IDE theme compatible
+ * Modern Apple/Google-inspired design
  */
 export default function StatusBadge({
   deviceName = 'Arduino Uno',
@@ -21,32 +21,33 @@ export default function StatusBadge({
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-2 rounded-md',
+        'inline-flex items-center gap-2.5 rounded-xl',
         'bg-ide-panel-bg border border-ide-border',
-        'px-2.5 py-1',
+        'px-3 py-1.5',
         'transition-all duration-200',
+        'shadow-sm',
         className,
       )}
     >
       {/* Device Icon */}
-      <Cpu className="h-3.5 w-3.5 text-ide-text-muted" aria-hidden={true} />
+      <Cpu className="h-4 w-4 text-ide-text-muted" aria-hidden={true} />
 
       {/* Device Name */}
       <span className="text-xs font-medium text-ide-text">{deviceName}</span>
 
       {/* Divider */}
-      <div className="h-3 w-px bg-ide-border" />
+      <div className="h-4 w-px bg-ide-border" />
 
       {/* Connection Status */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2">
         {isConnected ? (
           <>
-            <Wifi className="h-3 w-3 text-ide-success" aria-hidden={true} />
+            <Wifi className="h-3.5 w-3.5 text-ide-success" aria-hidden={true} />
             <span className="text-xs font-medium text-ide-success">Connected</span>
           </>
         ) : (
           <>
-            <WifiOff className="h-3 w-3 text-ide-text-subtle" aria-hidden={true} />
+            <WifiOff className="h-3.5 w-3.5 text-ide-text-subtle" aria-hidden={true} />
             <span className="text-xs font-medium text-ide-text-subtle">Disconnected</span>
           </>
         )}
@@ -55,8 +56,8 @@ export default function StatusBadge({
       {/* Active indicator dot when connected */}
       {isConnected && (
         <div className="relative ml-0.5">
-          <div className="h-1.5 w-1.5 rounded-full bg-ide-success" />
-          <div className="absolute inset-0 h-1.5 w-1.5 rounded-full bg-ide-success animate-ping opacity-75" />
+          <div className="h-2 w-2 rounded-full bg-ide-success" />
+          <div className="absolute inset-0 h-2 w-2 rounded-full bg-ide-success animate-ping opacity-75" />
         </div>
       )}
     </div>

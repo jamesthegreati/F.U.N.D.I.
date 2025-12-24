@@ -40,19 +40,19 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
   }, [])
 
   return (
-    <div className="flex h-full flex-col bg-ide-panel-bg">
+    <div className="flex h-full flex-col bg-ide-panel-bg transition-colors">
       {/* Header toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-ide-border px-3 py-1.5">
-        <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-ide-border px-4 py-2">
+        <div className="flex items-center gap-4">
           {/* Status indicator */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <div
               className={cn(
-                'h-2 w-2 rounded-full',
+                'h-2.5 w-2.5 rounded-full',
                 isRunning ? 'bg-ide-success animate-pulse' : 'bg-ide-text-subtle'
               )}
             />
-            <span className="text-[10px] font-medium text-ide-text-muted">
+            <span className="text-xs font-medium text-ide-text-muted">
               {isRunning ? 'Connected' : 'Disconnected'}
             </span>
           </div>
@@ -61,7 +61,7 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
           <select
             value={baudRate}
             onChange={(e) => setBaudRate(Number(e.target.value))}
-            className="h-6 rounded border border-ide-border bg-ide-panel-surface px-1.5 text-[10px] text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent"
+            className="h-7 rounded-lg border border-ide-border bg-ide-panel-surface px-2 text-xs text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent transition-colors"
           >
             <option value={9600}>9600 baud</option>
             <option value={19200}>19200 baud</option>
@@ -71,20 +71,20 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
           </select>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {/* Scroll to bottom / Auto-scroll toggle */}
           <button
             type="button"
             onClick={scrollToBottom}
             title={autoScroll ? 'Auto-scroll ON' : 'Scroll to bottom'}
             className={cn(
-              'flex h-6 w-6 items-center justify-center rounded transition-colors',
+              'flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-200',
               autoScroll
-                ? 'bg-ide-success/20 text-ide-success'
+                ? 'bg-ide-success/15 text-ide-success'
                 : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
             )}
           >
-            <ArrowDownToLine className="h-3.5 w-3.5" />
+            <ArrowDownToLine className="h-4 w-4" />
           </button>
 
           {/* Clear output */}
@@ -92,9 +92,9 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
             type="button"
             onClick={onClear}
             title="Clear output"
-            className="flex h-6 w-6 items-center justify-center rounded text-ide-text-muted transition-colors hover:bg-ide-panel-hover hover:text-ide-text"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-ide-text-muted transition-all duration-200 hover:bg-ide-panel-hover hover:text-ide-text"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -103,13 +103,13 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-3 py-2 font-mono text-xs"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 font-mono text-sm"
       >
         {serialOutput.length === 0 ? (
           <div className="flex h-full items-center justify-center text-ide-text-subtle">
             <div className="text-center">
-              <p className="mb-1">Serial Monitor</p>
-              <p className="text-ide-text-subtle/70">
+              <p className="mb-1 text-sm">Serial Monitor</p>
+              <p className="text-xs text-ide-text-subtle/70">
                 {isRunning
                   ? 'Waiting for serial output...'
                   : 'Run simulation to see output'}

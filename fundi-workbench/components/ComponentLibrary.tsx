@@ -54,8 +54,8 @@ function ComponentLibrary() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Category Tabs - Horizontal Pills */}
-      <div className="shrink-0 border-b border-ide-border pb-3 mb-3">
-        <div className="flex gap-1">
+      <div className="shrink-0 border-b border-ide-border pb-3 mb-4">
+        <div className="flex gap-1.5">
           {categories.map((cat) => {
             const isActive = cat.key === active;
             const Icon = cat.icon;
@@ -66,14 +66,14 @@ function ComponentLibrary() {
                 type="button"
                 onClick={() => setActive(cat.key)}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all',
+                  'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200',
                   isActive
-                    ? 'bg-ide-accent/20 text-ide-accent'
+                    ? 'bg-ide-accent/15 text-ide-accent shadow-sm'
                     : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
                 )}
                 title={cat.title}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-4 w-4" />
                 <span>{cat.title}</span>
               </button>
             );
@@ -84,11 +84,11 @@ function ComponentLibrary() {
       {/* Component Grid */}
       <div className="min-h-0 flex-1 overflow-auto">
         {activeCategory.items.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-ide-text-subtle">
+          <div className="flex h-full items-center justify-center text-sm text-ide-text-subtle">
             No components in this category yet.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2.5">
             {activeCategory.items.map((item) => {
               const Icon = activeCategory.icon;
               
@@ -102,19 +102,19 @@ function ComponentLibrary() {
                   }}
                   className={cn(
                     'group relative flex cursor-grab flex-col items-center justify-center',
-                    'rounded-lg border p-3 transition-all duration-200',
+                    'rounded-xl border p-4 transition-all duration-200',
                     'bg-ide-panel-surface border-ide-border',
-                    'hover:border-ide-accent/50 hover:bg-ide-panel-hover',
+                    'hover:border-ide-accent/50 hover:bg-ide-panel-hover hover:shadow-sm',
                     'active:cursor-grabbing active:scale-95'
                   )}
                   title={item.description ?? item.name}
                 >
                   {/* Icon */}
-                  <Icon className="h-6 w-6 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
+                  <Icon className="h-7 w-7 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
                   
                   {/* Label */}
-                  <div className="mt-2 text-center">
-                    <div className="font-mono text-[10px] text-ide-text-muted group-hover:text-ide-text transition-colors leading-tight">
+                  <div className="mt-2.5 text-center">
+                    <div className="font-mono text-[11px] text-ide-text-muted group-hover:text-ide-text transition-colors leading-tight">
                       {item.name}
                     </div>
                   </div>
