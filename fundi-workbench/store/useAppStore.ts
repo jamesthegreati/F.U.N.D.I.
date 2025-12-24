@@ -27,6 +27,14 @@ export interface Connection {
   points?: { x: number; y: number }[]
 }
 
+/** Terminal history entry for CLI-style AI chat */
+export type TerminalEntry = {
+  id: string
+  type: 'cmd' | 'log' | 'ai' | 'error'
+  content: string
+  timestamp: number
+}
+
 export type AppState = {
   code: string
   diagramJson: string
@@ -43,6 +51,10 @@ export type AppState = {
   nextWireColorIndex: number
 
   selectedPartIds: string[]
+
+  // Terminal/AI Chat state
+  terminalHistory: TerminalEntry[]
+  isAiLoading: boolean
 
   updateCode: (newCode: string) => void
   setDiagramJson: (json: string) => void
@@ -68,6 +80,11 @@ export type AppState = {
   removeConnection: (id: string) => void
   updateWireColor: (id: string, color: string) => void
   updateWire: (id: string, points: { x: number; y: number }[] | undefined) => void
+
+  // Terminal/AI Chat actions
+  submitCommand: (text: string) => Promise<void>
+  addTerminalEntry: (entry: Omit<TerminalEntry, 'id' | 'timestamp'>) => void
+  clearTerminalHistory: () => void
 }
 
 const DEFAULT_WIRE_COLOR_CYCLE = [
@@ -170,6 +187,7 @@ function findMicrocontroller(parts: CircuitPart[]): CircuitPart | null {
     'wokwi-arduino-nano',
     'wokwi-arduino-mega',
     'wokwi-esp32-devkit-v1',
+    'wokwi-pi-pico',
   ])
 
   for (const p of parts) {
@@ -196,6 +214,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   nextWireColorIndex: 0,
 
   selectedPartIds: [],
+
+  // Terminal/AI Chat state
+  terminalHistory: [],
+  isAiLoading: false,
 
   updateCode: (newCode) => {
     set({ code: newCode })
@@ -335,5 +357,86 @@ export const useAppStore = create<AppState>((set, get) => ({
         c.id === id ? { ...c, points } : c
       ),
     })
+  },
+
+  // Terminal/AI Chat actions
+  addTerminalEntry: (entry) => {
+    const newEntry: TerminalEntry = {
+      id: nanoid(),
+      timestamp: Date.now(),
+      ...entry,
+    }
+    set({ terminalHistory: [...get().terminalHistory, newEntry] })
+  },
+
+  clearTerminalHistory: () => {
+    set({ terminalHistory: [] })
+  },
+
+  submitCommand: async (text) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+
+    // Add user command to history
+    get().addTerminalEntry({ type: 'cmd', content: trimmed })
+
+    // Handle slash commands
+    if (trimmed.startsWith('/')) {
+      const cmd = trimmed.toLowerCase()
+      if (cmd === '/clear') {
+        set({ terminalHistory: [] })
+        return
+      }
+      if (cmd === '/help') {
+        get().addTerminalEntry({
+          type: 'log',
+          content: 'Available commands:\n/clear - Clear terminal history\n/help - Show this help message\n\nOr type any prompt to generate Arduino code and circuits.',
+        })
+        return
+      }
+      get().addTerminalEntry({
+        type: 'error',
+        content: `Unknown command: ${trimmed}. Type /help for available commands.`,
+      })
+      return
+    }
+
+    // Call AI generate endpoint
+    set({ isAiLoading: true })
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+      const res = await fetch(`${baseUrl}/api/v1/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: trimmed }),
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null)
+        const errorMsg = errorData?.detail || res.statusText || 'Request failed'
+        get().addTerminalEntry({ type: 'error', content: `Error: ${errorMsg}` })
+        return
+      }
+
+      const data = await res.json()
+      
+      // Format the AI response as a log entry
+      let response = ''
+      if (data.explanation) {
+        response += data.explanation + '\n\n'
+      }
+      if (data.code) {
+        response += '```cpp\n' + data.code + '\n```'
+        // Also update the code editor
+        set({ code: data.code })
+      }
+      
+      get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      get().addTerminalEntry({ type: 'error', content: `Error: ${msg}` })
+    } finally {
+      set({ isAiLoading: false })
+    }
   },
 }))

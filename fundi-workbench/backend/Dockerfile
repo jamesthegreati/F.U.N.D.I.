@@ -24,15 +24,19 @@ RUN arduino-cli config init \
 # Install the AVR core (Uno, Nano, Mega)
 RUN arduino-cli core install arduino:avr
 
+# Install ESP32 core
+RUN arduino-cli core update-index --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json \
+    && arduino-cli core install esp32:esp32 --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+
+# Install RP2040 core (Raspberry Pi Pico)
+RUN arduino-cli core update-index \
+    && arduino-cli core install arduino:mbed_rp2040
+
 # Install popular Arduino libraries
 RUN arduino-cli lib install "Servo" \
     && arduino-cli lib install "Adafruit NeoPixel" \
     && arduino-cli lib install "LiquidCrystal I2C" \
     && arduino-cli lib install "DHT sensor library"
-
-# Optional: ESP32 core (large) — uncomment if needed
-# RUN arduino-cli core update-index \
-#     && arduino-cli core install esp32:esp32
 
 # --- Create non-root user for security ---
 RUN useradd --create-home --shell /bin/bash fundi \

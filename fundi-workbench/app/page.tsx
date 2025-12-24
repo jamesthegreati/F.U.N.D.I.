@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Code2, LayoutGrid, Terminal, Bot, Settings } from 'lucide-react'
+import { ChevronDown, Code2, LayoutGrid, Bot, Settings } from 'lucide-react'
 import {
   addEdge,
   Background,
@@ -25,6 +25,7 @@ import FloatingControlBar from '@/components/FloatingControlBar'
 import StatusBadge from '@/components/StatusBadge'
 import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
+import { TerminalPanel } from '@/components/terminal'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
 import { useSimulation } from '@/hooks/useSimulation'
 import { useAppStore } from '@/store/useAppStore'
@@ -32,7 +33,6 @@ import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
 
 type MobileTabKey = 'chat' | 'code' | 'sim'
-type RightPanelTab = 'terminal' | 'ai'
 
 const nodeTypes = {
   arduino: ArduinoNode,
@@ -344,7 +344,6 @@ function SimulationCanvas() {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTabKey>('sim')
-  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('terminal')
 
   const code = useAppStore((s) => s.code)
   const updateCode = useAppStore((s) => s.updateCode)
@@ -359,6 +358,8 @@ export default function Home() {
     pause: simPause,
     stop: simStop,
     isRunning: simIsRunning,
+    serialOutput,
+    clearSerialOutput,
   } = useSimulation(hex, compiledBoard ?? '')
 
   useEffect(() => {
@@ -446,8 +447,12 @@ export default function Home() {
 
         <div className="flex h-full min-h-0 flex-1">
           {activeTab === 'chat' && (
-            <section className="flex h-full w-full flex-col overflow-hidden bg-pro-bg">
-              <PanelBody>AI Assistant Coming Soon</PanelBody>
+            <section className="flex h-full w-full flex-col overflow-hidden bg-zinc-950">
+              <TerminalPanel
+                serialOutput={serialOutput}
+                onClearSerial={clearSerialOutput}
+                isSimulationRunning={simIsRunning}
+              />
             </section>
           )}
           {activeTab === 'code' && (
@@ -570,60 +575,18 @@ export default function Home() {
             )}
           </div>
 
-          {/* Bottom - Terminal/AI Tabs */}
+          {/* Bottom - Terminal Panel (Serial + AI) */}
           <div
             className={cn(
-              'flex flex-col overflow-hidden bg-pro-surface',
+              'flex flex-col overflow-hidden',
               codeEditorCollapsed ? 'flex-1' : 'h-[280px]'
             )}
           >
-            {/* Tab Headers */}
-            <div className="flex h-11 shrink-0 items-center border-b border-pro-border px-2">
-              <button
-                type="button"
-                onClick={() => setRightPanelTab('terminal')}
-                className={cn(
-                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  rightPanelTab === 'terminal'
-                    ? 'bg-pro-bg-subtle text-pro-text'
-                    : 'text-pro-text-muted hover:text-pro-text'
-                )}
-              >
-                <Terminal className="h-3.5 w-3.5" aria-hidden={true} />
-                <span>Serial Monitor</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setRightPanelTab('ai')}
-                className={cn(
-                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  rightPanelTab === 'ai'
-                    ? 'bg-pro-bg-subtle text-pro-text'
-                    : 'text-pro-text-muted hover:text-pro-text'
-                )}
-              >
-                <Bot className="h-3.5 w-3.5" aria-hidden={true} />
-                <span>AI Assistant</span>
-              </button>
-            </div>
-
-            {/* Tab Content */}
-            <div className="min-h-0 flex-1 overflow-auto p-3">
-              {rightPanelTab === 'terminal' ? (
-                <div className="flex h-full flex-col rounded-lg bg-pro-bg border border-pro-border p-4">
-                  <div className="flex-1 font-mono text-xs text-pro-text-muted">
-                    <p className="text-pro-text-subtle">Serial Monitor ready...</p>
-                    <p className="mt-2 text-pro-text-subtle">Waiting for connection.</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center rounded-lg bg-pro-bg border border-pro-border p-4">
-                  <Bot className="h-8 w-8 text-pro-text-subtle mb-3" aria-hidden={true} />
-                  <p className="text-sm font-medium text-pro-text-muted">AI Assistant</p>
-                  <p className="text-xs text-pro-text-subtle mt-1">Coming soon...</p>
-                </div>
-              )}
-            </div>
+            <TerminalPanel
+              serialOutput={serialOutput}
+              onClearSerial={clearSerialOutput}
+              isSimulationRunning={simIsRunning}
+            />
           </div>
         </div>
       </div>
@@ -637,16 +600,6 @@ function ConsoleLine({ text }: { text: string }) {
       <pre className="whitespace-pre-wrap break-words font-mono text-xs font-medium text-pro-error">
         {text}
       </pre>
-    </div>
-  )
-}
-
-function PanelBody({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4">
-      <div className="text-center text-sm font-medium text-pro-text-muted">
-        {children}
-      </div>
     </div>
   )
 }

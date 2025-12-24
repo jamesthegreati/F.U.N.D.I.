@@ -36,11 +36,17 @@ class CompilerService:
     """
 
     FQBN_MAP: dict[str, str] = {
+        # AVR boards
         "wokwi-arduino-uno": "arduino:avr:uno",
         "wokwi-arduino-nano": "arduino:avr:nano",
         "wokwi-arduino-mega": "arduino:avr:mega",
+        # ESP32 boards
         "wokwi-esp32-devkit-v1": "esp32:esp32:esp32",
+        # RP2040 boards (Raspberry Pi Pico)
+        "wokwi-pi-pico": "arduino:mbed_rp2040:pico",
     }
+
+    SUPPORTED_BOARDS: frozenset[str] = frozenset(FQBN_MAP.keys())
 
     def check_library_available(self, library_name: str) -> bool:
         """Check if a library is available in the pre-installed libraries."""
@@ -51,6 +57,13 @@ class CompilerService:
         return AVAILABLE_LIBRARIES.copy()
 
     def compile(self, code: str, board: str) -> CompileResult:
+        # Check if board is supported
+        if board not in self.SUPPORTED_BOARDS:
+            return CompileResult(
+                success=False,
+                error=f"Board not supported: {board}. Supported boards: {', '.join(sorted(self.SUPPORTED_BOARDS))}",
+            )
+
         fqbn = self.FQBN_MAP.get(board)
         if not fqbn:
             return CompileResult(success=False, error=f"Unsupported board: {board}")
