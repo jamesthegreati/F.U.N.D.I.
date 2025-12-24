@@ -1,24 +1,7 @@
 import type { Metadata } from 'next'
-import { Cinzel, Bricolage_Grotesque, JetBrains_Mono } from 'next/font/google'
 
 import '@xyflow/react/dist/style.css'
 import './globals.css'
-
-const cinzel = Cinzel({
-  variable: "--font-heading",
-  subsets: ["latin"],
-  weight: ["400", "700"],
-});
-
-const bricolage = Bricolage_Grotesque({
-  variable: "--font-ui",
-  subsets: ["latin"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "FUNDI - IoT Workbench",
@@ -32,9 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${cinzel.variable} ${bricolage.variable} ${jetbrainsMono.variable} font-ui bg-void text-parchment antialiased`}
-      >
+      <body className="font-ui bg-void text-neon-cyan antialiased">
         {children}
       </body>
     </html>
