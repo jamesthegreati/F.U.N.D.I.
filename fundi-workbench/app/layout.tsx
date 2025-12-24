@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Cinzel, Inter, JetBrains_Mono } from 'next/font/google'
+import { Cinzel, Bricolage_Grotesque, JetBrains_Mono } from 'next/font/google'
 
 import '@xyflow/react/dist/style.css'
 import './globals.css'
@@ -10,7 +10,7 @@ const cinzel = Cinzel({
   weight: ["400", "700"],
 });
 
-const inter = Inter({
+const bricolage = Bricolage_Grotesque({
   variable: "--font-ui",
   subsets: ["latin"],
 });
@@ -33,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${cinzel.variable} ${inter.variable} ${jetbrainsMono.variable} font-ui bg-void text-parchment antialiased`}
+        className={`${cinzel.variable} ${bricolage.variable} ${jetbrainsMono.variable} font-ui bg-void text-parchment antialiased`}
       >
         {children}
       </body>

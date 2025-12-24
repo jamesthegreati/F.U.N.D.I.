@@ -2,6 +2,7 @@
 
 import '@wokwi/elements';
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
+import type { ElementType } from 'react';
 import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
 import type { WirePoint } from '@/types/wire';
 
@@ -23,13 +24,18 @@ interface WokwiPartNodeProps {
     partType?: WokwiPartType; // Can be passed directly or via data
 }
 
+function getPartTypeFromData(data: WokwiPartNodeData | undefined): WokwiPartType | null {
+    const maybe = (data as unknown as { partType?: unknown } | undefined)?.partType;
+    return typeof maybe === 'string' ? (maybe as WokwiPartType) : null;
+}
+
 /**
  * Generic Wokwi Part Node - renders any Wokwi element with pin overlays
  */
 function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }: WokwiPartNodeProps) {
     const onPinClick = data?.onPinClick;
     const getCanvasRect = data?.getCanvasRect;
-    const partType = propPartType || (data as any)?.partType || 'arduino-uno';
+    const partType = propPartType ?? getPartTypeFromData(data) ?? 'arduino-uno';
 
     const [hoveredPin, setHoveredPin] = useState<string | null>(null);
     const [pins, setPins] = useState<PinData[]>([]);
@@ -38,7 +44,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const elementRef = useRef<HTMLElement | null>(null);
 
     const partConfig = WOKWI_PARTS[partType];
-    const PartElement = partConfig?.element as any;
+    const PartElement = (partConfig?.element ?? null) as ElementType | null;
 
     const handlePinClick = useCallback(
         (e: React.MouseEvent, pin: PinData) => {
@@ -171,12 +177,10 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     return (
         <div
             ref={containerRef}
-            className="relative glass-panel rounded-md"
+            className="relative glass-panel border-alchemist rounded-md"
             style={{
                 display: 'inline-block',
                 lineHeight: 0,
-                background: '#1a2030',
-                borderColor: 'rgba(212, 175, 55, 0.4)',
             }}
         >
             {/* Render the Wokwi custom element */}

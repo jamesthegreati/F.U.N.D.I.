@@ -116,7 +116,7 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
             ...params,
             type: 'default',
             animated: false,
-            style: { stroke: '#22c55e', strokeWidth: 2.5 },
+            style: { stroke: 'var(--electric)', strokeWidth: 2.5 },
           },
           eds
         )
@@ -295,7 +295,7 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
           ...edge,
           style: {
             ...edge.style,
-            stroke: edge.id === selectedEdge ? '#10b981' : '#22c55e',
+            stroke: 'var(--electric)',
             strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
           },
         }))}
@@ -315,11 +315,11 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
         defaultEdgeOptions={{
           type: 'default',
           animated: false,
-          style: { stroke: '#22c55e', strokeWidth: 2.5 },
+          style: { stroke: 'var(--electric)', strokeWidth: 2.5 },
         }}
-        connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2.5 }}
+        connectionLineStyle={{ stroke: 'var(--electric)', strokeWidth: 2.5 }}
       >
-        <Background color="#8B735B" variant={BackgroundVariant.Dots} />
+        <Background color="var(--brass-dim)" variant={BackgroundVariant.Dots} />
         <Controls />
 
         <WiringLayer
@@ -379,21 +379,49 @@ export default function Home() {
   const [codeEditorCollapsed, setCodeEditorCollapsed] = useState(false);
 
   return (
-    <div className="h-screen overflow-hidden bg-void text-parchment">
-      {/* Header - Minimalist with Gold Serif Logo */}
-      <header className="flex h-[60px] items-center justify-between border-b border-brass/20 bg-panel/50 px-6 backdrop-blur-md">
-        <h1 className="font-heading text-2xl font-bold tracking-wider text-brass">
-          FUNDI
-        </h1>
-        <div className="flex items-center gap-2 text-xs font-mono text-brass-dim">
-          <span>Industrial Alchemist</span>
-          <span className="text-brass/40">|</span>
-          <span>IoT Workbench</span>
+    <div className="h-screen overflow-hidden bg-void text-parchment scanlines">
+      {/* Decorative Background Elements */}
+      <div className="fixed -left-20 -top-20 h-64 w-64 rounded-full bg-brass/5 blur-[100px]" />
+      <div className="fixed -right-20 -bottom-20 h-96 w-96 rounded-full bg-electric/5 blur-[120px]" />
+
+      {/* Header - Refined Alchemist Aesthetic */}
+      <header className="relative z-50 flex h-[64px] items-center justify-between border-b border-brass/20 bg-panel/40 px-8 backdrop-blur-xl">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div className="absolute -inset-1 rounded-full bg-brass/20 blur-sm animate-pulse" />
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-brass/40 bg-void shadow-[inset_0_0_10px_rgba(212,175,55,0.2)]">
+              <span className="font-heading text-xl font-bold text-brass">F</span>
+            </div>
+          </div>
+          <div>
+            <h1 className="font-heading text-2xl font-bold tracking-[0.2em] text-brass drop-shadow-[0_0_14px_rgba(212,175,55,0.18)]">
+              FUNDI
+            </h1>
+            <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-brass-dim">
+              <span>Industrial Alchemist</span>
+              <span className="h-1 w-1 rounded-full bg-brass/30" />
+              <span>IoT Workbench</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className="hidden items-center gap-4 md:flex">
+            <div className="flex flex-col items-end">
+              <span className="font-mono text-[10px] text-brass-dim">SYSTEM STATUS</span>
+              <span className="font-mono text-[10px] text-electric">OPERATIONAL</span>
+            </div>
+            <div className="h-8 w-[1px] bg-brass/20" />
+            <div className="flex flex-col items-end">
+              <span className="font-mono text-[10px] text-brass-dim">LATENCY</span>
+              <span className="font-mono text-[10px] text-parchment/60">12ms</span>
+            </div>
+          </div>
         </div>
       </header>
 
       {/* Mobile (<768px): stacked panels with tabs */}
-      <div className="flex h-[calc(100vh-60px)] flex-col md:hidden">
+      <div className="flex h-[calc(100vh-64px)] flex-col md:hidden">
         <div className="flex border-b border-brass/20 bg-panel">
           {tabs.map((tab) => {
             const Icon = tab.icon
@@ -457,12 +485,7 @@ export default function Home() {
       </div>
 
       {/* Desktop (>=768px): The Holy Trinity Bento Grid Layout */}
-      <div className="hidden h-[calc(100vh-60px)] md:grid md:grid-cols-[260px_1fr] md:gap-0">
-        {/* Left Sidebar - Component Library */}
-        <aside className="flex flex-col overflow-hidden border-r border-brass/20 bg-panel/30">
-          {/* Component Library is absolutely positioned in the canvas, no header needed here */}
-        </aside>
-
+      <div className="hidden h-[calc(100vh-64px)] md:grid md:grid-cols-[1fr] md:gap-0">
         {/* Center - Workbench + Code Editor */}
         <div className="flex flex-col overflow-hidden">
           {/* Top - The Workbench (React Flow) */}
@@ -484,51 +507,68 @@ export default function Home() {
           {/* Bottom - Code Editor "The Logbook" (Collapsible) */}
           <div
             className={cn(
-              'flex flex-col border-t border-brass/20 bg-panel/30 transition-all duration-300',
-              codeEditorCollapsed ? 'h-[50px]' : 'h-[300px]'
+              'relative z-40 flex flex-col border-t border-brass/20 bg-panel/60 backdrop-blur-xl transition-all duration-500 ease-in-out',
+              codeEditorCollapsed ? 'h-[50px]' : 'h-[350px]'
             )}
           >
             <button
               type="button"
               onClick={() => setCodeEditorCollapsed((v) => !v)}
-              className="flex h-[50px] items-center justify-between px-4 hover:bg-brass/5 transition-colors"
+              className="flex h-[50px] items-center justify-between px-6 hover:bg-brass/5 transition-colors"
               aria-expanded={!codeEditorCollapsed}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
+                <div className={cn(
+                  "h-2 w-2 rounded-full transition-all duration-300",
+                  codeEditorCollapsed ? "bg-brass/40" : "bg-electric animate-pulse shadow-[0_0_8px_rgba(0,240,255,0.5)]"
+                )} />
                 <Code2 className="h-4 w-4 text-brass" aria-hidden={true} />
-                <span className="font-heading text-sm font-bold tracking-wide text-brass">
+                <span className="font-heading text-xs font-bold tracking-[0.2em] text-brass">
                   THE LOGBOOK
                 </span>
               </div>
-              <ChevronDown
-                className={cn(
-                  'h-4 w-4 text-brass-dim transition-transform',
-                  codeEditorCollapsed ? '-rotate-180' : 'rotate-0'
-                )}
-                aria-hidden={true}
-              />
+              <div className="flex items-center gap-4">
+                <span className="font-mono text-[10px] text-brass-dim uppercase tracking-widest">
+                  {codeEditorCollapsed ? "Expand Editor" : "Collapse Editor"}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 text-brass-dim transition-transform duration-500',
+                    codeEditorCollapsed ? '-rotate-180' : 'rotate-0'
+                  )}
+                  aria-hidden={true}
+                />
+              </div>
             </button>
 
             {!codeEditorCollapsed && (
-              <>
+              <div className="flex flex-1 flex-col overflow-hidden">
                 {compilationError && (
                   <ConsoleLine text={compilationError} />
                 )}
-                <div className="min-h-0 flex-1 p-3">
-                  <textarea
-                    value={code}
-                    onChange={(e) => updateCode(e.target.value)}
-                    spellCheck={false}
-                    className={cn(
-                      'h-full w-full resize-none glass-panel rounded-xl p-4',
-                      'font-mono text-sm leading-6 text-parchment',
-                      'focus:outline-none focus:ring-2 focus:ring-electric/50',
-                      'placeholder:text-brass-dim/40'
-                    )}
-                    placeholder="// Write your Arduino code here..."
-                  />
+                <div className="min-h-0 flex-1 p-4">
+                  <div className="relative h-full w-full">
+                    {/* Decorative corner accents for the editor */}
+                    <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-brass/30" />
+                    <div className="absolute -right-1 -top-1 h-4 w-4 border-r-2 border-t-2 border-brass/30" />
+                    <div className="absolute -bottom-1 -left-1 h-4 w-4 border-b-2 border-l-2 border-brass/30" />
+                    <div className="absolute -bottom-1 -right-1 h-4 w-4 border-b-2 border-r-2 border-brass/30" />
+                    
+                    <textarea
+                      value={code}
+                      onChange={(e) => updateCode(e.target.value)}
+                      spellCheck={false}
+                      className={cn(
+                        'h-full w-full resize-none bg-void/40 p-6',
+                        'font-mono text-sm leading-7 text-parchment/90',
+                        'focus:outline-none focus:ring-1 focus:ring-brass/20',
+                        'placeholder:text-brass-dim/30 border border-brass/10 rounded-sm'
+                      )}
+                      placeholder="// Write your Arduino code here..."
+                    />
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>

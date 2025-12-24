@@ -6,6 +6,18 @@ import type { Node } from '@xyflow/react';
 import { useAppStore } from '@/store/useAppStore';
 import type { WirePoint } from '@/types/wire';
 
+type ReactFlowStoreSlice = {
+  nodes: Node[];
+};
+
+type NodeWithInternals = Node & {
+  positionAbsolute?: { x: number; y: number };
+  internals?: { positionAbsolute?: { x: number; y: number } };
+  measured?: { width?: number; height?: number };
+  width?: number;
+  height?: number;
+};
+
 interface SelectionOverlayProps {
   containerRef: React.RefObject<HTMLElement | null>;
 }
@@ -31,7 +43,7 @@ function SelectionOverlay({ containerRef }: SelectionOverlayProps) {
   const setSelectedPartIds = useAppStore((s) => s.setSelectedPartIds);
 
   const transform = useStore((s) => s.transform as [number, number, number]);
-  const nodes = useStore((s) => (s as any).nodes as Node[]);
+  const nodes = useStore((s) => (s as unknown as ReactFlowStoreSlice).nodes);
 
   const dragRef = useRef<{
     start: WirePoint;
@@ -98,12 +110,10 @@ function SelectionOverlay({ containerRef }: SelectionOverlayProps) {
 
       const selected: string[] = [];
       for (const n of nodesForSelection) {
-        const pos =
-          (n as any).positionAbsolute ??
-          (n as any).internals?.positionAbsolute ??
-          n.position;
-        const w = (n as any).measured?.width ?? (n as any).width ?? 0;
-        const h = (n as any).measured?.height ?? (n as any).height ?? 0;
+        const nn = n as NodeWithInternals;
+        const pos = nn.positionAbsolute ?? nn.internals?.positionAbsolute ?? nn.position;
+        const w = nn.measured?.width ?? nn.width ?? 0;
+        const h = nn.measured?.height ?? nn.height ?? 0;
 
         const nr = { left: pos.x, top: pos.y, right: pos.x + w, bottom: pos.y + h };
         if (intersects(rFlow, nr)) {
@@ -140,7 +150,7 @@ function SelectionOverlay({ containerRef }: SelectionOverlayProps) {
           width: box.width,
           height: box.height,
         }}
-        className="rounded border border-emerald-400/80 bg-emerald-400/10"
+        className="rounded border border-electric/70 bg-electric/10 ring-1 ring-electric/20"
       />
     </div>
   );

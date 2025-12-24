@@ -1,6 +1,12 @@
 import type { NextConfig } from 'next'
+import { fileURLToPath } from 'url'
+
+const turbopackRoot = fileURLToPath(new URL('.', import.meta.url))
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: turbopackRoot,
+  },
   // Static export: generates HTML/CSS/JS for hosting on GitHub Pages.
   output: 'export',
 
