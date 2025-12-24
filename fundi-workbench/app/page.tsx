@@ -116,7 +116,7 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
             ...params,
             type: 'default',
             animated: false,
-            style: { stroke: 'var(--electric)', strokeWidth: 2.5 },
+            style: { stroke: 'var(--neon-cyan)', strokeWidth: 2, filter: 'drop-shadow(0 0 4px var(--neon-cyan))' },
           },
           eds
         )
@@ -295,8 +295,9 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
           ...edge,
           style: {
             ...edge.style,
-            stroke: 'var(--electric)',
-            strokeWidth: edge.id === selectedEdge ? 3.5 : 2.5,
+            stroke: 'var(--neon-cyan)',
+            strokeWidth: edge.id === selectedEdge ? 3.5 : 2,
+            filter: 'drop-shadow(0 0 4px var(--neon-cyan))',
           },
         }))}
         nodeTypes={nodeTypes}
@@ -315,11 +316,11 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
         defaultEdgeOptions={{
           type: 'default',
           animated: false,
-          style: { stroke: 'var(--electric)', strokeWidth: 2.5 },
+          style: { stroke: 'var(--neon-cyan)', strokeWidth: 2, filter: 'drop-shadow(0 0 4px var(--neon-cyan))' },
         }}
-        connectionLineStyle={{ stroke: 'var(--electric)', strokeWidth: 2.5 }}
+        connectionLineStyle={{ stroke: 'var(--neon-cyan)', strokeWidth: 2, filter: 'drop-shadow(0 0 4px var(--neon-cyan))' }}
       >
-        <Background color="var(--brass-dim)" variant={BackgroundVariant.Dots} />
+        <Background color="rgba(0, 255, 245, 0.08)" variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls />
 
         <WiringLayer
@@ -379,51 +380,56 @@ export default function Home() {
   const [codeEditorCollapsed, setCodeEditorCollapsed] = useState(false);
 
   return (
-    <div className="h-screen overflow-hidden bg-void text-parchment scanlines">
-      {/* Decorative Background Elements */}
-      <div className="fixed -left-20 -top-20 h-64 w-64 rounded-full bg-brass/5 blur-[100px]" />
-      <div className="fixed -right-20 -bottom-20 h-96 w-96 rounded-full bg-electric/5 blur-[120px]" />
+    <div className="h-screen overflow-hidden bg-void text-neon-cyan crt-container">
+      {/* Ambient Glow Effects */}
+      <div className="fixed left-0 top-0 h-96 w-96 rounded-full bg-neon-cyan/5 blur-[120px] animate-float-drift" />
+      <div className="fixed right-0 bottom-0 h-96 w-96 rounded-full bg-neon-magenta/5 blur-[120px] animate-float-drift" style={{ animationDelay: '2s' }} />
 
-      {/* Header - Refined Alchemist Aesthetic */}
-      <header className="relative z-50 flex h-[64px] items-center justify-between border-b border-brass/20 bg-panel/40 px-8 backdrop-blur-xl">
-        <div className="flex items-center gap-4">
+      {/* Header - Neon Foundry Aesthetic */}
+      <header className="relative z-50 flex h-[72px] items-center justify-between border-b-2 border-neon-cyan/20 backdrop-foundry px-8 foundry-panel">
+        <div className="flex items-center gap-6 stagger-item">
           <div className="relative">
-            <div className="absolute -inset-1 rounded-full bg-brass/20 blur-sm animate-pulse" />
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-brass/40 bg-void shadow-[inset_0_0_10px_rgba(212,175,55,0.2)]">
-              <span className="font-heading text-xl font-bold text-brass">F</span>
+            <div className="absolute -inset-2 rounded-lg bg-neon-cyan/20 blur-md animate-pulse-glow" />
+            <div className="relative flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-steel-light to-steel-dark border-2 border-neon-cyan/40 shadow-glow-cyan">
+              <span className="font-heading text-2xl font-black text-neon-cyan glow-cyan">F</span>
             </div>
           </div>
           <div>
-            <h1 className="font-heading text-2xl font-bold tracking-[0.2em] text-brass drop-shadow-[0_0_14px_rgba(212,175,55,0.18)]">
-              FUNDI
+            <h1 className="font-heading text-3xl font-black tracking-[0.25em] text-neon-cyan glow-cyan chromatic-text">
+              F.U.N.D.I.
             </h1>
-            <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-brass-dim">
-              <span>Industrial Alchemist</span>
-              <span className="h-1 w-1 rounded-full bg-brass/30" />
+            <div className="flex items-center gap-3 text-[11px] font-mono uppercase tracking-[0.2em] text-neon-cyan/50">
+              <span className="font-bold">Neon Foundry</span>
+              <span className="h-1 w-1 rounded-full bg-neon-cyan/30 animate-pulse" />
               <span>IoT Workbench</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="hidden items-center gap-4 md:flex">
+        <div className="flex items-center gap-8">
+          <div className="hidden items-center gap-6 md:flex stagger-item" style={{ animationDelay: '0.1s' }}>
             <div className="flex flex-col items-end">
-              <span className="font-mono text-[10px] text-brass-dim">SYSTEM STATUS</span>
-              <span className="font-mono text-[10px] text-electric">OPERATIONAL</span>
+              <span className="font-mono text-[9px] uppercase tracking-widest text-neon-cyan/40">System</span>
+              <span className="font-heading text-xs font-bold uppercase tracking-wider text-neon-green glow-cyan">Operational</span>
             </div>
-            <div className="h-8 w-[1px] bg-brass/20" />
+            <div className="h-10 w-[2px] bg-gradient-to-b from-transparent via-neon-cyan/30 to-transparent" />
             <div className="flex flex-col items-end">
-              <span className="font-mono text-[10px] text-brass-dim">LATENCY</span>
-              <span className="font-mono text-[10px] text-parchment/60">12ms</span>
+              <span className="font-mono text-[9px] uppercase tracking-widest text-neon-cyan/40">Latency</span>
+              <span className="font-mono text-xs font-bold text-neon-cyan/70">8ms</span>
+            </div>
+            <div className="h-10 w-[2px] bg-gradient-to-b from-transparent via-neon-cyan/30 to-transparent" />
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-neon-green status-glow" style={{ color: 'var(--neon-green)' }} />
+              <span className="font-mono text-xs uppercase tracking-wider text-neon-green">Active</span>
             </div>
           </div>
         </div>
       </header>
 
       {/* Mobile (<768px): stacked panels with tabs */}
-      <div className="flex h-[calc(100vh-64px)] flex-col md:hidden">
-        <div className="flex border-b border-brass/20 bg-panel">
-          {tabs.map((tab) => {
+      <div className="flex h-[calc(100vh-72px)] flex-col md:hidden">
+        <div className="flex border-b-2 border-neon-cyan/20 bg-steel-dark">
+          {tabs.map((tab, idx) => {
             const Icon = tab.icon
             const isActive = tab.key === activeTab
 
@@ -433,15 +439,16 @@ export default function Home() {
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
                 className={cn(
-                  'flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium',
-                  'border-r border-brass/20 last:border-r-0 transition-all',
+                  'flex flex-1 items-center justify-center gap-2 px-4 py-4 text-sm font-bold uppercase tracking-wider font-heading',
+                  'border-r-2 border-neon-cyan/20 last:border-r-0 transition-all duration-300 stagger-item',
                   isActive
-                    ? 'bg-panel text-brass border-b-2 border-b-brass'
-                    : 'bg-void/50 text-brass-dim hover:text-brass'
+                    ? 'bg-steel text-neon-cyan border-b-4 border-b-neon-cyan shadow-glow-cyan'
+                    : 'bg-steel-dark text-neon-cyan/40 hover:text-neon-cyan/70 hover:bg-steel/50'
                 )}
+                style={{ animationDelay: `${idx * 0.05}s` }}
               >
-                <Icon className="h-4 w-4" aria-hidden={true} />
-                <span className="font-ui">{tab.label}</span>
+                <Icon className={cn("h-5 w-5", isActive && "filter drop-shadow-[0_0_4px_currentColor]")} aria-hidden={true} />
+                <span>{tab.label}</span>
               </button>
             )
           })}
@@ -454,22 +461,17 @@ export default function Home() {
             </section>
           )}
           {activeTab === 'code' && (
-            <section className="flex h-full w-full flex-col overflow-hidden bg-void">
+            <section className="flex h-full w-full flex-col overflow-hidden bg-deep-void">
               {compilationError && (
                 <ConsoleLine text={compilationError} />
               )}
-              <div className="min-h-0 flex-1 p-3">
+              <div className="min-h-0 flex-1 p-4">
                 <textarea
                   value={code}
                   onChange={(e) => updateCode(e.target.value)}
                   spellCheck={false}
-                  className={cn(
-                    'h-full w-full resize-none glass-panel rounded-xl p-4',
-                    'font-mono text-sm leading-6 text-parchment',
-                    'focus:outline-none focus:ring-2 focus:ring-electric/50',
-                    'placeholder:text-brass-dim/40'
-                  )}
-                  placeholder="// Write your Arduino code here..."
+                  className="h-full w-full resize-none terminal-input rounded-lg p-6 text-sm leading-7"
+                  placeholder="// Initialize your embedded system code..."
                 />
               </div>
             </section>
@@ -485,7 +487,7 @@ export default function Home() {
       </div>
 
       {/* Desktop (>=768px): The Holy Trinity Bento Grid Layout */}
-      <div className="hidden h-[calc(100vh-64px)] md:grid md:grid-cols-[1fr] md:gap-0">
+      <div className="hidden h-[calc(100vh-72px)] md:grid md:grid-cols-[1fr] md:gap-0">
         {/* Center - Workbench + Code Editor */}
         <div className="flex flex-col overflow-hidden">
           {/* Top - The Workbench (React Flow) */}
@@ -504,37 +506,39 @@ export default function Home() {
             />
           </div>
 
-          {/* Bottom - Code Editor "The Logbook" (Collapsible) */}
+          {/* Bottom - Code Editor "The Terminal" (Collapsible) */}
           <div
             className={cn(
-              'relative z-40 flex flex-col border-t border-brass/20 bg-panel/60 backdrop-blur-xl transition-all duration-500 ease-in-out',
-              codeEditorCollapsed ? 'h-[50px]' : 'h-[350px]'
+              'relative z-40 flex flex-col border-t-2 border-neon-cyan/20 backdrop-foundry transition-all duration-500 ease-out foundry-panel',
+              codeEditorCollapsed ? 'h-[56px]' : 'h-[380px]'
             )}
           >
             <button
               type="button"
               onClick={() => setCodeEditorCollapsed((v) => !v)}
-              className="flex h-[50px] items-center justify-between px-6 hover:bg-brass/5 transition-colors"
+              className="flex h-[56px] items-center justify-between px-8 hover:bg-neon-cyan/5 transition-all duration-300 group"
               aria-expanded={!codeEditorCollapsed}
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-5">
                 <div className={cn(
-                  "h-2 w-2 rounded-full transition-all duration-300",
-                  codeEditorCollapsed ? "bg-brass/40" : "bg-electric animate-pulse shadow-[0_0_8px_rgba(0,240,255,0.5)]"
-                )} />
-                <Code2 className="h-4 w-4 text-brass" aria-hidden={true} />
-                <span className="font-heading text-xs font-bold tracking-[0.2em] text-brass">
-                  THE LOGBOOK
+                  "h-3 w-3 rounded-sm transition-all duration-500 border-2",
+                  codeEditorCollapsed 
+                    ? "bg-steel-light border-neon-cyan/30" 
+                    : "bg-neon-cyan border-neon-cyan shadow-glow-cyan status-glow"
+                )} style={{ color: 'var(--neon-cyan)' }} />
+                <Code2 className="h-5 w-5 text-neon-cyan filter drop-shadow-[0_0_4px_currentColor]" aria-hidden={true} />
+                <span className="font-heading text-sm font-black tracking-[0.3em] text-neon-cyan uppercase chromatic-text">
+                  Terminal Editor
                 </span>
               </div>
-              <div className="flex items-center gap-4">
-                <span className="font-mono text-[10px] text-brass-dim uppercase tracking-widest">
-                  {codeEditorCollapsed ? "Expand Editor" : "Collapse Editor"}
+              <div className="flex items-center gap-5">
+                <span className="font-mono text-[10px] text-neon-cyan/50 uppercase tracking-[0.2em] group-hover:text-neon-cyan/80 transition-colors">
+                  {codeEditorCollapsed ? "Expand" : "Minimize"}
                 </span>
                 <ChevronDown
                   className={cn(
-                    'h-4 w-4 text-brass-dim transition-transform duration-500',
-                    codeEditorCollapsed ? '-rotate-180' : 'rotate-0'
+                    'h-5 w-5 text-neon-cyan transition-all duration-500 filter drop-shadow-[0_0_4px_currentColor]',
+                    codeEditorCollapsed ? 'rotate-180' : 'rotate-0'
                   )}
                   aria-hidden={true}
                 />
@@ -546,25 +550,20 @@ export default function Home() {
                 {compilationError && (
                   <ConsoleLine text={compilationError} />
                 )}
-                <div className="min-h-0 flex-1 p-4">
+                <div className="min-h-0 flex-1 p-6">
                   <div className="relative h-full w-full">
-                    {/* Decorative corner accents for the editor */}
-                    <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-brass/30" />
-                    <div className="absolute -right-1 -top-1 h-4 w-4 border-r-2 border-t-2 border-brass/30" />
-                    <div className="absolute -bottom-1 -left-1 h-4 w-4 border-b-2 border-l-2 border-brass/30" />
-                    <div className="absolute -bottom-1 -right-1 h-4 w-4 border-b-2 border-r-2 border-brass/30" />
+                    {/* Corner Brackets */}
+                    <div className="absolute -left-2 -top-2 h-6 w-6 border-l-2 border-t-2 border-neon-cyan/40" />
+                    <div className="absolute -right-2 -top-2 h-6 w-6 border-r-2 border-t-2 border-neon-cyan/40" />
+                    <div className="absolute -bottom-2 -left-2 h-6 w-6 border-b-2 border-l-2 border-neon-cyan/40" />
+                    <div className="absolute -bottom-2 -right-2 h-6 w-6 border-b-2 border-r-2 border-neon-cyan/40" />
                     
                     <textarea
                       value={code}
                       onChange={(e) => updateCode(e.target.value)}
                       spellCheck={false}
-                      className={cn(
-                        'h-full w-full resize-none bg-void/40 p-6',
-                        'font-mono text-sm leading-7 text-parchment/90',
-                        'focus:outline-none focus:ring-1 focus:ring-brass/20',
-                        'placeholder:text-brass-dim/30 border border-brass/10 rounded-sm'
-                      )}
-                      placeholder="// Write your Arduino code here..."
+                      className="h-full w-full resize-none terminal-input rounded p-6 text-sm leading-7"
+                      placeholder="// Initialize your embedded system code..."
                     />
                   </div>
                 </div>
@@ -577,58 +576,10 @@ export default function Home() {
   )
 }
 
-function PanelHeader({
-  icon: Icon,
-  title,
-  right,
-}: {
-  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
-  title: string
-  right?: React.ReactNode
-}) {
-  return (
-    <header className="flex h-11 items-center gap-2 border-b border-slate-800 px-3">
-      <Icon className="h-4 w-4 text-slate-300" aria-hidden={true} />
-      <span className="text-sm font-medium text-slate-200">{title}</span>
-      {right ? <div className="ml-auto flex items-center gap-2">{right}</div> : null}
-    </header>
-  )
-}
-
-function RunButton({
-  isCompiling,
-  onRun,
-}: {
-  isCompiling: boolean
-  onRun: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onRun}
-      disabled={isCompiling}
-      className={cn(
-        'inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium',
-        isCompiling
-          ? 'bg-slate-900 text-slate-300'
-          : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
-      )}
-      title="Compile and run"
-    >
-      {isCompiling ? (
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden={true} />
-      ) : (
-        <Play className="h-4 w-4" aria-hidden={true} />
-      )}
-      <span>Run</span>
-    </button>
-  )
-}
-
 function ConsoleLine({ text }: { text: string }) {
   return (
-    <div className="border-b border-brass/20 bg-panel/40 px-4 py-2">
-      <pre className="whitespace-pre-wrap break-words font-mono text-xs font-medium text-error">
+    <div className="border-b-2 border-danger/30 bg-steel-dark/95 px-6 py-3 backdrop-foundry">
+      <pre className="whitespace-pre-wrap break-words font-mono text-xs font-medium text-danger filter drop-shadow-[0_0_6px_currentColor]">
         {text}
       </pre>
     </div>
@@ -638,7 +589,7 @@ function ConsoleLine({ text }: { text: string }) {
 function PanelBody({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4">
-      <div className="text-center font-ui text-sm font-medium text-brass-dim">
+      <div className="text-center font-ui text-sm font-medium text-neon-cyan/60">
         {children}
       </div>
     </div>
