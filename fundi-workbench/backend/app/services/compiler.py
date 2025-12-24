@@ -69,10 +69,10 @@ class CompilerService:
         sketch_base = f"sketch{uuid.uuid4().hex[:8]}"
 
         # Arduino CLI requires: <dir>/<dir>.ino
-        # Create temp directory with permissions accessible by non-root user (rwx for owner)
+        # Create temp directory with permissions accessible by non-root user (rwx for owner only)
         with tempfile.TemporaryDirectory(prefix="fundi-compile-") as temp_dir:
-            # Ensure temp directory has proper permissions for non-root user
-            os.chmod(temp_dir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+            # Ensure temp directory has proper permissions for non-root user (owner only)
+            os.chmod(temp_dir, stat.S_IRWXU)
             temp_path = Path(temp_dir)
             sketch_dir = temp_path / sketch_base
             sketch_dir.mkdir(parents=True, exist_ok=True)

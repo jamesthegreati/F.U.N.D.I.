@@ -37,7 +37,7 @@ RUN arduino-cli lib install "Servo" \
 # --- Create non-root user for security ---
 RUN useradd --create-home --shell /bin/bash fundi \
     && mkdir -p /home/fundi/.arduino15 \
-    && cp -r /root/.arduino15/* /home/fundi/.arduino15/ \
+    && cp -r /root/.arduino15/. /home/fundi/.arduino15/ \
     && chown -R fundi:fundi /home/fundi/.arduino15 \
     && chown -R fundi:fundi /backend
 
