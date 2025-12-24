@@ -56,6 +56,9 @@ export type AppState = {
   terminalHistory: TerminalEntry[]
   isAiLoading: boolean
 
+  // Teacher mode toggle (Socratic Tutor feature)
+  teacherMode: boolean
+
   updateCode: (newCode: string) => void
   setDiagramJson: (json: string) => void
   updateCircuit: (nodes: unknown, edges: unknown) => void
@@ -82,9 +85,13 @@ export type AppState = {
   updateWire: (id: string, points: { x: number; y: number }[] | undefined) => void
 
   // Terminal/AI Chat actions
-  submitCommand: (text: string) => Promise<void>
+  submitCommand: (text: string, imageData?: string) => Promise<void>
   addTerminalEntry: (entry: Omit<TerminalEntry, 'id' | 'timestamp'>) => void
   clearTerminalHistory: () => void
+  setTeacherMode: (enabled: boolean) => void
+  
+  // Apply AI-generated circuit to canvas
+  applyGeneratedCircuit: (parts: CircuitPart[], connections: Connection[]) => void
 }
 
 const DEFAULT_WIRE_COLOR_CYCLE = [
@@ -218,6 +225,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Terminal/AI Chat state
   terminalHistory: [],
   isAiLoading: false,
+
+  // Teacher mode (Socratic Tutor feature)
+  teacherMode: false,
 
   updateCode: (newCode) => {
     set({ code: newCode })
@@ -373,12 +383,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ terminalHistory: [] })
   },
 
-  submitCommand: async (text) => {
+  setTeacherMode: (enabled) => {
+    set({ teacherMode: enabled })
+    get().addTerminalEntry({
+      type: 'log',
+      content: enabled
+        ? '🎓 Teacher Mode enabled. AI will explain concepts before providing implementations.'
+        : '🔧 Builder Mode enabled. AI will focus on generating code and circuits.',
+    })
+  },
+
+  applyGeneratedCircuit: (parts, newConnections) => {
+    // Replace current circuit with AI-generated one
+    set({
+      circuitParts: parts,
+      connections: newConnections,
+    })
+  },
+
+  submitCommand: async (text, imageData) => {
     const trimmed = text.trim()
-    if (!trimmed) return
+    if (!trimmed && !imageData) return
 
     // Add user command to history
-    get().addTerminalEntry({ type: 'cmd', content: trimmed })
+    if (trimmed) {
+      get().addTerminalEntry({ type: 'cmd', content: trimmed })
+    }
+    if (imageData) {
+      get().addTerminalEntry({ type: 'log', content: '📷 Image uploaded for circuit recognition' })
+    }
 
     // Handle slash commands
     if (trimmed.startsWith('/')) {
@@ -390,8 +423,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (cmd === '/help') {
         get().addTerminalEntry({
           type: 'log',
-          content: 'Available commands:\n/clear - Clear terminal history\n/help - Show this help message\n\nOr type any prompt to generate Arduino code and circuits.',
+          content: `Available commands:
+/clear - Clear terminal history
+/help - Show this help message
+/teacher - Toggle Teacher Mode (explains concepts)
+/builder - Toggle Builder Mode (direct generation)
+
+Or type any prompt to generate Arduino code and circuits.
+You can also upload images of physical circuits for recognition.`,
         })
+        return
+      }
+      if (cmd === '/teacher') {
+        get().setTeacherMode(true)
+        return
+      }
+      if (cmd === '/builder') {
+        get().setTeacherMode(false)
         return
       }
       get().addTerminalEntry({
@@ -405,10 +453,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isAiLoading: true })
     try {
       const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+      
+      // Get current circuit state for context (bi-directional awareness)
+      const currentCircuit = JSON.stringify({
+        parts: get().circuitParts,
+        connections: get().connections,
+      })
+      
       const res = await fetch(`${baseUrl}/api/v1/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: trimmed }),
+        body: JSON.stringify({
+          prompt: trimmed || 'Analyze this circuit image and recreate it',
+          teacher_mode: get().teacherMode,
+          image_data: imageData || null,
+          current_circuit: get().circuitParts.length > 0 ? currentCircuit : null,
+        }),
       })
 
       if (!res.ok) {
@@ -432,6 +492,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       
       get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
+
+      // Apply generated circuit parts and connections to canvas
+      if (data.circuit_parts && Array.isArray(data.circuit_parts)) {
+        const newParts: CircuitPart[] = data.circuit_parts.map((p: { id: string; type: string; x: number; y: number; attrs?: Record<string, string> }) => ({
+          id: p.id || nanoid(),
+          type: p.type,
+          position: { x: p.x || 0, y: p.y || 0 },
+          rotate: 0,
+          attrs: p.attrs || {},
+        }))
+        
+        const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string }) => ({
+          id: nanoid(),
+          from: { partId: c.source_part, pinId: c.source_pin },
+          to: { partId: c.target_part, pinId: c.target_pin },
+          color: get().allocateNextWireColor(),
+        }))
+        
+        get().applyGeneratedCircuit(newParts, newConnections)
+        get().addTerminalEntry({
+          type: 'log',
+          content: `✨ Applied ${newParts.length} components and ${newConnections.length} connections to canvas`,
+        })
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       get().addTerminalEntry({ type: 'error', content: `Error: ${msg}` })

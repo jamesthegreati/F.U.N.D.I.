@@ -126,6 +126,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const rafRef = useRef<number | null>(null);
   const runningRef = useRef(false);
   const serialBufferRef = useRef<string>('');
+  const stepFrameRef = useRef<() => void>(() => {});
 
   const cyclesPerFrame = useMemo(() => Math.floor(16_000_000 / 60), []);
 
@@ -154,22 +155,29 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     });
   }, []);
 
-  const stepFrame = useCallback(() => {
-    if (!runningRef.current) return;
-    const runner = runnerRef.current;
-    if (!runner) return;
+  // Update the step function ref in an effect to avoid stale closure issues
+  useEffect(() => {
+    stepFrameRef.current = () => {
+      if (!runningRef.current) return;
+      const runner = runnerRef.current;
+      if (!runner) return;
 
-    // Run ~16MHz/60fps CPU cycles each frame.
-    let remaining = cyclesPerFrame;
-    while (remaining > 0) {
-      const before = runner.cpu.cycles;
-      avrInstruction(runner.cpu);
-      const delta = runner.cpu.cycles - before;
-      remaining -= delta > 0 ? delta : 1;
-    }
+      // Run ~16MHz/60fps CPU cycles each frame.
+      let remaining = cyclesPerFrame;
+      while (remaining > 0) {
+        const before = runner.cpu.cycles;
+        avrInstruction(runner.cpu);
+        const delta = runner.cpu.cycles - before;
+        remaining -= delta > 0 ? delta : 1;
+      }
 
-    rafRef.current = requestAnimationFrame(stepFrame);
+      rafRef.current = requestAnimationFrame(stepFrameRef.current);
+    };
   }, [cyclesPerFrame]);
+
+  const stepFrame = useCallback(() => {
+    stepFrameRef.current();
+  }, []);
 
   const stop = useCallback(() => {
     runningRef.current = false;

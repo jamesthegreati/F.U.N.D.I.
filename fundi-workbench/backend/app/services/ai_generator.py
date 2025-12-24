@@ -1,20 +1,78 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
+from typing import Optional
 
 from google import genai
 
 from app.core.config import settings
 from app.schemas.circuit import AIResponse
 
-_SYSTEM_PROMPT = (
-    "You are an Embedded Systems Engineer.\n"
-    "1. Generate valid C++ Arduino code.\n"
-    "2. Create a wiring diagram using STANDARD Wokwi part IDs (e.g., 'wokwi-arduino-uno', 'wokwi-resistor', 'wokwi-led').\n"
-    "3. Ensure connections match the code (e.g., if code uses Pin 13, wire Pin 13).\n"
-    "4. Layout parts logically (do not stack them)."
-)
+# Enhanced system prompt for better layout and educational explanations
+_SYSTEM_PROMPT_BUILDER = """You are an Embedded Systems Engineer and IoT Expert. Your role is to help students build circuits.
+
+STRICT REQUIREMENTS:
+1. Generate valid C++ Arduino code with proper setup() and loop() functions.
+2. Create a wiring diagram using STANDARD Wokwi part IDs:
+   - Boards: 'wokwi-arduino-uno', 'wokwi-arduino-nano', 'wokwi-esp32-devkit-v1'
+   - Components: 'wokwi-led', 'wokwi-resistor', 'wokwi-pushbutton', 'wokwi-servo', etc.
+3. Ensure connections match the code (e.g., if code uses Pin 13, wire Pin 13).
+4. LAYOUT COORDINATES - CRITICAL:
+   - Place the microcontroller (Arduino/ESP32) at coordinates (0, 0)
+   - Place components in a neat grid pattern to the right and below the microcontroller
+   - LEDs and indicators: x = 300-400, y = 0-100
+   - Buttons and inputs: x = 300-400, y = 150-250
+   - Sensors: x = 300-400, y = 300-400
+   - Displays: x = 0, y = 250
+   - Use spacing of at least 100 pixels between components
+   - NEVER stack components at the same coordinates
+5. For resistors, specify the 'value' attribute in ohms (e.g., {"value": "220"} for 220Ω).
+"""
+
+_SYSTEM_PROMPT_TEACHER = """You are a Socratic Tutor and Embedded Systems Educator. Your role is to TEACH students about circuits.
+
+TEACHING APPROACH:
+1. Before providing code or circuits, EXPLAIN the concepts involved.
+2. Describe WHY each component is needed and how it works.
+3. Explain the physics/electronics principles (e.g., Ohm's law, GPIO, PWM).
+4. After explanation, provide the implementation.
+
+STRICT TECHNICAL REQUIREMENTS:
+1. Generate valid C++ Arduino code with proper setup() and loop() functions.
+2. Create a wiring diagram using STANDARD Wokwi part IDs:
+   - Boards: 'wokwi-arduino-uno', 'wokwi-arduino-nano', 'wokwi-esp32-devkit-v1'
+   - Components: 'wokwi-led', 'wokwi-resistor', 'wokwi-pushbutton', 'wokwi-servo', etc.
+3. Ensure connections match the code (e.g., if code uses Pin 13, wire Pin 13).
+4. LAYOUT COORDINATES - CRITICAL:
+   - Place the microcontroller (Arduino/ESP32) at coordinates (0, 0)
+   - Place components in a neat grid pattern to the right and below the microcontroller
+   - LEDs and indicators: x = 300-400, y = 0-100
+   - Buttons and inputs: x = 300-400, y = 150-250
+   - Sensors: x = 300-400, y = 300-400
+   - Displays: x = 0, y = 250
+   - Use spacing of at least 100 pixels between components
+   - NEVER stack components at the same coordinates
+5. For resistors, specify the 'value' attribute in ohms (e.g., {"value": "220"} for 220Ω).
+"""
+
+_VISION_SYSTEM_PROMPT = """You are a Computer Vision expert specializing in electronic circuit analysis.
+
+Your task is to analyze an image of a physical breadboard circuit and reconstruct it virtually.
+
+ANALYSIS PROCESS:
+1. Identify all components in the image (Arduino boards, LEDs, resistors, wires, etc.)
+2. Determine the physical layout and positions
+3. Trace wire connections between components
+4. Generate a virtual circuit representation
+
+OUTPUT REQUIREMENTS:
+- Use STANDARD Wokwi part IDs for all components
+- Calculate appropriate x/y coordinates based on the physical layout
+- Map connections correctly between pins
+- Provide an explanation of what you identified
+"""
 
 
 def _client() -> genai.Client:
@@ -42,13 +100,69 @@ def _schema_rejected_by_gemini(exc: Exception) -> bool:
     return "additionalProperties" in msg or "response_schema" in msg
 
 
-def generate_circuit(prompt: str) -> AIResponse:
-    """Generate Arduino code + Wokwi circuit description from a user prompt."""
-
+def generate_circuit(
+    prompt: str,
+    teacher_mode: bool = False,
+    image_data: Optional[str] = None,
+    current_circuit: Optional[str] = None,
+) -> AIResponse:
+    """Generate Arduino code + Wokwi circuit description from a user prompt.
+    
+    Args:
+        prompt: The user's text prompt
+        teacher_mode: If True, AI explains concepts before providing implementation
+        image_data: Optional base64-encoded image for vision-based circuit recognition
+        current_circuit: Optional JSON string of current circuit state for context
+    """
     client = _client()
-    contents = [
-        {"role": "user", "parts": [{"text": prompt}]},
-    ]
+    
+    # Select system prompt based on mode
+    if image_data:
+        system_prompt = _VISION_SYSTEM_PROMPT
+    elif teacher_mode:
+        system_prompt = _SYSTEM_PROMPT_TEACHER
+    else:
+        system_prompt = _SYSTEM_PROMPT_BUILDER
+    
+    # Build content parts
+    parts: list[dict] = []
+    
+    # Add context about current circuit if available
+    if current_circuit:
+        parts.append({
+            "text": f"CURRENT CIRCUIT STATE (for context - user may want to modify this):\n{current_circuit}\n\n"
+        })
+    
+    # Add image if provided
+    if image_data:
+        # Extract base64 data and detect mime type from data URL
+        mime_type = "image/jpeg"  # default
+        data = image_data
+        
+        if image_data.startswith("data:"):
+            # Parse data URL format: data:mime/type;base64,data
+            try:
+                header, data = image_data.split(",", 1)
+                if header.startswith("data:") and ";" in header:
+                    mime_type = header[5:header.index(";")]
+            except ValueError:
+                # If parsing fails, use the raw data with default mime type
+                pass
+        elif "," in image_data:
+            # Legacy format: just split on comma
+            data = image_data.split(",", 1)[1]
+        
+        parts.append({
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": data,
+            }
+        })
+        parts.append({"text": f"User request: {prompt}"})
+    else:
+        parts.append({"text": prompt})
+    
+    contents = [{"role": "user", "parts": parts}]
 
     # Prefer the model that is known to exist in your project (per user request),
     # then fall back to other common Flash variants.
@@ -71,7 +185,7 @@ def generate_circuit(prompt: str) -> AIResponse:
                     model=model_name,
                     contents=contents,
                     config={
-                        "system_instruction": _SYSTEM_PROMPT,
+                        "system_instruction": system_prompt,
                         "response_schema": AIResponse,
                     },
                 )
@@ -108,6 +222,10 @@ def generate_circuit(prompt: str) -> AIResponse:
                 '  "connections": [ {"source_part": string, "source_pin": string, "target_part": string, "target_pin": string} ],\n'
                 '  "explanation": string\n'
                 "}\n\n"
+                "LAYOUT RULES:\n"
+                "- Place microcontroller at (0, 0)\n"
+                "- Place other components at x=300-400 with 100px vertical spacing\n"
+                "- Never stack components at same coordinates\n\n"
                 f"User prompt: {prompt}"
             )
 
@@ -115,7 +233,7 @@ def generate_circuit(prompt: str) -> AIResponse:
                 model=model_name,
                 contents=[{"role": "user", "parts": [{"text": fallback_prompt}]}],
                 config={
-                    "system_instruction": _SYSTEM_PROMPT,
+                    "system_instruction": system_prompt,
                     "response_mime_type": "application/json",
                 },
             )
