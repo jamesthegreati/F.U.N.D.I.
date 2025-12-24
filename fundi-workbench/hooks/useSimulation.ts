@@ -5,11 +5,13 @@ import {
   AVRIOPort,
   AVRClock,
   AVRTimer,
+  AVRUSART,
   CPU,
   avrInstruction,
   portBConfig,
   portDConfig,
   timer0Config,
+  usart0Config,
   type GPIOListener,
 } from 'avr8js';
 
@@ -80,6 +82,7 @@ class AVRRunner {
   readonly portD: AVRIOPort;
   readonly clock: AVRClock;
   readonly timer0: AVRTimer;
+  readonly usart: AVRUSART;
 
   constructor(hexText: string) {
     const program = parseIntelHex(hexText);
@@ -90,6 +93,9 @@ class AVRRunner {
     // Provide basic Arduino timing (millis/delay rely on timer0 on Uno).
     this.clock = new AVRClock(this.cpu, 16_000_000);
     this.timer0 = new AVRTimer(this.cpu, timer0Config);
+    
+    // USART for Serial communication
+    this.usart = new AVRUSART(this.cpu, usart0Config, 16_000_000);
   }
 }
 
@@ -99,6 +105,8 @@ export type UseSimulationControls = {
   pause: () => void;
   isRunning: boolean;
   pinStates: PinStates;
+  serialOutput: string[];
+  clearSerialOutput: () => void;
 };
 
 function isAvrPart(partType: string): boolean {
@@ -112,12 +120,19 @@ function isAvrPart(partType: string): boolean {
 export function useSimulation(hexData: string | null | undefined, partType: string): UseSimulationControls {
   const [isRunning, setIsRunning] = useState(false);
   const [pinStates, setPinStates] = useState<PinStates>({});
+  const [serialOutput, setSerialOutput] = useState<string[]>([]);
 
   const runnerRef = useRef<AVRRunner | null>(null);
   const rafRef = useRef<number | null>(null);
   const runningRef = useRef(false);
+  const serialBufferRef = useRef<string>('');
 
   const cyclesPerFrame = useMemo(() => Math.floor(16_000_000 / 60), []);
+
+  const clearSerialOutput = useCallback(() => {
+    setSerialOutput([]);
+    serialBufferRef.current = '';
+  }, []);
 
   const updatePortPins = useCallback((port: 'B' | 'D', value: number) => {
     setPinStates((prev) => {
@@ -167,6 +182,8 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
     runnerRef.current = null;
     setPinStates({});
+    setSerialOutput([]);
+    serialBufferRef.current = '';
   }, []);
 
   const pause = useCallback(() => {
@@ -195,6 +212,21 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
       runner.portB.addListener(onPortB);
       runner.portD.addListener(onPortD);
 
+      // Listen for USART byte transmissions (Serial.print output)
+      runner.usart.onByteTransmit = (byte: number) => {
+        const char = String.fromCharCode(byte);
+        serialBufferRef.current += char;
+        
+        // When we see a newline, flush the buffer as a new line
+        if (char === '\n') {
+          const line = serialBufferRef.current.trimEnd();
+          if (line) {
+            setSerialOutput((prev) => [...prev, line]);
+          }
+          serialBufferRef.current = '';
+        }
+      };
+
       // Initialize state from current registers
       updatePortPins('B', runner.cpu.data[portBConfig.PORT]);
       updatePortPins('D', runner.cpu.data[portDConfig.PORT]);
@@ -219,5 +251,5 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     };
   }, [stop]);
 
-  return { run, stop, pause, isRunning, pinStates };
+  return { run, stop, pause, isRunning, pinStates, serialOutput, clearSerialOutput };
 }
