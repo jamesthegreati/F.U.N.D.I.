@@ -101,7 +101,7 @@ export function CommandInterface() {
 
         recognitionRef.current.onresult = (event: { results: { transcript: string }[][] }) => {
           const transcript = event.results[0][0].transcript
-          setInput((prev) => prev + ' ' + transcript)
+          setInput((prev) => prev ? prev + ' ' + transcript : transcript)
           setIsListening(false)
         }
 

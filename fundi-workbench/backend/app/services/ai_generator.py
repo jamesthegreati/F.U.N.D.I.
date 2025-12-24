@@ -135,13 +135,27 @@ def generate_circuit(
     
     # Add image if provided
     if image_data:
-        # Remove data URL prefix if present
-        if "," in image_data:
-            image_data = image_data.split(",", 1)[1]
+        # Extract base64 data and detect mime type from data URL
+        mime_type = "image/jpeg"  # default
+        data = image_data
+        
+        if image_data.startswith("data:"):
+            # Parse data URL format: data:mime/type;base64,data
+            try:
+                header, data = image_data.split(",", 1)
+                if header.startswith("data:") and ";" in header:
+                    mime_type = header[5:header.index(";")]
+            except ValueError:
+                # If parsing fails, use the raw data with default mime type
+                pass
+        elif "," in image_data:
+            # Legacy format: just split on comma
+            data = image_data.split(",", 1)[1]
+        
         parts.append({
             "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": image_data,
+                "mime_type": mime_type,
+                "data": data,
             }
         })
         parts.append({"text": f"User request: {prompt}"})

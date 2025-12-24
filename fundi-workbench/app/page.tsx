@@ -107,8 +107,13 @@ function SimulationCanvasInner({ canvasRef }: { canvasRef: React.RefObject<HTMLD
       selected: selectedPartIds.includes(part.id),
     }))
     
-    // Only update if different from current nodes
-    if (newNodes.length > 0 && JSON.stringify(newNodes.map(n => n.id).sort()) !== JSON.stringify(nodes.map(n => n.id).sort())) {
+    // Only update if IDs have changed (more efficient than deep comparison)
+    const currentIds = new Set(nodes.map(n => n.id))
+    const newIds = new Set(newNodes.map(n => n.id))
+    const idsChanged = newIds.size !== currentIds.size || 
+      [...newIds].some(id => !currentIds.has(id))
+    
+    if (newNodes.length > 0 && idsChanged) {
       setNodes(newNodes)
     }
   }, [circuitParts, getCanvasRect, nodes, selectedPartIds, setNodes])
