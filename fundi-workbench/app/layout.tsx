@@ -15,6 +15,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // suppressHydrationWarning is needed because the theme class may differ
+    // between server (dark) and client (user's preference) on initial render
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className="font-ui bg-ide-panel-bg text-ide-text antialiased">
         <ThemeProvider>{children}</ThemeProvider>

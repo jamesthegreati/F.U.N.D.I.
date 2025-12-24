@@ -13,8 +13,13 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   useEffect(() => {
     // Update the html element's class when theme changes
     const root = document.documentElement
-    root.classList.remove('light', 'dark')
-    root.classList.add(theme)
+    const currentTheme = root.classList.contains('dark') ? 'dark' : 'light'
+    
+    // Only update if theme actually changed
+    if (currentTheme !== theme) {
+      root.classList.remove('light', 'dark')
+      root.classList.add(theme)
+    }
   }, [theme])
 
   return <>{children}</>

@@ -55,10 +55,10 @@
   --ide-info: #3b82f6;
   --ide-info-subtle: rgba(59, 130, 246, 0.15);
   
-  /* Shadows for dark mode */
-  --ide-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --ide-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --ide-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+  /* Shadows for dark mode - optimized for performance */
+  --ide-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --ide-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --ide-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.35);
   --ide-shadow-glow: 0 0 20px rgba(245, 158, 11, 0.15);
   
   /* Legacy variables for backward compatibility */
