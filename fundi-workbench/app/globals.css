@@ -6,6 +6,11 @@
    ============================================ */
 
 :root {
+  /* Font System */
+  --font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  
   /* Pro Palette */
   --pro-bg: #FAFAFA;
   --pro-bg-subtle: #F4F4F5;
@@ -59,8 +64,8 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background-image: 
-    linear-gradient(to right, #E4E4E7 1px, transparent 1px),
-    linear-gradient(to bottom, #E4E4E7 1px, transparent 1px);
+    linear-gradient(to right, var(--pro-border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--pro-border) 1px, transparent 1px);
   background-size: 24px 24px;
   opacity: 0.4;
 }
