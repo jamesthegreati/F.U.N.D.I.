@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import subprocess
 import uuid
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,15 @@ class CompileResult:
     error: Optional[str] = None
 
 
+# List of pre-installed libraries available in the Docker image
+AVAILABLE_LIBRARIES: set[str] = {
+    "Servo",
+    "Adafruit NeoPixel",
+    "LiquidCrystal I2C",
+    "DHT sensor library",
+}
+
+
 class CompilerService:
     """Compile Arduino/ESP32 sketches using arduino-cli.
 
@@ -31,6 +41,14 @@ class CompilerService:
         "wokwi-arduino-mega": "arduino:avr:mega",
         "wokwi-esp32-devkit-v1": "esp32:esp32:esp32",
     }
+
+    def check_library_available(self, library_name: str) -> bool:
+        """Check if a library is available in the pre-installed libraries."""
+        return library_name in AVAILABLE_LIBRARIES
+
+    def get_available_libraries(self) -> set[str]:
+        """Return the set of available pre-installed libraries."""
+        return AVAILABLE_LIBRARIES.copy()
 
     def compile(self, code: str, board: str) -> CompileResult:
         fqbn = self.FQBN_MAP.get(board)
@@ -51,7 +69,10 @@ class CompilerService:
         sketch_base = f"sketch{uuid.uuid4().hex[:8]}"
 
         # Arduino CLI requires: <dir>/<dir>.ino
+        # Create temp directory with permissions accessible by non-root user (rwx for owner)
         with tempfile.TemporaryDirectory(prefix="fundi-compile-") as temp_dir:
+            # Ensure temp directory has proper permissions for non-root user
+            os.chmod(temp_dir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
             temp_path = Path(temp_dir)
             sketch_dir = temp_path / sketch_base
             sketch_dir.mkdir(parents=True, exist_ok=True)
