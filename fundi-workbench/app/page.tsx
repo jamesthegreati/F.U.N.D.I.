@@ -576,54 +576,6 @@ export default function Home() {
   )
 }
 
-function PanelHeader({
-  icon: Icon,
-  title,
-  right,
-}: {
-  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
-  title: string
-  right?: React.ReactNode
-}) {
-  return (
-    <header className="flex h-11 items-center gap-2 border-b border-slate-800 px-3">
-      <Icon className="h-4 w-4 text-slate-300" aria-hidden={true} />
-      <span className="text-sm font-medium text-slate-200">{title}</span>
-      {right ? <div className="ml-auto flex items-center gap-2">{right}</div> : null}
-    </header>
-  )
-}
-
-function RunButton({
-  isCompiling,
-  onRun,
-}: {
-  isCompiling: boolean
-  onRun: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onRun}
-      disabled={isCompiling}
-      className={cn(
-        'inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium',
-        isCompiling
-          ? 'bg-slate-900 text-slate-300'
-          : 'bg-slate-950 text-slate-100 hover:bg-slate-900'
-      )}
-      title="Compile and run"
-    >
-      {isCompiling ? (
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden={true} />
-      ) : (
-        <Play className="h-4 w-4" aria-hidden={true} />
-      )}
-      <span>Run</span>
-    </button>
-  )
-}
-
 function ConsoleLine({ text }: { text: string }) {
   return (
     <div className="border-b-2 border-danger/30 bg-steel-dark/95 px-6 py-3 backdrop-foundry">

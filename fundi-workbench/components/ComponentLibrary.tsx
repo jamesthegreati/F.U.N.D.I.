@@ -73,7 +73,7 @@ function ComponentLibrary() {
       {/* Category Tabs */}
       <div className="border-b-2 border-neon-cyan/15 bg-steel-dark">
         <div className="grid grid-cols-4">
-          {categories.map((cat, idx) => {
+          {categories.map((cat) => {
             const isActive = cat.key === active;
             const Icon = cat.icon;
 
