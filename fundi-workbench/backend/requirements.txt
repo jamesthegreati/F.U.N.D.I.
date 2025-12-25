@@ -4,3 +4,4 @@ google-genai
 pydantic-settings
 python-multipart
 httpx
+python-dotenv

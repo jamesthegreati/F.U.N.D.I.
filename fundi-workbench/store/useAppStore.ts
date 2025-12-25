@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
 
 export type CircuitPart = {
@@ -35,13 +36,51 @@ export type TerminalEntry = {
   timestamp: number
 }
 
+/** Project file for multi-file support */
+export type ProjectFile = {
+  path: string
+  content: string
+  isMain: boolean
+  includeInSimulation: boolean
+  isReadOnly?: boolean
+}
+
+/** Project structure for workspace management */
+export type Project = {
+  id: string
+  name: string
+  lastModified: number
+  files: ProjectFile[]
+  circuitParts: CircuitPart[]
+  connections: Connection[]
+}
+
+/** Settings stored in local storage */
+export type AppSettings = {
+  editorFontSize: number
+  editorTheme: 'light' | 'dark'
+  editorTabSize: number
+  defaultBoardTarget: string
+  geminiApiKeyOverride: string | null
+}
+
 export type AppState = {
+  // Multi-project management
+  projects: Project[]
+  currentProjectId: string | null
+
+  // Legacy code support - now derived from current project's main file
   code: string
   diagramJson: string
   circuitParts: CircuitPart[]
   circuitConnections: CircuitConnection[]
   connections: Connection[]
   isRunning: boolean
+
+  // Multi-file support
+  files: ProjectFile[]
+  activeFilePath: string | null
+  openFilePaths: string[]
 
   isCompiling: boolean
   compilationError: string | null
@@ -59,6 +98,29 @@ export type AppState = {
   // Teacher mode toggle (Socratic Tutor feature)
   teacherMode: boolean
 
+  // Image staging for AI
+  stagedImageData: string | null
+
+  // Settings
+  settings: AppSettings
+
+  // Project management actions
+  createProject: (name: string) => string
+  deleteProject: (id: string) => void
+  loadProject: (id: string) => void
+  saveCurrentProject: () => void
+  getCurrentProject: () => Project | null
+
+  // File management actions
+  addFile: (path: string, content?: string, isMain?: boolean) => void
+  deleteFile: (path: string) => void
+  renameFile: (oldPath: string, newPath: string) => void
+  updateFileContent: (path: string, content: string) => void
+  setActiveFile: (path: string | null) => void
+  openFile: (path: string) => void
+  closeFile: (path: string) => void
+  toggleFileSimulation: (path: string) => void
+
   updateCode: (newCode: string) => void
   setDiagramJson: (json: string) => void
   updateCircuit: (nodes: unknown, edges: unknown) => void
@@ -72,6 +134,7 @@ export type AppState = {
     rotate?: number
     attrs?: Record<string, string>
   }) => string
+  removePart: (id: string) => void
   updatePartsPositions: (updates: Array<{ id: string; x: number; y: number }>) => void
 
   setSelectedPartIds: (ids: string[]) => void
@@ -89,6 +152,13 @@ export type AppState = {
   addTerminalEntry: (entry: Omit<TerminalEntry, 'id' | 'timestamp'>) => void
   clearTerminalHistory: () => void
   setTeacherMode: (enabled: boolean) => void
+
+  // Image staging actions
+  stageImage: (imageData: string) => void
+  clearStagedImage: () => void
+  
+  // Settings actions
+  updateSettings: (settings: Partial<AppSettings>) => void
   
   // Apply AI-generated circuit to canvas
   applyGeneratedCircuit: (parts: CircuitPart[], connections: Connection[]) => void
@@ -110,6 +180,32 @@ const DEFAULT_WIRE_COLOR_CYCLE = [
 
 const defaultCode =
   'void setup() { pinMode(13, OUTPUT); } void loop() { digitalWrite(13, HIGH); delay(1000); digitalWrite(13, LOW); delay(1000); }'
+
+const defaultSettings: AppSettings = {
+  editorFontSize: 14,
+  editorTheme: 'dark',
+  editorTabSize: 2,
+  defaultBoardTarget: 'wokwi-arduino-uno',
+  geminiApiKeyOverride: null,
+}
+
+function createDefaultProject(name: string = 'Untitled Project'): Project {
+  return {
+    id: nanoid(),
+    name,
+    lastModified: Date.now(),
+    files: [
+      {
+        path: 'main.cpp',
+        content: defaultCode,
+        isMain: true,
+        includeInSimulation: true,
+      },
+    ],
+    circuitParts: [],
+    connections: [],
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -205,225 +301,450 @@ function findMicrocontroller(parts: CircuitPart[]): CircuitPart | null {
   return null
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  code: defaultCode,
-  diagramJson: '',
-  circuitParts: [],
-  circuitConnections: [],
-  connections: [],
-  isRunning: false,
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      // Multi-project state
+      projects: [],
+      currentProjectId: null,
 
-  isCompiling: false,
-  compilationError: null,
-  hex: null,
-  compiledBoard: null,
+      // Legacy compatibility
+      code: defaultCode,
+      diagramJson: '',
+      circuitParts: [],
+      circuitConnections: [],
+      connections: [],
+      isRunning: false,
 
-  nextWireColorIndex: 0,
+      // Multi-file support
+      files: [
+        {
+          path: 'main.cpp',
+          content: defaultCode,
+          isMain: true,
+          includeInSimulation: true,
+        },
+      ],
+      activeFilePath: 'main.cpp',
+      openFilePaths: ['main.cpp'],
 
-  selectedPartIds: [],
+      isCompiling: false,
+      compilationError: null,
+      hex: null,
+      compiledBoard: null,
 
-  // Terminal/AI Chat state
-  terminalHistory: [],
-  isAiLoading: false,
+      nextWireColorIndex: 0,
 
-  // Teacher mode (Socratic Tutor feature)
-  teacherMode: false,
+      selectedPartIds: [],
 
-  updateCode: (newCode) => {
-    set({ code: newCode })
-  },
+      // Terminal/AI Chat state
+      terminalHistory: [],
+      isAiLoading: false,
 
-  setDiagramJson: (json) => {
-    set({ diagramJson: json })
-  },
+      // Teacher mode (Socratic Tutor feature)
+      teacherMode: false,
 
-  updateCircuit: (nodes, edges) => {
-    const circuitParts = toCircuitParts(nodes)
-    const circuitConnections = toCircuitConnections(edges)
+      // Image staging
+      stagedImageData: null,
 
-    set({ circuitParts, circuitConnections })
-  },
+      // Settings
+      settings: defaultSettings,
 
-  toggleSimulation: () => {
-    set({ isRunning: !get().isRunning })
-  },
+      // Project management
+      createProject: (name) => {
+        const newProject = createDefaultProject(name)
+        set((state) => ({
+          projects: [...state.projects, newProject],
+          currentProjectId: newProject.id,
+          files: newProject.files,
+          circuitParts: newProject.circuitParts,
+          connections: newProject.connections,
+          code: newProject.files.find(f => f.isMain)?.content || defaultCode,
+          activeFilePath: 'main.cpp',
+          openFilePaths: ['main.cpp'],
+        }))
+        return newProject.id
+      },
 
-  compileAndRun: async () => {
-    const mcu = findMicrocontroller(get().circuitParts)
-    if (!mcu) {
-      set({ compilationError: 'No supported microcontroller found in the circuit.', hex: null, compiledBoard: null })
-      return
-    }
-
-    const board = normalizeBoardType(mcu.type)
-
-    set({ isCompiling: true, compilationError: null })
-
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
-      const res = await fetch(`${baseUrl}/api/v1/compile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: get().code, board }),
-      })
-
-      const data = (await res.json().catch(() => null)) as
-        | { success?: boolean; hex?: string | null; error?: string | null }
-        | null
-
-      if (!res.ok) {
-        set({
-          compilationError: (data && (data.error || (!data.success ? 'Compilation failed.' : null))) || res.statusText,
-          hex: null,
-          compiledBoard: null,
+      deleteProject: (id) => {
+        set((state) => {
+          const filtered = state.projects.filter(p => p.id !== id)
+          const wasCurrentProject = state.currentProjectId === id
+          return {
+            projects: filtered,
+            currentProjectId: wasCurrentProject 
+              ? (filtered[0]?.id || null)
+              : state.currentProjectId,
+          }
         })
-        return
-      }
+        // If deleted current project, load another or reset
+        if (get().currentProjectId === null && get().projects.length > 0) {
+          get().loadProject(get().projects[0].id)
+        }
+      },
 
-      if (!data?.success || !data.hex) {
-        set({ compilationError: data?.error || 'Compilation failed.', hex: null, compiledBoard: null })
-        return
-      }
+      loadProject: (id) => {
+        const project = get().projects.find(p => p.id === id)
+        if (!project) return
+        
+        set({
+          currentProjectId: id,
+          files: project.files,
+          circuitParts: project.circuitParts,
+          connections: project.connections,
+          code: project.files.find(f => f.isMain)?.content || defaultCode,
+          activeFilePath: project.files.find(f => f.isMain)?.path || project.files[0]?.path || null,
+          openFilePaths: [project.files.find(f => f.isMain)?.path || project.files[0]?.path].filter(Boolean) as string[],
+        })
+      },
 
-      set({ hex: data.hex, compiledBoard: board, compilationError: null })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      set({ compilationError: msg || 'Compilation request failed.', hex: null, compiledBoard: null })
-    } finally {
-      set({ isCompiling: false })
-    }
-  },
+      saveCurrentProject: () => {
+        const { currentProjectId, files, circuitParts, connections, projects } = get()
+        if (!currentProjectId) return
 
-  addPart: (part) => {
-    const id = nanoid()
-    const next: CircuitPart = {
-      id,
-      type: part.type,
-      position: { x: part.position.x, y: part.position.y },
-      rotate: part.rotate ?? 0,
-      attrs: part.attrs ?? {},
-    }
-    set({ circuitParts: [...get().circuitParts, next] })
-    return id
-  },
+        set({
+          projects: projects.map(p => 
+            p.id === currentProjectId
+              ? { ...p, files, circuitParts, connections, lastModified: Date.now() }
+              : p
+          ),
+        })
+      },
 
-  updatePartsPositions: (updates) => {
-    if (!updates.length) return
-    const byId = new Map(updates.map((u) => [u.id, u]))
-    set({
-      circuitParts: get().circuitParts.map((p) => {
-        const u = byId.get(p.id)
-        if (!u) return p
-        return { ...p, position: { x: u.x, y: u.y } }
-      }),
-    })
-  },
+      getCurrentProject: () => {
+        const { currentProjectId, projects } = get()
+        return projects.find(p => p.id === currentProjectId) || null
+      },
 
-  setSelectedPartIds: (ids) => {
-    set({ selectedPartIds: [...new Set(ids)] })
-  },
+      // File management
+      addFile: (path, content = '', isMain = false) => {
+        const newFile: ProjectFile = {
+          path,
+          content,
+          isMain,
+          includeInSimulation: true,
+        }
+        set((state) => ({
+          files: [...state.files, newFile],
+          openFilePaths: [...state.openFilePaths, path],
+          activeFilePath: path,
+        }))
+      },
 
-  toggleSelectedPartId: (id) => {
-    const curr = get().selectedPartIds
-    if (curr.includes(id)) {
-      set({ selectedPartIds: curr.filter((x) => x !== id) })
-    } else {
-      set({ selectedPartIds: [...curr, id] })
-    }
-  },
+      deleteFile: (path) => {
+        set((state) => {
+          const filtered = state.files.filter(f => f.path !== path)
+          const newActivePath = state.activeFilePath === path
+            ? (filtered.find(f => f.isMain)?.path || filtered[0]?.path || null)
+            : state.activeFilePath
+          return {
+            files: filtered,
+            openFilePaths: state.openFilePaths.filter(p => p !== path),
+            activeFilePath: newActivePath,
+          }
+        })
+      },
 
-  clearSelectedParts: () => {
-    set({ selectedPartIds: [] })
-  },
+      renameFile: (oldPath, newPath) => {
+        set((state) => ({
+          files: state.files.map(f => 
+            f.path === oldPath ? { ...f, path: newPath } : f
+          ),
+          openFilePaths: state.openFilePaths.map(p => p === oldPath ? newPath : p),
+          activeFilePath: state.activeFilePath === oldPath ? newPath : state.activeFilePath,
+        }))
+      },
 
-  addConnection: (conn) => {
-    const id = nanoid()
-    set({ connections: [...get().connections, { ...conn, id }] })
-    return id
-  },
+      updateFileContent: (path, content) => {
+        set((state) => ({
+          files: state.files.map(f => 
+            f.path === path ? { ...f, content } : f
+          ),
+          // Also update legacy code if it's the main file
+          code: state.files.find(f => f.path === path && f.isMain) ? content : state.code,
+        }))
+      },
 
-  allocateNextWireColor: () => {
-    const idx = get().nextWireColorIndex
-    const color = DEFAULT_WIRE_COLOR_CYCLE[idx % DEFAULT_WIRE_COLOR_CYCLE.length]
-    set({ nextWireColorIndex: idx + 1 })
-    return color
-  },
+      setActiveFile: (path) => {
+        set({ activeFilePath: path })
+      },
 
-  removeConnection: (id) => {
-    set({ connections: get().connections.filter((c) => c.id !== id) })
-  },
+      openFile: (path) => {
+        set((state) => ({
+          openFilePaths: state.openFilePaths.includes(path) 
+            ? state.openFilePaths 
+            : [...state.openFilePaths, path],
+          activeFilePath: path,
+        }))
+      },
 
-  updateWireColor: (id, color) => {
-    set({
-      connections: get().connections.map((c) =>
-        c.id === id ? { ...c, color } : c
-      ),
-    })
-  },
+      closeFile: (path) => {
+        set((state) => {
+          const filtered = state.openFilePaths.filter(p => p !== path)
+          return {
+            openFilePaths: filtered,
+            activeFilePath: state.activeFilePath === path 
+              ? (filtered[filtered.length - 1] || null)
+              : state.activeFilePath,
+          }
+        })
+      },
 
-  updateWire: (id, points) => {
-    set({
-      connections: get().connections.map((c) =>
-        c.id === id ? { ...c, points } : c
-      ),
-    })
-  },
+      toggleFileSimulation: (path) => {
+        set((state) => ({
+          files: state.files.map(f => 
+            f.path === path ? { ...f, includeInSimulation: !f.includeInSimulation } : f
+          ),
+        }))
+      },
 
-  // Terminal/AI Chat actions
-  addTerminalEntry: (entry) => {
-    const newEntry: TerminalEntry = {
-      id: nanoid(),
-      timestamp: Date.now(),
-      ...entry,
-    }
-    set({ terminalHistory: [...get().terminalHistory, newEntry] })
-  },
+      updateCode: (newCode) => {
+        set({ code: newCode })
+        // Also update the active file if it's the main file
+        const activeFile = get().files.find(f => f.path === get().activeFilePath)
+        if (activeFile?.isMain) {
+          get().updateFileContent(activeFile.path, newCode)
+        }
+      },
 
-  clearTerminalHistory: () => {
-    set({ terminalHistory: [] })
-  },
+      setDiagramJson: (json) => {
+        set({ diagramJson: json })
+      },
 
-  setTeacherMode: (enabled) => {
-    set({ teacherMode: enabled })
-    get().addTerminalEntry({
-      type: 'log',
-      content: enabled
-        ? '🎓 Teacher Mode enabled. AI will explain concepts before providing implementations.'
-        : '🔧 Builder Mode enabled. AI will focus on generating code and circuits.',
-    })
-  },
+      updateCircuit: (nodes, edges) => {
+        const circuitParts = toCircuitParts(nodes)
+        const circuitConnections = toCircuitConnections(edges)
 
-  applyGeneratedCircuit: (parts, newConnections) => {
-    // Replace current circuit with AI-generated one
-    set({
-      circuitParts: parts,
-      connections: newConnections,
-    })
-  },
+        set({ circuitParts, circuitConnections })
+      },
 
-  submitCommand: async (text, imageData) => {
-    const trimmed = text.trim()
-    if (!trimmed && !imageData) return
+      toggleSimulation: () => {
+        set({ isRunning: !get().isRunning })
+      },
 
-    // Add user command to history
-    if (trimmed) {
-      get().addTerminalEntry({ type: 'cmd', content: trimmed })
-    }
-    if (imageData) {
-      get().addTerminalEntry({ type: 'log', content: '📷 Image uploaded for circuit recognition' })
-    }
+      compileAndRun: async () => {
+        const mcu = findMicrocontroller(get().circuitParts)
+        if (!mcu) {
+          set({ compilationError: 'No supported microcontroller found in the circuit.', hex: null, compiledBoard: null })
+          return
+        }
 
-    // Handle slash commands
-    if (trimmed.startsWith('/')) {
-      const cmd = trimmed.toLowerCase()
-      if (cmd === '/clear') {
+        const board = normalizeBoardType(mcu.type)
+
+        set({ isCompiling: true, compilationError: null })
+
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          
+          // Build files object for multi-file compilation
+          const filesForCompilation = get().files
+            .filter(f => f.includeInSimulation)
+            .reduce((acc, f) => {
+              acc[f.path] = f.content
+              return acc
+            }, {} as Record<string, string>)
+
+          const res = await fetch(`${baseUrl}/api/v1/compile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              code: get().code, 
+              board,
+              files: filesForCompilation,
+            }),
+          })
+
+          const data = (await res.json().catch(() => null)) as
+            | { success?: boolean; hex?: string | null; error?: string | null }
+            | null
+
+          if (!res.ok) {
+            set({
+              compilationError: (data && (data.error || (!data.success ? 'Compilation failed.' : null))) || res.statusText,
+              hex: null,
+              compiledBoard: null,
+            })
+            return
+          }
+
+          if (!data?.success || !data.hex) {
+            set({ compilationError: data?.error || 'Compilation failed.', hex: null, compiledBoard: null })
+            return
+          }
+
+          set({ hex: data.hex, compiledBoard: board, compilationError: null })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          set({ compilationError: msg || 'Compilation request failed.', hex: null, compiledBoard: null })
+        } finally {
+          set({ isCompiling: false })
+        }
+      },
+
+      addPart: (part) => {
+        const id = nanoid()
+        const next: CircuitPart = {
+          id,
+          type: part.type,
+          position: { x: part.position.x, y: part.position.y },
+          rotate: part.rotate ?? 0,
+          attrs: part.attrs ?? {},
+        }
+        set({ circuitParts: [...get().circuitParts, next] })
+        return id
+      },
+
+      removePart: (id) => {
+        set((state) => ({
+          circuitParts: state.circuitParts.filter(p => p.id !== id),
+          // Also remove any connections involving this part
+          connections: state.connections.filter(
+            c => c.from.partId !== id && c.to.partId !== id
+          ),
+          selectedPartIds: state.selectedPartIds.filter(pid => pid !== id),
+        }))
+      },
+
+      updatePartsPositions: (updates) => {
+        if (!updates.length) return
+        const byId = new Map(updates.map((u) => [u.id, u]))
+        set({
+          circuitParts: get().circuitParts.map((p) => {
+            const u = byId.get(p.id)
+            if (!u) return p
+            return { ...p, position: { x: u.x, y: u.y } }
+          }),
+        })
+      },
+
+      setSelectedPartIds: (ids) => {
+        set({ selectedPartIds: [...new Set(ids)] })
+      },
+
+      toggleSelectedPartId: (id) => {
+        const curr = get().selectedPartIds
+        if (curr.includes(id)) {
+          set({ selectedPartIds: curr.filter((x) => x !== id) })
+        } else {
+          set({ selectedPartIds: [...curr, id] })
+        }
+      },
+
+      clearSelectedParts: () => {
+        set({ selectedPartIds: [] })
+      },
+
+      addConnection: (conn) => {
+        const id = nanoid()
+        set({ connections: [...get().connections, { ...conn, id }] })
+        return id
+      },
+
+      allocateNextWireColor: () => {
+        const idx = get().nextWireColorIndex
+        const color = DEFAULT_WIRE_COLOR_CYCLE[idx % DEFAULT_WIRE_COLOR_CYCLE.length]
+        set({ nextWireColorIndex: idx + 1 })
+        return color
+      },
+
+      removeConnection: (id) => {
+        set({ connections: get().connections.filter((c) => c.id !== id) })
+      },
+
+      updateWireColor: (id, color) => {
+        set({
+          connections: get().connections.map((c) =>
+            c.id === id ? { ...c, color } : c
+          ),
+        })
+      },
+
+      updateWire: (id, points) => {
+        set({
+          connections: get().connections.map((c) =>
+            c.id === id ? { ...c, points } : c
+          ),
+        })
+      },
+
+      // Terminal/AI Chat actions
+      addTerminalEntry: (entry) => {
+        const newEntry: TerminalEntry = {
+          id: nanoid(),
+          timestamp: Date.now(),
+          ...entry,
+        }
+        set({ terminalHistory: [...get().terminalHistory, newEntry] })
+      },
+
+      clearTerminalHistory: () => {
         set({ terminalHistory: [] })
-        return
-      }
-      if (cmd === '/help') {
+      },
+
+      setTeacherMode: (enabled) => {
+        set({ teacherMode: enabled })
         get().addTerminalEntry({
           type: 'log',
-          content: `Available commands:
+          content: enabled
+            ? '🎓 Teacher Mode enabled. AI will explain concepts before providing implementations.'
+            : '🔧 Builder Mode enabled. AI will focus on generating code and circuits.',
+        })
+      },
+
+      // Image staging
+      stageImage: (imageData) => {
+        set({ stagedImageData: imageData })
+      },
+
+      clearStagedImage: () => {
+        set({ stagedImageData: null })
+      },
+
+      // Settings
+      updateSettings: (newSettings) => {
+        set((state) => ({
+          settings: { ...state.settings, ...newSettings },
+        }))
+      },
+
+      applyGeneratedCircuit: (parts, newConnections) => {
+        // Replace current circuit with AI-generated one
+        set({
+          circuitParts: parts,
+          connections: newConnections,
+        })
+      },
+
+      submitCommand: async (text, imageData) => {
+        const trimmed = text.trim()
+        const finalImageData = imageData || get().stagedImageData
+        
+        if (!trimmed && !finalImageData) return
+
+        // Clear staged image after use
+        if (finalImageData) {
+          set({ stagedImageData: null })
+        }
+
+        // Add user command to history
+        if (trimmed) {
+          get().addTerminalEntry({ type: 'cmd', content: trimmed })
+        }
+        if (finalImageData) {
+          get().addTerminalEntry({ type: 'log', content: '📷 Image uploaded for circuit recognition' })
+        }
+
+        // Handle slash commands
+        if (trimmed.startsWith('/')) {
+          const cmd = trimmed.toLowerCase()
+          if (cmd === '/clear') {
+            set({ terminalHistory: [] })
+            return
+          }
+          if (cmd === '/help') {
+            get().addTerminalEntry({
+              type: 'log',
+              content: `Available commands:
 /clear - Clear terminal history
 /help - Show this help message
 /teacher - Toggle Teacher Mode (explains concepts)
@@ -431,96 +752,106 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 Or type any prompt to generate Arduino code and circuits.
 You can also upload images of physical circuits for recognition.`,
-        })
-        return
-      }
-      if (cmd === '/teacher') {
-        get().setTeacherMode(true)
-        return
-      }
-      if (cmd === '/builder') {
-        get().setTeacherMode(false)
-        return
-      }
-      get().addTerminalEntry({
-        type: 'error',
-        content: `Unknown command: ${trimmed}. Type /help for available commands.`,
-      })
-      return
+            })
+            return
+          }
+          if (cmd === '/teacher') {
+            get().setTeacherMode(true)
+            return
+          }
+          if (cmd === '/builder') {
+            get().setTeacherMode(false)
+            return
+          }
+          get().addTerminalEntry({
+            type: 'error',
+            content: `Unknown command: ${trimmed}. Type /help for available commands.`,
+          })
+          return
+        }
+
+        // Call AI generate endpoint
+        set({ isAiLoading: true })
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          
+          // Get current circuit state for context (bi-directional awareness)
+          const currentCircuit = JSON.stringify({
+            parts: get().circuitParts,
+            connections: get().connections,
+          })
+          
+          const res = await fetch(`${baseUrl}/api/v1/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: trimmed || 'Analyze this circuit image and recreate it',
+              teacher_mode: get().teacherMode,
+              image_data: finalImageData || null,
+              current_circuit: get().circuitParts.length > 0 ? currentCircuit : null,
+            }),
+          })
+
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => null)
+            const errorMsg = errorData?.detail || res.statusText || 'Request failed'
+            get().addTerminalEntry({ type: 'error', content: `Error: ${errorMsg}` })
+            return
+          }
+
+          const data = await res.json()
+          
+          // Format the AI response as a log entry
+          let response = ''
+          if (data.explanation) {
+            response += data.explanation + '\n\n'
+          }
+          if (data.code) {
+            response += '```cpp\n' + data.code + '\n```'
+            // Also update the code editor
+            set({ code: data.code })
+          }
+          
+          get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
+
+          // Apply generated circuit parts and connections to canvas
+          if (data.circuit_parts && Array.isArray(data.circuit_parts)) {
+            const newParts: CircuitPart[] = data.circuit_parts.map((p: { id: string; type: string; x: number; y: number; attrs?: Record<string, string> }) => ({
+              id: p.id || nanoid(),
+              type: p.type,
+              position: { x: p.x || 0, y: p.y || 0 },
+              rotate: 0,
+              attrs: p.attrs || {},
+            }))
+            
+            const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string }) => ({
+              id: nanoid(),
+              from: { partId: c.source_part, pinId: c.source_pin },
+              to: { partId: c.target_part, pinId: c.target_pin },
+              color: get().allocateNextWireColor(),
+            }))
+            
+            get().applyGeneratedCircuit(newParts, newConnections)
+            get().addTerminalEntry({
+              type: 'log',
+              content: `✨ Applied ${newParts.length} components and ${newConnections.length} connections to canvas`,
+            })
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          get().addTerminalEntry({ type: 'error', content: `Error: ${msg}` })
+        } finally {
+          set({ isAiLoading: false })
+        }
+      },
+    }),
+    {
+      name: 'fundi-app-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        projects: state.projects,
+        settings: state.settings,
+      }),
     }
-
-    // Call AI generate endpoint
-    set({ isAiLoading: true })
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
-      
-      // Get current circuit state for context (bi-directional awareness)
-      const currentCircuit = JSON.stringify({
-        parts: get().circuitParts,
-        connections: get().connections,
-      })
-      
-      const res = await fetch(`${baseUrl}/api/v1/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: trimmed || 'Analyze this circuit image and recreate it',
-          teacher_mode: get().teacherMode,
-          image_data: imageData || null,
-          current_circuit: get().circuitParts.length > 0 ? currentCircuit : null,
-        }),
-      })
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null)
-        const errorMsg = errorData?.detail || res.statusText || 'Request failed'
-        get().addTerminalEntry({ type: 'error', content: `Error: ${errorMsg}` })
-        return
-      }
-
-      const data = await res.json()
-      
-      // Format the AI response as a log entry
-      let response = ''
-      if (data.explanation) {
-        response += data.explanation + '\n\n'
-      }
-      if (data.code) {
-        response += '```cpp\n' + data.code + '\n```'
-        // Also update the code editor
-        set({ code: data.code })
-      }
-      
-      get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
-
-      // Apply generated circuit parts and connections to canvas
-      if (data.circuit_parts && Array.isArray(data.circuit_parts)) {
-        const newParts: CircuitPart[] = data.circuit_parts.map((p: { id: string; type: string; x: number; y: number; attrs?: Record<string, string> }) => ({
-          id: p.id || nanoid(),
-          type: p.type,
-          position: { x: p.x || 0, y: p.y || 0 },
-          rotate: 0,
-          attrs: p.attrs || {},
-        }))
-        
-        const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string }) => ({
-          id: nanoid(),
-          from: { partId: c.source_part, pinId: c.source_pin },
-          to: { partId: c.target_part, pinId: c.target_pin },
-          color: get().allocateNextWireColor(),
-        }))
-        
-        get().applyGeneratedCircuit(newParts, newConnections)
-        get().addTerminalEntry({
-          type: 'log',
-          content: `✨ Applied ${newParts.length} components and ${newConnections.length} connections to canvas`,
-        })
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      get().addTerminalEntry({ type: 'error', content: `Error: ${msg}` })
-    } finally {
-      set({ isAiLoading: false })
-    }
-  },
-}))
+  )
+)
