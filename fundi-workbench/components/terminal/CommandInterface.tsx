@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Mic, MicOff, GraduationCap, Wrench, Send, ImagePlus } from 'lucide-react'
+import { Loader2, Mic, MicOff, GraduationCap, Wrench, Send, ImagePlus, X, Sparkles } from 'lucide-react'
 import { useAppStore, type TerminalEntry } from '@/store/useAppStore'
 import { cn } from '@/utils/cn'
 
@@ -88,6 +88,9 @@ export function CommandInterface() {
   const submitCommand = useAppStore((s) => s.submitCommand)
   const teacherMode = useAppStore((s) => s.teacherMode)
   const setTeacherMode = useAppStore((s) => s.setTeacherMode)
+  const stagedImageData = useAppStore((s) => s.stagedImageData)
+  const stageImage = useAppStore((s) => s.stageImage)
+  const clearStagedImage = useAppStore((s) => s.clearStagedImage)
 
   const [input, setInput] = useState('')
   const [isListening, setIsListening] = useState(false)
@@ -171,17 +174,17 @@ export function CommandInterface() {
     }
   }, [isListening])
 
+  // Stage image instead of sending immediately
   const handleImageUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
 
       try {
         const reader = new FileReader()
-        reader.onload = async (event) => {
+        reader.onload = (event) => {
           const base64 = event.target?.result as string
-          await submitCommand(input || 'Analyze this circuit image and recreate it virtually', base64)
-          setInput('')
+          stageImage(base64)
         }
         reader.readAsDataURL(file)
       } catch (err) {
@@ -193,8 +196,13 @@ export function CommandInterface() {
         fileInputRef.current.value = ''
       }
     },
-    [input, submitCommand]
+    [stageImage]
   )
+
+  // Quick action to generate circuit from staged image
+  const handleGenerateFromImage = useCallback(() => {
+    void submitCommand('Analyze this circuit image and recreate it as a virtual Wokwi circuit with appropriate code')
+  }, [submitCommand])
 
   return (
     <div
@@ -272,6 +280,37 @@ export function CommandInterface() {
       <div className="shrink-0 border-t border-ide-border bg-ide-panel-surface p-3">
         <form onSubmit={handleSubmit}>
           <div className="rounded-lg border border-ide-border bg-ide-panel-bg overflow-hidden focus-within:border-ide-accent/50 focus-within:ring-1 focus-within:ring-ide-accent/20 transition-all">
+            {/* Staged Image Preview */}
+            {stagedImageData && (
+              <div className="border-b border-ide-border p-2">
+                <div className="relative inline-block">
+                  <img 
+                    src={stagedImageData} 
+                    alt="Staged circuit" 
+                    className="h-20 rounded border border-ide-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={clearStagedImage}
+                    className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-ide-error text-white hover:bg-ide-error/80 transition-colors"
+                    title="Remove image"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                {/* Generate from Image button */}
+                <button
+                  type="button"
+                  onClick={handleGenerateFromImage}
+                  disabled={isAiLoading}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-md bg-ide-accent/20 px-3 py-1.5 text-xs font-medium text-ide-accent hover:bg-ide-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Generate Circuit from this Image
+                </button>
+              </div>
+            )}
+
             {/* Text input */}
             <textarea
               ref={inputRef}
@@ -284,7 +323,9 @@ export function CommandInterface() {
                   ? 'Listening...'
                   : isAiLoading
                     ? 'Generating...'
-                    : 'Describe your circuit or ask a question...'
+                    : stagedImageData
+                      ? 'Add a description or click the button above...'
+                      : 'Describe your circuit or ask a question...'
               }
               rows={2}
               className={cn(
@@ -313,7 +354,9 @@ export function CommandInterface() {
                   disabled={isAiLoading}
                   className={cn(
                     'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-                    'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text',
+                    stagedImageData
+                      ? 'text-ide-accent bg-ide-accent/10'
+                      : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text',
                     'disabled:cursor-not-allowed disabled:opacity-50'
                   )}
                   title="Upload circuit image"
@@ -350,10 +393,10 @@ export function CommandInterface() {
               {/* Submit button */}
               <button
                 type="submit"
-                disabled={isAiLoading || !input.trim()}
+                disabled={isAiLoading || (!input.trim() && !stagedImageData)}
                 className={cn(
                   'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-all btn-press',
-                  input.trim() && !isAiLoading
+                  (input.trim() || stagedImageData) && !isAiLoading
                     ? 'bg-ide-accent text-white hover:bg-ide-accent-hover'
                     : 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
                 )}
