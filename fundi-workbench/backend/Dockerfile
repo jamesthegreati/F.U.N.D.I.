@@ -3,7 +3,9 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    # Environment variable placeholder for Gemini API key
+    GEMINI_API_KEY=""
 
 WORKDIR /backend
 
@@ -56,4 +58,5 @@ USER fundi
 
 EXPOSE 8000
 
+# Pass environment variables at runtime via docker run -e or docker-compose
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,36 +1,236 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FUNDI - IoT Development Workbench
 
-## Getting Started
+FUNDI is a professional IoT development platform that combines circuit simulation, code editing, and AI-powered assistance to help you build Arduino and ESP32 projects.
 
-First, run the development server:
+![FUNDI Screenshot](./docs/screenshot.png)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Features
+
+- 🎨 **Visual Circuit Designer** - Drag-and-drop components using Wokwi-compatible parts
+- 📝 **Code Editor** - Multi-file support with syntax highlighting
+- 🤖 **AI Assistant** - Get help building circuits from descriptions or images
+- ⚡ **Real-time Simulation** - Test your code in the browser using AVR8js
+- 📦 **Project Management** - Save and manage multiple projects
+- 🎓 **Teacher Mode** - Learn electronics concepts with guided explanations
+
+## Prerequisites
+
+Before running FUNDI, ensure you have the following installed:
+
+- **Node.js** (v18 or higher) - [Download](https://nodejs.org/)
+- **Docker** (for running the backend) - [Download](https://www.docker.com/get-started)
+- **Google Gemini API Key** - [Get API Key](https://makersuite.google.com/app/apikey)
+
+## Quickstart
+
+### Option 1: Full Stack with Docker Compose
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/jamesthegreati/F.U.N.D.I..git
+   cd F.U.N.D.I./fundi-workbench
+   ```
+
+2. Create backend environment file:
+   ```bash
+   cp backend/.env.example backend/.env
+   # Edit backend/.env and add your GEMINI_API_KEY
+   ```
+
+3. Run with Docker Compose:
+   ```bash
+   docker-compose up --build
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Option 2: Separate Frontend and Backend
+
+#### Backend Setup
+
+1. Navigate to backend directory:
+   ```bash
+   cd backend
+   ```
+
+2. Create environment file:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your GEMINI_API_KEY
+   ```
+
+3. Build and run Docker container:
+   ```bash
+   docker build -t fundi-backend .
+   docker run -p 8000:8000 --env-file .env fundi-backend
+   ```
+
+#### Frontend Setup
+
+1. In a new terminal, navigate to frontend:
+   ```bash
+   cd fundi-workbench
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Configuration
+
+### Frontend Environment Variables
+
+Create a `.env.local` file in the `fundi-workbench` directory:
+
+```env
+# Backend API URL (optional - defaults to http://127.0.0.1:8000)
+NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Backend Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create a `.env` file in the `backend` directory:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+# Required: Google Gemini API Key for AI features
+GEMINI_API_KEY=your_api_key_here
 
-## Learn More
+# Optional: Environment mode (dev | prod)
+ENVIRONMENT=dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Architecture Overview
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+FUNDI uses a modern full-stack architecture:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Frontend                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │              Next.js 16 (App Router)                  │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │  │
+│  │  │ React Flow  │  │   Zustand   │  │  AVR8js     │   │  │
+│  │  │  (Canvas)   │  │   (State)   │  │(Simulation) │   │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘   │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ HTTP/REST
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        Backend                               │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │            FastAPI (Python 3.12)                      │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │  │
+│  │  │Arduino CLI  │  │ Gemini AI   │  │  Pydantic   │   │  │
+│  │  │(Compiler)   │  │ (Generator) │  │ (Schemas)   │   │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘   │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                    Docker Container                          │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## Deploy on Vercel
+### Key Technologies
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Frontend**: Next.js 16, React 19, Tailwind CSS, React Flow, Zustand
+- **Backend**: FastAPI, Python 3.12, Google Gemini AI
+- **Simulation**: AVR8js (Arduino simulation in browser)
+- **Compilation**: Arduino CLI (supports AVR, ESP32, RP2040)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Troubleshooting
+
+### Common Issues
+
+#### "Failed to fetch" or CORS errors
+- Ensure the backend is running on port 8000
+- Check that `NEXT_PUBLIC_BACKEND_URL` is set correctly
+- Verify Docker container is running: `docker ps`
+
+#### "GEMINI_API_KEY is not set"
+- Ensure your `.env` file contains a valid API key
+- Verify the environment file is being loaded by Docker
+- Try rebuilding: `docker-compose down && docker-compose up --build`
+
+#### Docker permission errors
+- On Linux, you may need to run Docker commands with `sudo`
+- Or add your user to the docker group: `sudo usermod -aG docker $USER`
+
+#### Arduino CLI compilation failures
+- The Docker image includes pre-installed cores for:
+  - Arduino AVR (Uno, Nano, Mega)
+  - ESP32
+  - Raspberry Pi Pico (RP2040)
+- If you need additional libraries, modify the Dockerfile
+
+#### Port already in use
+- Frontend: `lsof -i :3000 | grep LISTEN` to find and kill the process
+- Backend: `lsof -i :8000 | grep LISTEN` to find and kill the process
+
+### Debug Mode
+
+Enable debug logging for the backend:
+
+```bash
+docker run -p 8000:8000 --env-file .env -e LOG_LEVEL=DEBUG fundi-backend
+```
+
+## Development
+
+### Project Structure
+
+```
+fundi-workbench/
+├── app/                 # Next.js App Router pages
+│   ├── page.tsx        # Main IDE page
+│   ├── workspace/      # Project management
+│   └── settings/       # User settings
+├── components/         # React components
+│   ├── nodes/         # React Flow node components
+│   └── terminal/      # AI chat interface
+├── store/             # Zustand state management
+├── hooks/             # Custom React hooks
+├── lib/               # Utility libraries
+├── data/              # Static data (component specs)
+├── backend/           # Python FastAPI backend
+│   ├── app/
+│   │   ├── api/       # REST endpoints
+│   │   ├── services/  # Business logic
+│   │   └── core/      # Configuration
+│   └── Dockerfile
+└── package.json
+```
+
+### Running Tests
+
+```bash
+# Frontend
+npm run lint
+npm run build
+
+# Backend
+cd backend
+pip install pytest
+pytest
+```
+
+## Contributing
+
+Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+
+## License
+
+This project is licensed under the MIT License.
+
+## Acknowledgments
+
+- [Wokwi](https://wokwi.com/) - Circuit simulation components
+- [Arduino](https://www.arduino.cc/) - Arduino platform and CLI
+- [Google Gemini](https://ai.google.dev/) - AI capabilities

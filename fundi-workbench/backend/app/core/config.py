@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import os
 from typing import List
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Load .env file for local development
+load_dotenv()
 
 
 class Settings(BaseSettings):

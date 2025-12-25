@@ -1,21 +1,28 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   FileCode,
-  FileText,
+  FolderOpen,
   FolderTree,
   Layers,
   Maximize2,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
+  Plus,
   RotateCcw,
   Settings,
   Share2,
   Square,
+  Trash2,
+  X,
   ZoomIn,
   ZoomOut,
+  Eye,
+  EyeOff,
+  Github,
 } from 'lucide-react'
 import {
   Panel,
@@ -48,7 +55,7 @@ import WiringLayer from '@/components/WiringLayer'
 import { TerminalPanel } from '@/components/terminal'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
 import { useSimulation } from '@/hooks/useSimulation'
-import { useAppStore } from '@/store/useAppStore'
+import { useAppStore, type ProjectFile } from '@/store/useAppStore'
 import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
 
@@ -560,47 +567,58 @@ function SimulationCanvas({ isRunning }: { isRunning: boolean }) {
 /* ============================================
    Code Editor Panel
    ============================================ */
-type EditorTab = 'main.cpp' | 'diagram.json' | 'README.md'
-
 function CodeEditorPanel({ 
-  code, 
-  onCodeChange,
   compilationError,
 }: { 
-  code: string
-  onCodeChange: (code: string) => void
   compilationError: string | null
 }) {
-  const [activeTab, setActiveTab] = useState<EditorTab>('main.cpp')
+  const files = useAppStore((s) => s.files)
+  const openFilePaths = useAppStore((s) => s.openFilePaths)
+  const activeFilePath = useAppStore((s) => s.activeFilePath)
+  const setActiveFile = useAppStore((s) => s.setActiveFile)
+  const closeFile = useAppStore((s) => s.closeFile)
+  const updateFileContent = useAppStore((s) => s.updateFileContent)
+  const settings = useAppStore((s) => s.settings)
 
-  const tabs: { key: EditorTab; label: string; icon: React.ElementType }[] = [
-    { key: 'main.cpp', label: 'main.cpp', icon: FileCode },
-    { key: 'diagram.json', label: 'diagram.json', icon: Layers },
-    { key: 'README.md', label: 'README.md', icon: FileText },
-  ]
+  const activeFile = files.find(f => f.path === activeFilePath)
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-ide-panel-surface">
       {/* Tab bar */}
-      <div className="flex h-9 shrink-0 items-center border-b border-ide-border bg-ide-panel-bg">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          const isActive = tab.key === activeTab
+      <div className="flex h-9 shrink-0 items-center border-b border-ide-border bg-ide-panel-bg overflow-x-auto">
+        {openFilePaths.map((path) => {
+          const file = files.find(f => f.path === path)
+          if (!file) return null
+          const isActive = path === activeFilePath
           return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveTab(tab.key)}
+            <div
+              key={path}
               className={cn(
-                'flex h-full items-center gap-1.5 border-r border-ide-border px-3 text-xs font-medium transition-colors',
+                'group flex h-full items-center gap-1.5 border-r border-ide-border px-2 text-xs font-medium transition-colors cursor-pointer',
                 isActive
                   ? 'bg-ide-panel-surface text-ide-text border-b-2 border-b-ide-accent'
                   : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
               )}
+              onClick={() => setActiveFile(path)}
             >
-              <Icon className="h-3.5 w-3.5" />
-              <span>{tab.label}</span>
-            </button>
+              <FileCode className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate max-w-[120px]">{file.path}</span>
+              {file.includeInSimulation && (
+                <span className="h-1.5 w-1.5 rounded-full bg-ide-success shrink-0" title="Included in simulation" />
+              )}
+              {openFilePaths.length > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeFile(path)
+                  }}
+                  className="ml-1 flex h-4 w-4 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-ide-panel-hover transition-all"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           )
         })}
       </div>
@@ -616,20 +634,210 @@ function CodeEditorPanel({
 
       {/* Editor content */}
       <div className="min-h-0 flex-1 p-2">
-        <textarea
-          value={code}
-          onChange={(e) => onCodeChange(e.target.value)}
-          spellCheck={false}
-          className={cn(
-            'h-full w-full resize-none rounded-md bg-ide-panel-bg p-4',
-            'font-mono text-sm leading-6 text-ide-text',
-            'border border-ide-border',
-            'focus:outline-none focus:ring-1 focus:ring-ide-accent/50 focus:border-ide-accent/50',
-            'placeholder:text-ide-text-subtle'
-          )}
-          placeholder="// Write your Arduino code here..."
-        />
+        {activeFile ? (
+          <textarea
+            value={activeFile.content}
+            onChange={(e) => updateFileContent(activeFile.path, e.target.value)}
+            spellCheck={false}
+            readOnly={activeFile.isReadOnly}
+            style={{ fontSize: `${settings.editorFontSize}px`, tabSize: settings.editorTabSize }}
+            className={cn(
+              'h-full w-full resize-none rounded-md bg-ide-panel-bg p-4',
+              'font-mono leading-6 text-ide-text',
+              'border border-ide-border',
+              'focus:outline-none focus:ring-1 focus:ring-ide-accent/50 focus:border-ide-accent/50',
+              'placeholder:text-ide-text-subtle',
+              activeFile.isReadOnly && 'opacity-75 cursor-not-allowed'
+            )}
+            placeholder="// Write your Arduino code here..."
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-ide-text-subtle">
+            <p className="text-sm">No file selected</p>
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+/* ============================================
+   Files Panel Component
+   ============================================ */
+function FilesPanel() {
+  const files = useAppStore((s) => s.files)
+  const activeFilePath = useAppStore((s) => s.activeFilePath)
+  const openFile = useAppStore((s) => s.openFile)
+  const addFile = useAppStore((s) => s.addFile)
+  const deleteFile = useAppStore((s) => s.deleteFile)
+  const renameFile = useAppStore((s) => s.renameFile)
+  const toggleFileSimulation = useAppStore((s) => s.toggleFileSimulation)
+
+  const [showNewFileInput, setShowNewFileInput] = useState(false)
+  const [newFileName, setNewFileName] = useState('')
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: ProjectFile } | null>(null)
+  const [renamingFile, setRenamingFile] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+
+  const handleAddFile = () => {
+    if (newFileName.trim()) {
+      addFile(newFileName.trim())
+      setNewFileName('')
+      setShowNewFileInput(false)
+    }
+  }
+
+  const handleContextMenu = (e: React.MouseEvent, file: ProjectFile) => {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, file })
+  }
+
+  const handleRename = (oldPath: string) => {
+    if (renameValue.trim() && renameValue !== oldPath) {
+      renameFile(oldPath, renameValue.trim())
+    }
+    setRenamingFile(null)
+    setRenameValue('')
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header with actions */}
+      <div className="flex items-center justify-between border-b border-ide-border px-3 py-2">
+        <span className="text-xs font-medium text-ide-text-muted">PROJECT FILES</span>
+        <button
+          type="button"
+          onClick={() => setShowNewFileInput(true)}
+          className="flex h-6 w-6 items-center justify-center rounded text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+          title="New File"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* New file input */}
+      {showNewFileInput && (
+        <div className="border-b border-ide-border px-3 py-2">
+          <input
+            type="text"
+            value={newFileName}
+            onChange={(e) => setNewFileName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAddFile()
+              if (e.key === 'Escape') {
+                setShowNewFileInput(false)
+                setNewFileName('')
+              }
+            }}
+            placeholder="filename.cpp"
+            className="w-full rounded border border-ide-border bg-ide-panel-bg px-2 py-1 text-xs text-ide-text placeholder:text-ide-text-subtle focus:border-ide-accent focus:outline-none"
+            autoFocus
+          />
+        </div>
+      )}
+
+      {/* File list */}
+      <div className="flex-1 overflow-auto p-2">
+        {files.map((file) => (
+          <div
+            key={file.path}
+            onContextMenu={(e) => handleContextMenu(e, file)}
+            onClick={() => openFile(file.path)}
+            className={cn(
+              'group flex items-center justify-between rounded px-2 py-1.5 text-xs cursor-pointer transition-colors',
+              activeFilePath === file.path
+                ? 'bg-ide-accent/20 text-ide-text'
+                : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+            )}
+          >
+            {renamingFile === file.path ? (
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={() => handleRename(file.path)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRename(file.path)
+                  if (e.key === 'Escape') {
+                    setRenamingFile(null)
+                    setRenameValue('')
+                  }
+                }}
+                className="flex-1 rounded border border-ide-accent bg-ide-panel-bg px-1 text-xs text-ide-text focus:outline-none"
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <FileCode className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{file.path}</span>
+                {file.isMain && (
+                  <span className="shrink-0 rounded bg-ide-accent/20 px-1 py-0.5 text-[9px] font-medium text-ide-accent">
+                    main
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleFileSimulation(file.path)
+                }}
+                className={cn(
+                  'flex h-5 w-5 items-center justify-center rounded transition-colors',
+                  file.includeInSimulation
+                    ? 'text-ide-success hover:bg-ide-success/20'
+                    : 'text-ide-text-subtle hover:bg-ide-panel-hover'
+                )}
+                title={file.includeInSimulation ? 'Included in simulation' : 'Excluded from simulation'}
+              >
+                {file.includeInSimulation ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setContextMenu(null)}
+          />
+          <div
+            className="fixed z-50 w-40 rounded-lg border border-ide-border bg-ide-panel-surface py-1 shadow-lg"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setRenamingFile(contextMenu.file.path)
+                setRenameValue(contextMenu.file.path)
+                setContextMenu(null)
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
+            >
+              Rename
+            </button>
+            {!contextMenu.file.isMain && (
+              <button
+                type="button"
+                onClick={() => {
+                  deleteFile(contextMenu.file.path)
+                  setContextMenu(null)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ide-error hover:bg-ide-error/10"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -681,12 +889,7 @@ function LeftPanel() {
           </div>
         )}
         {activeTab === 'files' && (
-          <div className="flex h-full items-center justify-center text-ide-text-subtle">
-            <div className="text-center">
-              <FolderTree className="mx-auto h-8 w-8 mb-2 opacity-50" />
-              <p className="text-xs">Project files</p>
-            </div>
-          </div>
+          <FilesPanel />
         )}
       </div>
     </div>
@@ -728,9 +931,11 @@ function ResizeHandle({
    ============================================ */
 export default function Home() {
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
+  const [showPublishModal, setShowPublishModal] = useState(false)
 
-  const code = useAppStore((s) => s.code)
-  const updateCode = useAppStore((s) => s.updateCode)
+  const files = useAppStore((s) => s.files)
+  const circuitParts = useAppStore((s) => s.circuitParts)
+  const connections = useAppStore((s) => s.connections)
   const compileAndRun = useAppStore((s) => s.compileAndRun)
   const isCompiling = useAppStore((s) => s.isCompiling)
   const compilationError = useAppStore((s) => s.compilationError)
@@ -753,6 +958,17 @@ export default function Home() {
     simRun()
   }, [compiledBoard, compilationError, hex, isCompiling, simIsRunning, simRun])
 
+  // Prepare project data for publishing
+  const prepareProjectForPublish = useCallback(() => {
+    return {
+      files: files.map(f => ({ path: f.path, content: f.content })),
+      circuit: {
+        parts: circuitParts,
+        connections: connections,
+      },
+    }
+  }, [files, circuitParts, connections])
+
   return (
     <div className="relative h-screen overflow-hidden bg-ide-panel-bg text-ide-text">
       {/* Global Header - Compact Command Center (40px) */}
@@ -773,7 +989,7 @@ export default function Home() {
             )}
           </button>
 
-          <div className="flex items-center gap-2">
+          <Link href="/workspace" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-ide-accent">
               <span className="text-xs font-bold text-white">F</span>
             </div>
@@ -785,7 +1001,18 @@ export default function Home() {
                 IoT Workbench
               </p>
             </div>
-          </div>
+          </Link>
+
+          <div className="h-5 w-px bg-ide-border" />
+          
+          <Link
+            href="/workspace"
+            className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+            title="Workspace"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Workspace</span>
+          </Link>
         </div>
 
         {/* Center - Device Status */}
@@ -795,21 +1022,86 @@ export default function Home() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setShowPublishModal(true)}
             className="flex h-7 items-center gap-1.5 rounded-md bg-ide-accent/10 px-3 text-xs font-medium text-ide-accent hover:bg-ide-accent/20 transition-colors"
             title="Publish to Gallery"
           >
             <Share2 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Publish</span>
           </button>
-          <button
-            type="button"
+          <Link
+            href="/settings"
             className="flex h-7 w-7 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
             title="Settings"
           >
             <Settings className="h-4 w-4" />
-          </button>
+          </Link>
         </div>
       </header>
+
+      {/* Publish Modal */}
+      {showPublishModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-ide-border bg-ide-panel-surface p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Publish Project</h3>
+              <button
+                type="button"
+                onClick={() => setShowPublishModal(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const data = prepareProjectForPublish()
+                  console.log('Ready to publish to GitHub:', data)
+                  // TODO: Implement GitHub OAuth and API integration
+                }}
+                className="flex w-full items-center gap-3 rounded-lg border border-ide-border bg-ide-panel-bg p-4 text-left transition-colors hover:border-ide-accent/50 hover:bg-ide-panel-hover"
+              >
+                <Github className="h-5 w-5 text-ide-accent" />
+                <div>
+                  <div className="text-sm font-medium">Publish to GitHub</div>
+                  <div className="text-xs text-ide-text-muted">
+                    Create a new repository or gist
+                  </div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const data = prepareProjectForPublish()
+                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'fundi-project.json'
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}
+                className="flex w-full items-center gap-3 rounded-lg border border-ide-border bg-ide-panel-bg p-4 text-left transition-colors hover:border-ide-accent/50 hover:bg-ide-panel-hover"
+              >
+                <Share2 className="h-5 w-5 text-ide-accent" />
+                <div>
+                  <div className="text-sm font-medium">Download Project</div>
+                  <div className="text-xs text-ide-text-muted">
+                    Export as JSON file
+                  </div>
+                </div>
+              </button>
+            </div>
+            <div className="mt-4 rounded-lg bg-ide-info/10 border border-ide-info/30 p-3">
+              <p className="text-xs text-ide-info">
+                ℹ️ GitHub integration requires authentication. Coming soon!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main IDE Layout - Resizable Panels */}
       <div className="h-[calc(100vh-40px)]">
@@ -854,8 +1146,6 @@ export default function Home() {
               {/* Bottom - Code Editor */}
               <Panel defaultSize={40} minSize={15}>
                 <CodeEditorPanel
-                  code={code}
-                  onCodeChange={updateCode}
                   compilationError={compilationError}
                 />
               </Panel>

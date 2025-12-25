@@ -56,7 +56,14 @@ class CompilerService:
         """Return the set of available pre-installed libraries."""
         return AVAILABLE_LIBRARIES.copy()
 
-    def compile(self, code: str, board: str) -> CompileResult:
+    def compile(self, code: str, board: str, files: Optional[dict[str, str]] = None) -> CompileResult:
+        """Compile Arduino sketch with optional multi-file support.
+        
+        Args:
+            code: Main sketch code (used if files is None or empty)
+            board: Target board identifier (e.g., 'wokwi-arduino-uno')
+            files: Optional dict of {filename: content} for multi-file projects
+        """
         # Check if board is supported
         if board not in self.SUPPORTED_BOARDS:
             return CompileResult(
@@ -89,8 +96,22 @@ class CompilerService:
             temp_path = Path(temp_dir)
             sketch_dir = temp_path / sketch_base
             sketch_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Write main sketch file
             sketch_file = sketch_dir / f"{sketch_base}.ino"
             sketch_file.write_text(code, encoding="utf-8")
+            
+            # Write additional files if provided (multi-file support)
+            # The main sketch code is passed separately, so skip main.cpp if it duplicates
+            if files:
+                for filename, content in files.items():
+                    # Skip main.cpp as it's already written as the .ino file
+                    if filename == 'main.cpp':
+                        continue
+                    # Write .cpp and .h files to sketch directory
+                    if filename.endswith(('.cpp', '.h', '.hpp', '.c')):
+                        file_path = sketch_dir / filename
+                        file_path.write_text(content, encoding="utf-8")
 
             out_dir = temp_path / "out"
             out_dir.mkdir(parents=True, exist_ok=True)
