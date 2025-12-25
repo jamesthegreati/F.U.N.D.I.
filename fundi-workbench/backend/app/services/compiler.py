@@ -102,10 +102,11 @@ class CompilerService:
             sketch_file.write_text(code, encoding="utf-8")
             
             # Write additional files if provided (multi-file support)
+            # The main sketch code is passed separately, so skip main.cpp if it duplicates
             if files:
                 for filename, content in files.items():
-                    # Skip the main file (already written)
-                    if filename.endswith('.cpp') and 'main' in filename.lower():
+                    # Skip main.cpp as it's already written as the .ino file
+                    if filename == 'main.cpp':
                         continue
                     # Write .cpp and .h files to sketch directory
                     if filename.endswith(('.cpp', '.h', '.hpp', '.c')):

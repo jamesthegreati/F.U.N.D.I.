@@ -38,5 +38,3 @@ def compile_sketch(req: CompileRequest) -> CompileResponse:
         return CompileResponse(success=result.success, hex=result.hex, error=result.error)
     except Exception as exc:  # noqa: BLE001
         return CompileResponse(success=False, hex=None, error=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        return CompileResponse(success=False, hex=None, error=str(exc))

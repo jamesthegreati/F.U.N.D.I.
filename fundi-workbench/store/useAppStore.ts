@@ -717,7 +717,7 @@ export const useAppStore = create<AppState>()(
 
       submitCommand: async (text, imageData) => {
         const trimmed = text.trim()
-        const finalImageData = imageData || get().stagedImageData
+        const finalImageData = imageData ?? get().stagedImageData
         
         if (!trimmed && !finalImageData) return
 
