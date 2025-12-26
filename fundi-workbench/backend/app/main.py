@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sys
 from contextlib import asynccontextmanager
 
@@ -26,7 +27,6 @@ async def lifespan(app: FastAPI):
         print("✅ Gemini API key configured", file=sys.stderr)
     
     # Validate Arduino CLI availability
-    import shutil
     arduino_cli_path = shutil.which("arduino-cli")
     if arduino_cli_path:
         print(f"✅ Arduino CLI found at: {arduino_cli_path}", file=sys.stderr)

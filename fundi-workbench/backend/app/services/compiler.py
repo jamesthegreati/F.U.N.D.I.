@@ -12,6 +12,8 @@ import tempfile
 import os
 import shutil
 
+from app.core.security import is_safe_filename, validate_file_path
+
 
 @dataclass(frozen=True)
 class CompileResult:
@@ -118,27 +120,36 @@ class CompilerService:
                 # Write additional files if provided (multi-file support)
                 # The main sketch code is passed separately, so skip main.cpp if it duplicates
                 if files:
+                    allowed_extensions = {".cpp", ".h", ".hpp", ".c"}
                     for filename, content in files.items():
-                        # Validate filename to prevent directory traversal
-                        if ".." in filename or "/" in filename or "\\" in filename:
+                        # Use centralized security validation
+                        if not is_safe_filename(filename, allowed_extensions):
                             return CompileResult(
                                 success=False,
-                                error=f"Invalid filename: {filename}. Path traversal not allowed"
+                                error=f"Invalid or unsafe filename: {filename}"
                             )
                         
                         # Skip main.cpp as it's already written as the .ino file
                         if filename == 'main.cpp':
                             continue
-                        # Write .cpp and .h files to sketch directory
-                        if filename.endswith(('.cpp', '.h', '.hpp', '.c')):
-                            file_path = sketch_dir / filename
-                            try:
-                                file_path.write_text(content, encoding="utf-8")
-                            except Exception as exc:
-                                return CompileResult(
-                                    success=False,
-                                    error=f"Failed to write file {filename}: {exc}"
-                                )
+                        
+                        # Write file to sketch directory
+                        file_path = sketch_dir / filename
+                        
+                        # Double-check the resolved path is within sketch directory
+                        if not validate_file_path(file_path, sketch_dir):
+                            return CompileResult(
+                                success=False,
+                                error=f"Invalid file path: {filename}"
+                            )
+                        
+                        try:
+                            file_path.write_text(content, encoding="utf-8")
+                        except Exception as exc:
+                            return CompileResult(
+                                success=False,
+                                error=f"Failed to write file {filename}: {exc}"
+                            )
 
                 out_dir = temp_path / "out"
                 out_dir.mkdir(parents=True, exist_ok=True)

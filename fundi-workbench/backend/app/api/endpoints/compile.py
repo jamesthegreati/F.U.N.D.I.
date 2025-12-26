@@ -5,6 +5,7 @@ from typing import Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.security import is_safe_filename
 from app.services.compiler import CompilerService
 
 router = APIRouter()
@@ -40,15 +41,21 @@ class CompileRequest(BaseModel):
             return v
         if not isinstance(v, dict):
             raise ValueError("Files must be a dictionary")
+        
+        # Allowed extensions for Arduino projects
+        allowed_extensions = {".cpp", ".h", ".hpp", ".c", ".ino"}
+        
         # Validate file names and content
         for filename, content in v.items():
             if not filename or not isinstance(filename, str):
                 raise ValueError("File names must be non-empty strings")
             if not content or not isinstance(content, str):
                 raise ValueError(f"File content for {filename} must be a non-empty string")
-            # Prevent directory traversal
-            if ".." in filename or "/" in filename or "\\" in filename:
-                raise ValueError(f"Invalid filename: {filename}. Path traversal not allowed")
+            
+            # Use centralized security validation
+            if not is_safe_filename(filename, allowed_extensions):
+                raise ValueError(f"Invalid or unsafe filename: {filename}")
+        
         return v
 
 
