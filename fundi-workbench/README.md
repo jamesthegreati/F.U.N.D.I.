@@ -31,15 +31,17 @@ Before running FUNDI, ensure you have the following installed:
    cd F.U.N.D.I./fundi-workbench
    ```
 
-2. Create backend environment file:
-   ```bash
-   cp backend/.env.example backend/.env
-   # Edit backend/.env and add your GEMINI_API_KEY
-   ```
+2. Create an environment file for Docker Compose:
+   - Copy [backend/.env.example](backend/.env.example) to `backend/.env` if you also want to run the backend outside of Compose.
+   - For Compose, create a `.env` file in the `fundi-workbench` directory (same folder as `docker-compose.yml`) with:
+     ```env
+     GEMINI_API_KEY=your_api_key_here
+     ```
 
 3. Run with Docker Compose:
    ```bash
-   docker-compose up --build
+   docker compose up --build
+   # or: docker-compose up --build
    ```
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.

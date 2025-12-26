@@ -10,14 +10,26 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /backend
 
 # --- Arduino CLI toolchain ---
-# Install curl (required) plus minimal CA certs for HTTPS downloads.
+# Install minimal tools required for HTTPS downloads and extracting the Arduino CLI tarball.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates tar gzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install arduino-cli to /usr/local/bin
-RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
-    | sh -s -- -b /usr/local/bin
+# Download and install arduino-cli to /usr/local/bin.
+# Note: the upstream install.sh has occasionally broken due to release lookup changes,
+# so we download the official prebuilt tarball from downloads.arduino.cc.
+ARG ARDUINO_CLI_VERSION=latest
+RUN set -eux; \
+    if [ "$ARDUINO_CLI_VERSION" = "latest" ]; then \
+        url="https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz"; \
+    else \
+        url="https://downloads.arduino.cc/arduino-cli/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz"; \
+    fi; \
+    curl -fsSL "$url" -o /tmp/arduino-cli.tar.gz; \
+    tar -xzf /tmp/arduino-cli.tar.gz -C /usr/local/bin arduino-cli; \
+    chmod +x /usr/local/bin/arduino-cli; \
+    rm -f /tmp/arduino-cli.tar.gz; \
+    arduino-cli version
 
 # Initialize Arduino CLI config and update core index
 RUN arduino-cli config init \
