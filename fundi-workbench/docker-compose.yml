@@ -2,10 +2,21 @@ services:
   backend:
     build:
       context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ENVIRONMENT=${ENVIRONMENT:-dev}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - fundi-network
 
   frontend:
     image: node:18-alpine
@@ -13,11 +24,20 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+      - NODE_ENV=development
     volumes:
       - ./:/app
       - /app/node_modules
       - /app/.next
     command: sh -c "npm ci && npm run dev -- -H 0.0.0.0 -p 3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - fundi-network
+
+networks:
+  fundi-network:
+    driver: bridge

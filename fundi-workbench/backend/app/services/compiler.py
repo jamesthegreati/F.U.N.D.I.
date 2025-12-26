@@ -64,6 +64,13 @@ class CompilerService:
             board: Target board identifier (e.g., 'wokwi-arduino-uno')
             files: Optional dict of {filename: content} for multi-file projects
         """
+        # Validate inputs
+        if not code or not code.strip():
+            return CompileResult(success=False, error="Code cannot be empty")
+        
+        if not board or not board.strip():
+            return CompileResult(success=False, error="Board identifier cannot be empty")
+        
         # Check if board is supported
         if board not in self.SUPPORTED_BOARDS:
             return CompileResult(
@@ -90,80 +97,122 @@ class CompilerService:
 
         # Arduino CLI requires: <dir>/<dir>.ino
         # Create temp directory with permissions accessible by non-root user (rwx for owner only)
-        with tempfile.TemporaryDirectory(prefix="fundi-compile-") as temp_dir:
-            # Ensure temp directory has proper permissions for non-root user (owner only)
-            os.chmod(temp_dir, stat.S_IRWXU)
-            temp_path = Path(temp_dir)
-            sketch_dir = temp_path / sketch_base
-            sketch_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Write main sketch file
-            sketch_file = sketch_dir / f"{sketch_base}.ino"
-            sketch_file.write_text(code, encoding="utf-8")
-            
-            # Write additional files if provided (multi-file support)
-            # The main sketch code is passed separately, so skip main.cpp if it duplicates
-            if files:
-                for filename, content in files.items():
-                    # Skip main.cpp as it's already written as the .ino file
-                    if filename == 'main.cpp':
-                        continue
-                    # Write .cpp and .h files to sketch directory
-                    if filename.endswith(('.cpp', '.h', '.hpp', '.c')):
-                        file_path = sketch_dir / filename
-                        file_path.write_text(content, encoding="utf-8")
+        try:
+            with tempfile.TemporaryDirectory(prefix="fundi-compile-") as temp_dir:
+                # Ensure temp directory has proper permissions for non-root user (owner only)
+                os.chmod(temp_dir, stat.S_IRWXU)
+                temp_path = Path(temp_dir)
+                sketch_dir = temp_path / sketch_base
+                sketch_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Write main sketch file
+                sketch_file = sketch_dir / f"{sketch_base}.ino"
+                try:
+                    sketch_file.write_text(code, encoding="utf-8")
+                except Exception as exc:
+                    return CompileResult(
+                        success=False,
+                        error=f"Failed to write sketch file: {exc}"
+                    )
+                
+                # Write additional files if provided (multi-file support)
+                # The main sketch code is passed separately, so skip main.cpp if it duplicates
+                if files:
+                    for filename, content in files.items():
+                        # Validate filename to prevent directory traversal
+                        if ".." in filename or "/" in filename or "\\" in filename:
+                            return CompileResult(
+                                success=False,
+                                error=f"Invalid filename: {filename}. Path traversal not allowed"
+                            )
+                        
+                        # Skip main.cpp as it's already written as the .ino file
+                        if filename == 'main.cpp':
+                            continue
+                        # Write .cpp and .h files to sketch directory
+                        if filename.endswith(('.cpp', '.h', '.hpp', '.c')):
+                            file_path = sketch_dir / filename
+                            try:
+                                file_path.write_text(content, encoding="utf-8")
+                            except Exception as exc:
+                                return CompileResult(
+                                    success=False,
+                                    error=f"Failed to write file {filename}: {exc}"
+                                )
 
-            out_dir = temp_path / "out"
-            out_dir.mkdir(parents=True, exist_ok=True)
+                out_dir = temp_path / "out"
+                out_dir.mkdir(parents=True, exist_ok=True)
 
-            cmd = [
-                arduino_cli,
-                "compile",
-                "--fqbn",
-                fqbn,
-                "--output-dir",
-                str(out_dir),
-                str(sketch_dir),
-            ]
+                cmd = [
+                    arduino_cli,
+                    "compile",
+                    "--fqbn",
+                    fqbn,
+                    "--output-dir",
+                    str(out_dir),
+                    str(sketch_dir),
+                ]
 
-            try:
-                proc = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            except FileNotFoundError:
-                return CompileResult(
-                    success=False,
-                    error=(
-                        "Failed to execute arduino-cli. "
-                        "Make sure it is installed in the runtime environment and accessible on PATH "
-                        "(or set ARDUINO_CLI_PATH)."
-                    ),
-                )
+                try:
+                    proc = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=120,  # 2 minute timeout for compilation
+                    )
+                except subprocess.TimeoutExpired:
+                    return CompileResult(
+                        success=False,
+                        error="Compilation timed out after 2 minutes. The code may be too complex or there may be an infinite loop during compilation."
+                    )
+                except FileNotFoundError:
+                    return CompileResult(
+                        success=False,
+                        error=(
+                            "Failed to execute arduino-cli. "
+                            "Make sure it is installed in the runtime environment and accessible on PATH "
+                            "(or set ARDUINO_CLI_PATH)."
+                        ),
+                    )
+                except Exception as exc:
+                    return CompileResult(
+                        success=False,
+                        error=f"Unexpected error during compilation: {exc}"
+                    )
 
-            if proc.returncode != 0:
-                stderr = (proc.stderr or "").strip()
-                stdout = (proc.stdout or "").strip()
-                combined = "\n".join([s for s in [stderr, stdout] if s])
+                if proc.returncode != 0:
+                    stderr = (proc.stderr or "").strip()
+                    stdout = (proc.stdout or "").strip()
+                    combined = "\n".join([s for s in [stderr, stdout] if s])
 
-                # ESP32 core not installed is a common case; return compiler output as-is.
-                return CompileResult(
-                    success=False,
-                    error=combined or "Compilation failed (no output).",
-                )
+                    # ESP32 core not installed is a common case; return compiler output as-is.
+                    return CompileResult(
+                        success=False,
+                        error=combined or "Compilation failed (no output).",
+                    )
 
-            artifact_path = self._find_artifact(out_dir)
-            if not artifact_path:
-                return CompileResult(
-                    success=False,
-                    error="Compilation succeeded but no .hex/.bin artifact was found in output directory.",
-                )
+                artifact_path = self._find_artifact(out_dir)
+                if not artifact_path:
+                    return CompileResult(
+                        success=False,
+                        error="Compilation succeeded but no .hex/.bin artifact was found in output directory.",
+                    )
 
-            data = artifact_path.read_bytes()
-            encoded = base64.b64encode(data).decode("ascii")
-            return CompileResult(success=True, hex=encoded)
+                try:
+                    data = artifact_path.read_bytes()
+                    encoded = base64.b64encode(data).decode("ascii")
+                    return CompileResult(success=True, hex=encoded)
+                except Exception as exc:
+                    return CompileResult(
+                        success=False,
+                        error=f"Failed to read compiled artifact: {exc}"
+                    )
+        except Exception as exc:
+            return CompileResult(
+                success=False,
+                error=f"Unexpected error during compilation setup: {exc}"
+            )
 
     def _resolve_arduino_cli(self) -> Optional[str]:
         override = os.environ.get("ARDUINO_CLI_PATH")

@@ -77,8 +77,24 @@ OUTPUT REQUIREMENTS:
 
 def _client() -> genai.Client:
     if not settings.GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not set")
-    return genai.Client(api_key=settings.GEMINI_API_KEY)
+        raise RuntimeError(
+            "GEMINI_API_KEY is not set. "
+            "Please configure your Google Gemini API key in the environment or .env file. "
+            "Get your API key from: https://makersuite.google.com/app/apikey"
+        )
+    if settings.GEMINI_API_KEY in ["your_api_key_here", "None", "null", ""]:
+        raise RuntimeError(
+            "GEMINI_API_KEY is set to a placeholder value. "
+            "Please replace it with a valid Google Gemini API key. "
+            "Get your API key from: https://makersuite.google.com/app/apikey"
+        )
+    try:
+        return genai.Client(api_key=settings.GEMINI_API_KEY)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to initialize Gemini AI client: {exc}. "
+            "Please verify your API key is valid."
+        ) from exc
 
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
