@@ -23,7 +23,9 @@ Before running FUNDI, ensure you have the following installed:
 
 ## Quickstart
 
-### Option 1: Full Stack with Docker Compose
+> **📖 Detailed Docker setup guide**: See [DOCKER_SETUP.md](DOCKER_SETUP.md) for comprehensive Docker configuration, troubleshooting, and production deployment instructions.
+
+### Option 1: Full Stack with Docker Compose (Recommended)
 
 1. Clone the repository:
    ```bash
@@ -31,18 +33,21 @@ Before running FUNDI, ensure you have the following installed:
    cd F.U.N.D.I./fundi-workbench
    ```
 
-2. Create backend environment file:
+2. Create an environment file:
    ```bash
-   cp backend/.env.example backend/.env
-   # Edit backend/.env and add your GEMINI_API_KEY
+   cp .env.example .env
+   # Edit .env and add your GEMINI_API_KEY
    ```
 
 3. Run with Docker Compose:
    ```bash
-   docker-compose up --build
+   docker compose up --build
+   # or: docker-compose up --build
    ```
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+For troubleshooting Docker issues, see [DOCKER_SETUP.md](DOCKER_SETUP.md).
 
 ### Option 2: Separate Frontend and Backend
 
@@ -147,32 +152,50 @@ FUNDI uses a modern full-stack architecture:
 
 ## Troubleshooting
 
+> **📖 Comprehensive troubleshooting**: See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed Docker troubleshooting and solutions.
+
 ### Common Issues
 
 #### "Failed to fetch" or CORS errors
 - Ensure the backend is running on port 8000
 - Check that `NEXT_PUBLIC_BACKEND_URL` is set correctly
-- Verify Docker container is running: `docker ps`
+- Verify Docker container is healthy: `docker compose ps`
+- Check backend health endpoint: `curl http://localhost:8000/health`
 
 #### "GEMINI_API_KEY is not set"
-- Ensure your `.env` file contains a valid API key
+- Ensure your `.env` file exists and contains a valid API key
+- Copy from template: `cp .env.example .env`
 - Verify the environment file is being loaded by Docker
-- Try rebuilding: `docker-compose down && docker-compose up --build`
+- Try rebuilding: `docker compose down && docker compose up --build`
+
+#### Docker build failures
+- **Network issues**: The Dockerfile includes retry logic for downloads
+- **Arduino CLI download fails**: Check internet connection or proxy settings
+- **Core installation fails**: Build continues with warnings, cores can be installed later
+- See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed solutions
 
 #### Docker permission errors
-- On Linux, you may need to run Docker commands with `sudo`
-- Or add your user to the docker group: `sudo usermod -aG docker $USER`
+- On Linux, add your user to the docker group: `sudo usermod -aG docker $USER`
+- Restart your shell or log out and back in
+- Verify: `docker ps` should work without sudo
+
+#### Backend startup issues
+- Check logs: `docker compose logs backend`
+- Validate configuration: `docker compose exec backend python validate_setup.py`
+- Ensure API key is not set to placeholder value
 
 #### Arduino CLI compilation failures
 - The Docker image includes pre-installed cores for:
-  - Arduino AVR (Uno, Nano, Mega)
-  - ESP32
-  - Raspberry Pi Pico (RP2040)
-- If you need additional libraries, modify the Dockerfile
+  - Arduino AVR (Uno, Nano, Mega) ✅
+  - ESP32 (ESP32 DevKit) ⚠️ Best-effort installation
+  - Raspberry Pi Pico (RP2040) ⚠️ Best-effort installation
+- Some cores may fail to install due to network restrictions but can be added later
+- Check backend logs for compilation errors
 
 #### Port already in use
 - Frontend: `lsof -i :3000 | grep LISTEN` to find and kill the process
 - Backend: `lsof -i :8000 | grep LISTEN` to find and kill the process
+- Or change ports in `docker-compose.yml`
 
 ### Debug Mode
 
