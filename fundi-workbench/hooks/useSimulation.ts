@@ -93,7 +93,7 @@ class AVRRunner {
     // Provide basic Arduino timing (millis/delay rely on timer0 on Uno).
     this.clock = new AVRClock(this.cpu, 16_000_000);
     this.timer0 = new AVRTimer(this.cpu, timer0Config);
-    
+
     // USART for Serial communication
     this.usart = new AVRUSART(this.cpu, usart0Config, 16_000_000);
   }
@@ -126,7 +126,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const rafRef = useRef<number | null>(null);
   const runningRef = useRef(false);
   const serialBufferRef = useRef<string>('');
-  const stepFrameRef = useRef<() => void>(() => {});
+  const stepFrameRef = useRef<() => void>(() => { });
 
   const cyclesPerFrame = useMemo(() => Math.floor(16_000_000 / 60), []);
 
@@ -154,6 +154,14 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
       return next;
     });
   }, []);
+
+  // Debug: Log pin state changes
+  useEffect(() => {
+    const activeStates = Object.entries(pinStates).filter(([, v]) => v);
+    if (activeStates.length > 0) {
+      console.log('[Simulation] Active pins (HIGH):', Object.fromEntries(activeStates));
+    }
+  }, [pinStates]);
 
   // Update the step function ref in an effect to avoid stale closure issues
   useEffect(() => {
@@ -205,41 +213,52 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   }, []);
 
   const run = useCallback(() => {
-    if (!hexData) return;
+    console.log('[Simulation] Run requested', { hasHex: !!hexData, partType });
+    if (!hexData) {
+      console.warn('[Simulation] No HEX data available');
+      return;
+    }
     if (!isAvrPart(partType)) {
+      console.warn('[Simulation] Unsupported part type for AVR simulation:', partType);
       // avr8js only simulates AVR8 cores; ESP32 is not supported here.
       return;
     }
 
     if (!runnerRef.current) {
-      const hexText = decodeBase64ToString(hexData);
-      const runner = new AVRRunner(hexText);
+      try {
+        const hexText = decodeBase64ToString(hexData);
+        const runner = new AVRRunner(hexText);
 
-      const onPortB: GPIOListener = (value) => updatePortPins('B', value);
-      const onPortD: GPIOListener = (value) => updatePortPins('D', value);
-      runner.portB.addListener(onPortB);
-      runner.portD.addListener(onPortD);
+        const onPortB: GPIOListener = (value) => updatePortPins('B', value);
+        const onPortD: GPIOListener = (value) => updatePortPins('D', value);
+        runner.portB.addListener(onPortB);
+        runner.portD.addListener(onPortD);
 
-      // Listen for USART byte transmissions (Serial.print output)
-      runner.usart.onByteTransmit = (byte: number) => {
-        const char = String.fromCharCode(byte);
-        serialBufferRef.current += char;
-        
-        // When we see a newline, flush the buffer as a new line
-        if (char === '\n') {
-          const line = serialBufferRef.current.trimEnd();
-          if (line) {
-            setSerialOutput((prev) => [...prev, line]);
+        // Listen for USART byte transmissions (Serial.print output)
+        runner.usart.onByteTransmit = (byte: number) => {
+          const char = String.fromCharCode(byte);
+          serialBufferRef.current += char;
+
+          // When we see a newline, flush the buffer as a new line
+          if (char === '\n') {
+            const line = serialBufferRef.current.trimEnd();
+            if (line) {
+              setSerialOutput((prev) => [...prev, line]);
+            }
+            serialBufferRef.current = '';
           }
-          serialBufferRef.current = '';
-        }
-      };
+        };
 
-      // Initialize state from current registers
-      updatePortPins('B', runner.cpu.data[portBConfig.PORT]);
-      updatePortPins('D', runner.cpu.data[portDConfig.PORT]);
+        // Initialize state from current registers
+        updatePortPins('B', runner.cpu.data[portBConfig.PORT]);
+        updatePortPins('D', runner.cpu.data[portDConfig.PORT]);
 
-      runnerRef.current = runner;
+        runnerRef.current = runner;
+        console.log('[Simulation] AVR Runner initialized successfully');
+      } catch (err) {
+        console.error('[Simulation] Failed to initialize AVR runner:', err);
+        return;
+      }
     }
 
     if (runningRef.current) return;

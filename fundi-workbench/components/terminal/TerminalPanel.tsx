@@ -52,7 +52,7 @@ export function TerminalPanel({
           )}
         >
           <Bot className="h-3.5 w-3.5" />
-          <span>Assistant</span>
+          <span>AI Assistant ✨</span>
         </button>
       </div>
 

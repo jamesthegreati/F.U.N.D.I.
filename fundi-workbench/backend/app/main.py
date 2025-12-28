@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.endpoints.compile import router as compile_router
 from app.api.endpoints.generate import router as generate_router
+from app.api.endpoints.ai_tools import router as ai_tools_router
 from app.core.config import settings
 
 
@@ -33,7 +34,7 @@ async def lifespan(app: FastAPI):
     else:
         print("⚠️  Arduino CLI not found in PATH. Compilation features may not work.", file=sys.stderr)
     
-    print("✅ Backend startup complete", file=sys.stderr)
+    print("✅ Backend startup complete ✨", file=sys.stderr)
     
     yield
     
@@ -58,6 +59,7 @@ app.add_middleware(
 
 app.include_router(generate_router)
 app.include_router(compile_router)
+app.include_router(ai_tools_router)
 
 
 @app.get("/health")

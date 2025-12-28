@@ -29,7 +29,33 @@ STRICT REQUIREMENTS:
    - Use spacing of at least 100 pixels between components
    - NEVER stack components at the same coordinates
 5. For resistors, specify the 'value' attribute in ohms (e.g., {"value": "220"} for 220Ω).
+6. WOKWI PIN NAMES - CRITICAL (use EXACTLY these names for connections):
+   - Arduino Uno pins: "0"-"13" (digital), "A0"-"A5" (analog), "GND.1", "GND.2", "GND.3", "5V", "VIN", "3.3V"
+   - wokwi-led pins: "A" (anode/positive), "C" (cathode/negative)
+   - wokwi-resistor pins: "1", "2"
+   - wokwi-pushbutton pins: "1.l", "1.r", "2.l", "2.r"
+   - wokwi-servo pins: "PWM", "V+", "GND"
+   - wokwi-dht22 pins: "VCC", "SDA", "NC", "GND"
+   - wokwi-lcd1602 pins: "VSS", "VDD", "V0", "RS", "RW", "E", "D0"-"D7", "A", "K"
+   - wokwi-buzzer pins: "1" (signal), "2" (ground)
+   - wokwi-potentiometer pins: "GND", "SIG", "VCC"
+7. WIRE CONNECTIONS - CRITICAL for visual appeal:
+   - For EACH connection, specify color based on signal type:
+     * Power (VCC, 5V, 3.3V): color="#ef4444" (red), signal_type="power", label="VCC"
+     * Ground (GND): color="#000000" (black), signal_type="ground", label="GND"
+     * Digital pins: color="#3b82f6" (blue), signal_type="digital", label="D13" etc.
+     * Analog pins: color="#22c55e" (green), signal_type="analog", label="A0" etc.
+     * PWM pins: color="#eab308" (yellow), signal_type="pwm", label="PWM"
+     * I2C (SDA/SCL): color="#8b5cf6" (purple), signal_type="i2c"
+     * SPI (MOSI/MISO/SCK): color="#f97316" (orange), signal_type="spi"
+   - Always include label with the pin name for clarity
+8. FILE CHANGES - For complex projects, you can suggest additional files:
+   - Use file_changes to create helper files (e.g., "sensors.h", "config.h")
+   - Specify action: "create", "update", or "delete"
+   - Include full file content for create/update actions
+   - Common patterns: separate sensor code, configuration constants, utility functions
 """
+
 
 _SYSTEM_PROMPT_TEACHER = """You are a Socratic Tutor and Embedded Systems Educator. Your role is to TEACH students about circuits.
 
@@ -55,6 +81,16 @@ STRICT TECHNICAL REQUIREMENTS:
    - Use spacing of at least 100 pixels between components
    - NEVER stack components at the same coordinates
 5. For resistors, specify the 'value' attribute in ohms (e.g., {"value": "220"} for 220Ω).
+6. WIRE CONNECTIONS - CRITICAL for visual appeal:
+   - For EACH connection, specify color based on signal type:
+     * Power (VCC, 5V, 3.3V): color="#ef4444" (red), signal_type="power", label="VCC"
+     * Ground (GND): color="#000000" (black), signal_type="ground", label="GND"
+     * Digital pins: color="#3b82f6" (blue), signal_type="digital", label="D13" etc.
+     * Analog pins: color="#22c55e" (green), signal_type="analog", label="A0" etc.
+     * PWM pins: color="#eab308" (yellow), signal_type="pwm", label="PWM"
+     * I2C (SDA/SCL): color="#8b5cf6" (purple), signal_type="i2c"
+     * SPI (MOSI/MISO/SCK): color="#f97316" (orange), signal_type="spi"
+   - Always include label with the pin name for clarity
 """
 
 _VISION_SYSTEM_PROMPT = """You are a Computer Vision expert specializing in electronic circuit analysis.
@@ -71,8 +107,15 @@ OUTPUT REQUIREMENTS:
 - Use STANDARD Wokwi part IDs for all components
 - Calculate appropriate x/y coordinates based on the physical layout
 - Map connections correctly between pins
+- For each connection, specify color based on signal type:
+  * Power (VCC, 5V): color="#ef4444" (red), signal_type="power"
+  * Ground (GND): color="#000000" (black), signal_type="ground"
+  * Digital: color="#3b82f6" (blue), signal_type="digital"
+  * Analog: color="#22c55e" (green), signal_type="analog"
 - Provide an explanation of what you identified
 """
+
+
 
 
 def _client() -> genai.Client:

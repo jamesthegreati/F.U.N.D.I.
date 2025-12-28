@@ -198,7 +198,10 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
       .map((c) => {
         const start = getPinPoint(c.from);
         const end = getPinPoint(c.to);
-        if (!start || !end) return null;
+
+        if (!start || !end) {
+          return null;
+        }
 
         const waypoints = wirePointOverrides?.has(c.id)
           ? wirePointOverrides.get(c.id) ?? []
@@ -219,7 +222,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
       const points = adjusted.get(w.id) ?? w.points;
       return { ...w, points, d: pointsToPathD(points) };
     });
-  }, [connections, getPinPoint, wirePointOverrides, gridSize]);
+  }, [connections, getPinPoint, wirePointOverrides, gridSize, pinCenters]);
 
   const selectedWire = useMemo(() => {
     if (!selectedId) return null;
@@ -621,6 +624,40 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           </button>
         </div>
       )}
+
+      {/* Wire connection label tooltip on hover */}
+      {hoveredId && !selectedId && (() => {
+        const hoveredWire = wireGeometry.find(w => w.id === hoveredId);
+        const hoveredConn = connections.find(c => c.id === hoveredId);
+        if (!hoveredWire || !hoveredConn) return null;
+
+        const pts = hoveredWire.points;
+        if (pts.length < 2) return null;
+
+        const midIdx = Math.floor(pts.length / 2);
+        const midpoint = pts[midIdx];
+
+        return (
+          <div
+            className="absolute z-20 pointer-events-none"
+            style={{
+              left: midpoint.x,
+              top: midpoint.y,
+              transform: 'translate(-50%, -100%) translateY(-8px)',
+            }}
+          >
+            <div className="bg-ide-panel-bg/95 backdrop-blur-sm border border-ide-border rounded-md px-2.5 py-1.5 shadow-lg">
+              <div className="flex items-center gap-2 text-[11px] font-mono">
+                <span className="text-ide-text-muted">{hoveredConn.from.partId}</span>
+                <span className="text-ide-accent font-medium">{hoveredConn.from.pinId}</span>
+                <span className="text-ide-text-subtle">→</span>
+                <span className="text-ide-text-muted">{hoveredConn.to.partId}</span>
+                <span className="text-ide-accent font-medium">{hoveredConn.to.pinId}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }

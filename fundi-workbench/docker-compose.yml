@@ -3,11 +3,16 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
     ports:
       - "8000:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - ENVIRONMENT=${ENVIRONMENT:-dev}
+    volumes:
+      - ./backend/app:/backend/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
@@ -19,13 +24,14 @@ services:
       - fundi-network
 
   frontend:
-    image: node:18-alpine
+    image: node:20-alpine
     working_dir: /app
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
       - NODE_ENV=development
+      - WATCHPACK_POLLING=true
     volumes:
       - ./:/app
       - /app/node_modules

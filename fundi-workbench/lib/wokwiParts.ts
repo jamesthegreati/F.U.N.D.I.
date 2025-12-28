@@ -6,7 +6,10 @@ export interface WokwiPartConfig {
     element: string;
     description?: string;
     category?: 'mcu' | 'displays' | 'leds' | 'sensors';
+    /** Optional inline SVG for component preview in the library */
+    svg?: string;
 }
+
 
 export const WOKWI_PARTS: Record<string, WokwiPartConfig> = {
     'arduino-uno': {

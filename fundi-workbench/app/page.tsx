@@ -1,8 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
+  ChevronDown,
+  ChevronUp,
   FileCode,
   FolderOpen,
   FolderTree,
@@ -72,12 +74,12 @@ function translatePoints(points: WirePoint[] | undefined, delta: WirePoint): Wir
 /* ============================================
    Canvas Toolbar Overlay
    ============================================ */
-function CanvasToolbar({ 
-  onZoomIn, 
-  onZoomOut, 
+function CanvasToolbar({
+  onZoomIn,
+  onZoomOut,
   onFitView,
   onResetView,
-}: { 
+}: {
   onZoomIn: () => void
   onZoomOut: () => void
   onFitView: () => void
@@ -154,14 +156,21 @@ function UnifiedActionBar({
             'btn-press',
             isCompiling
               ? 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
-              : 'bg-ide-success text-white hover:bg-ide-success/90 shadow-lg shadow-ide-success/20',
+              : isRunning
+                ? 'bg-ide-success/20 text-ide-success cursor-not-allowed'
+                : 'bg-ide-success text-white hover:bg-ide-success/90 shadow-lg shadow-ide-success/20',
           )}
-          title="Compile and run"
+          title={isRunning ? 'Simulation running' : 'Compile and run'}
         >
           {isCompiling ? (
             <>
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               <span>Compiling...</span>
+            </>
+          ) : isRunning ? (
+            <>
+              <div className="h-2 w-2 rounded-full bg-ide-success animate-pulse" />
+              <span>Running...</span>
             </>
           ) : (
             <>
@@ -226,14 +235,17 @@ function UnifiedActionBar({
 /* ============================================
    Simulation Canvas Inner (ReactFlow)
    ============================================ */
-function SimulationCanvasInner({ 
+function SimulationCanvasInner({
   canvasRef,
   isRunning,
-}: { 
+  componentPinStates,
+}: {
   canvasRef: React.RefObject<HTMLDivElement | null>
   isRunning: boolean
+  componentPinStates?: Record<string, Record<string, boolean>>
 }) {
   const addPart = useAppStore((s) => s.addPart)
+  const removePart = useAppStore((s) => s.removePart)
   const updatePartsPositions = useAppStore((s) => s.updatePartsPositions)
   const selectedPartIds = useAppStore((s) => s.selectedPartIds)
   const setSelectedPartIds = useAppStore((s) => s.setSelectedPartIds)
@@ -252,7 +264,7 @@ function SimulationCanvasInner({
 
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
-  
+
   const initializedRef = useRef(false)
 
   // Seed a default part once.
@@ -280,7 +292,7 @@ function SimulationCanvasInner({
   // Sync ReactFlow nodes with circuitParts from store
   useEffect(() => {
     if (!initializedRef.current) return
-    
+
     const newNodes: Node[] = circuitParts.map((part) => ({
       id: part.id,
       type: 'wokwi',
@@ -288,19 +300,20 @@ function SimulationCanvasInner({
       data: {
         getCanvasRect,
         partType: part.type.replace('wokwi-', ''),
+        onDeletePart: removePart,
       },
       selected: selectedPartIds.includes(part.id),
     }))
-    
+
     const currentIds = new Set(nodes.map(n => n.id))
     const newIds = new Set(newNodes.map(n => n.id))
-    const idsChanged = newIds.size !== currentIds.size || 
+    const idsChanged = newIds.size !== currentIds.size ||
       [...newIds].some(id => !currentIds.has(id))
-    
+
     if (newNodes.length > 0 && idsChanged) {
       setNodes(newNodes)
     }
-  }, [circuitParts, getCanvasRect, nodes, selectedPartIds, setNodes])
+  }, [circuitParts, getCanvasRect, nodes, removePart, selectedPartIds, setNodes])
 
   // Update node data when handlers change
   useEffect(() => {
@@ -312,19 +325,43 @@ function SimulationCanvasInner({
             data: {
               ...node.data,
               getCanvasRect,
+              onDeletePart: removePart,
             },
           }
         }
         return node
       })
     )
-  }, [getCanvasRect, setNodes])
+  }, [getCanvasRect, removePart, setNodes])
 
   // Keep ReactFlow selection in sync with Zustand selection.
   useEffect(() => {
     const selectedSet = new Set(selectedPartIds)
     setNodes((nds) => nds.map((n) => ({ ...n, selected: selectedSet.has(n.id) })))
   }, [selectedPartIds, setNodes])
+
+  // Update node data with simulation pin states for visual component updates
+  useEffect(() => {
+    if (!componentPinStates || Object.keys(componentPinStates).length === 0) return
+
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.type === 'wokwi') {
+          const simStates = componentPinStates[node.id]
+          if (simStates) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                simulationPinStates: simStates,
+              },
+            }
+          }
+        }
+        return node
+      })
+    )
+  }, [componentPinStates, setNodes])
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
@@ -363,6 +400,20 @@ function SimulationCanvasInner({
       }
     },
     [setSelectedPartIds, toggleSelectedPartId]
+  )
+
+  // Double-click to delete component
+  const onNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      // Get the part type for a better confirmation message
+      const part = circuitParts.find(p => p.id === node.id)
+      const partName = part?.type.replace('wokwi-', '').replace(/-/g, ' ') || 'component'
+
+      if (confirm(`Delete this ${partName}?`)) {
+        removePart(node.id)
+      }
+    },
+    [circuitParts, removePart]
   )
 
   // Group-drag engine
@@ -530,6 +581,7 @@ function SimulationCanvasInner({
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
@@ -555,11 +607,21 @@ function SimulationCanvasInner({
   )
 }
 
-function SimulationCanvas({ isRunning }: { isRunning: boolean }) {
+function SimulationCanvas({
+  isRunning,
+  componentPinStates
+}: {
+  isRunning: boolean
+  componentPinStates?: Record<string, Record<string, boolean>>
+}) {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   return (
     <ReactFlowProvider>
-      <SimulationCanvasInner canvasRef={canvasRef} isRunning={isRunning} />
+      <SimulationCanvasInner
+        canvasRef={canvasRef}
+        isRunning={isRunning}
+        componentPinStates={componentPinStates}
+      />
     </ReactFlowProvider>
   )
 }
@@ -567,9 +629,9 @@ function SimulationCanvas({ isRunning }: { isRunning: boolean }) {
 /* ============================================
    Code Editor Panel
    ============================================ */
-function CodeEditorPanel({ 
+function CodeEditorPanel({
   compilationError,
-}: { 
+}: {
   compilationError: string | null
 }) {
   const files = useAppStore((s) => s.files)
@@ -899,10 +961,10 @@ function LeftPanel() {
 /* ============================================
    Resize Handle Component
    ============================================ */
-function ResizeHandle({ 
+function ResizeHandle({
   direction = 'horizontal',
   className,
-}: { 
+}: {
   direction?: 'horizontal' | 'vertical'
   className?: string
 }) {
@@ -910,7 +972,7 @@ function ResizeHandle({
     <PanelResizeHandle
       className={cn(
         'resize-handle group relative flex items-center justify-center',
-        direction === 'horizontal' 
+        direction === 'horizontal'
           ? 'w-1.5 cursor-col-resize'
           : 'h-1.5 cursor-row-resize',
         className
@@ -918,7 +980,7 @@ function ResizeHandle({
     >
       <div className={cn(
         'absolute rounded-full bg-ide-border opacity-0 group-hover:opacity-100 transition-opacity',
-        direction === 'horizontal' 
+        direction === 'horizontal'
           ? 'w-0.5 h-8'
           : 'h-0.5 w-8'
       )} />
@@ -931,6 +993,7 @@ function ResizeHandle({
    ============================================ */
 export default function Home() {
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
+  const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false)
   const [showPublishModal, setShowPublishModal] = useState(false)
 
   const files = useAppStore((s) => s.files)
@@ -946,6 +1009,7 @@ export default function Home() {
     run: simRun,
     stop: simStop,
     isRunning: simIsRunning,
+    pinStates,
     serialOutput,
     clearSerialOutput,
   } = useSimulation(hex, compiledBoard ?? '')
@@ -955,8 +1019,58 @@ export default function Home() {
     if (isCompiling) return
     if (compilationError) return
     if (simIsRunning) return
+    console.log('[Page] Auto-starting simulation')
     simRun()
   }, [compiledBoard, compilationError, hex, isCompiling, simIsRunning, simRun])
+
+  // Compute component pin states based on connections and Arduino pinStates
+  // This maps component IDs to their simulated pin values for visual updates
+  const componentPinStates = useMemo(() => {
+    const states: Record<string, Record<string, boolean>> = {}
+
+    // Find the Arduino board in circuit parts
+    const arduinoPart = circuitParts.find(p =>
+      p.type.includes('arduino') || p.type.includes('esp32')
+    )
+    if (!arduinoPart) return states
+
+    // For each connection from Arduino, propagate the pin state to connected component
+    for (const conn of connections) {
+      let arduinoPin: string | null = null
+      let componentId: string | null = null
+      let componentPin: string | null = null
+
+      // Check if source is Arduino
+      if (conn.from.partId === arduinoPart.id) {
+        arduinoPin = conn.from.pinId
+        componentId = conn.to.partId
+        componentPin = conn.to.pinId
+      }
+      // Or target is Arduino
+      else if (conn.to.partId === arduinoPart.id) {
+        arduinoPin = conn.to.pinId
+        componentId = conn.from.partId
+        componentPin = conn.from.pinId
+      }
+
+      if (arduinoPin && componentId && componentPin) {
+        // Get the Arduino pin number (e.g., "13" -> 13, "A0" -> handled differently)
+        let pinNum: number | null = null
+        if (/^\d+$/.test(arduinoPin)) {
+          pinNum = parseInt(arduinoPin, 10)
+        }
+
+        if (pinNum !== null && pinStates[pinNum] !== undefined) {
+          if (!states[componentId]) {
+            states[componentId] = {}
+          }
+          states[componentId][componentPin] = pinStates[pinNum]
+        }
+      }
+    }
+
+    return states
+  }, [circuitParts, connections, pinStates])
 
   // Prepare project data for publishing
   const prepareProjectForPublish = useCallback(() => {
@@ -1004,7 +1118,7 @@ export default function Home() {
           </Link>
 
           <div className="h-5 w-px bg-ide-border" />
-          
+
           <Link
             href="/workspace"
             className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
@@ -1109,9 +1223,9 @@ export default function Home() {
           {/* Left Panel - Component Library (collapsible) */}
           {!leftPanelCollapsed && (
             <>
-              <Panel 
-                defaultSize={20} 
-                minSize={15} 
+              <Panel
+                defaultSize={20}
+                minSize={15}
                 maxSize={35}
                 className="bg-ide-panel-bg"
               >
@@ -1125,10 +1239,13 @@ export default function Home() {
           <Panel defaultSize={leftPanelCollapsed ? 60 : 55} minSize={30}>
             <PanelGroup direction="vertical" className="h-full">
               {/* Top - Simulation Canvas (The Stage) */}
-              <Panel defaultSize={60} minSize={30}>
+              <Panel defaultSize={bottomPanelCollapsed ? 100 : 60} minSize={30}>
                 <div className="relative h-full overflow-hidden">
-                  <SimulationCanvas isRunning={simIsRunning} />
-                  
+                  <SimulationCanvas
+                    isRunning={simIsRunning}
+                    componentPinStates={componentPinStates}
+                  />
+
                   {/* Unified Action Bar */}
                   <UnifiedActionBar
                     isCompiling={isCompiling}
@@ -1138,17 +1255,50 @@ export default function Home() {
                     isRunning={simIsRunning}
                     onStop={simStop}
                   />
+
+                  {/* Bottom Panel Toggle Button (when collapsed) */}
+                  {bottomPanelCollapsed && (
+                    <button
+                      type="button"
+                      onClick={() => setBottomPanelCollapsed(false)}
+                      className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-lg bg-ide-panel-surface/90 border border-ide-border px-3 py-1.5 text-xs text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover transition-colors backdrop-blur-sm"
+                      title="Show Code Editor"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                      <span>Show Editor</span>
+                    </button>
+                  )}
                 </div>
               </Panel>
 
-              <ResizeHandle direction="vertical" />
+              {!bottomPanelCollapsed && (
+                <>
+                  <ResizeHandle direction="vertical" />
 
-              {/* Bottom - Code Editor */}
-              <Panel defaultSize={40} minSize={15}>
-                <CodeEditorPanel
-                  compilationError={compilationError}
-                />
-              </Panel>
+                  {/* Bottom - Code Editor */}
+                  <Panel defaultSize={40} minSize={15}>
+                    <div className="relative h-full flex flex-col">
+                      {/* Collapse toggle header */}
+                      <div className="flex items-center justify-between border-b border-ide-border bg-ide-panel-surface px-2 py-1">
+                        <span className="text-[10px] font-medium text-ide-text-muted uppercase tracking-wider">Code Editor</span>
+                        <button
+                          type="button"
+                          onClick={() => setBottomPanelCollapsed(true)}
+                          className="flex h-5 w-5 items-center justify-center rounded text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+                          title="Collapse Code Editor"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex-1 min-h-0">
+                        <CodeEditorPanel
+                          compilationError={compilationError}
+                        />
+                      </div>
+                    </div>
+                  </Panel>
+                </>
+              )}
             </PanelGroup>
           </Panel>
 

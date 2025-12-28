@@ -4,6 +4,7 @@ import { memo, useMemo, useState } from 'react';
 import { Cpu, Lightbulb, Gauge, Monitor } from 'lucide-react';
 import type { WokwiPartType } from '@/lib/wokwiParts';
 import { WOKWI_PARTS } from '@/lib/wokwiParts';
+import { COMPONENT_SVGS } from '@/lib/componentSvgs';
 import { cn } from '@/utils/cn';
 
 export const FUNDI_PART_MIME = 'application/x-fundi-part';
@@ -91,7 +92,7 @@ function ComponentLibrary() {
           <div className="grid grid-cols-2 gap-2">
             {activeCategory.items.map((item) => {
               const Icon = activeCategory.icon;
-              
+
               return (
                 <div
                   key={item.id}
@@ -109,9 +110,16 @@ function ComponentLibrary() {
                   )}
                   title={item.description ?? item.name}
                 >
-                  {/* Icon */}
-                  <Icon className="h-6 w-6 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
-                  
+                  {/* SVG Component Icon (Wokwi-style) or fallback to category icon */}
+                  {COMPONENT_SVGS[item.id] ? (
+                    <div
+                      className="h-10 w-10 transition-all group-hover:scale-110"
+                      dangerouslySetInnerHTML={{ __html: COMPONENT_SVGS[item.id] }}
+                    />
+                  ) : (
+                    <Icon className="h-8 w-8 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
+                  )}
+
                   {/* Label */}
                   <div className="mt-2 text-center">
                     <div className="font-mono text-[10px] text-ide-text-muted group-hover:text-ide-text transition-colors leading-tight">

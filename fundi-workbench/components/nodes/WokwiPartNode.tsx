@@ -16,6 +16,9 @@ interface PinData {
 interface WokwiPartNodeData {
     onPinClick?: (nodeId: string, pinId: string, position: WirePoint) => void;
     getCanvasRect?: () => DOMRect | null;
+    onDeletePart?: (nodeId: string) => void;
+    /** Pin states from simulation - maps pin ID to HIGH/LOW state */
+    simulationPinStates?: Record<string, boolean>;
 }
 
 interface WokwiPartNodeProps {
@@ -35,6 +38,8 @@ function getPartTypeFromData(data: WokwiPartNodeData | undefined): WokwiPartType
 function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }: WokwiPartNodeProps) {
     const onPinClick = data?.onPinClick;
     const getCanvasRect = data?.getCanvasRect;
+    const onDeletePart = data?.onDeletePart;
+    const simulationPinStates = data?.simulationPinStates;
     const partType = propPartType ?? getPartTypeFromData(data) ?? 'arduino-uno';
 
     const [hoveredPin, setHoveredPin] = useState<string | null>(null);
@@ -45,6 +50,19 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
 
     const partConfig = WOKWI_PARTS[partType];
     const PartElement = (partConfig?.element ?? null) as ElementType | null;
+
+    const handleDoubleClick = useCallback(
+        (e: React.MouseEvent) => {
+            e.stopPropagation();
+            if (!onDeletePart || nodeId === 'preview') return;
+
+            // Show confirmation before deleting
+            if (confirm(`Delete this ${partConfig?.name || 'component'}?`)) {
+                onDeletePart(nodeId);
+            }
+        },
+        [onDeletePart, nodeId, partConfig?.name]
+    );
 
     const handlePinClick = useCallback(
         (e: React.MouseEvent, pin: PinData) => {
@@ -174,6 +192,48 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         };
     }, [calculatePins, partConfig.element]);
 
+    // Update element properties based on simulation pin states
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element || !simulationPinStates) return;
+
+        // For LED elements: if anode (A) is HIGH and cathode (C) is LOW or ground, turn ON
+        // LED element has a 'value' property (boolean) to control on/off state
+        if (partType === 'led' || partType === 'wokwi-led') {
+            const anodeHigh = simulationPinStates['A'] === true;
+            // Cathode should ideally be LOW (ground) for LED to light
+            // For simplicity, if anode is connected to a HIGH pin, LED is on
+            (element as HTMLElement & { value?: boolean }).value = anodeHigh;
+        }
+
+        // For RGB LED elements
+        if (partType === 'rgb-led' || partType === 'wokwi-rgb-led') {
+            // RGB LED has pins: R.A, R.C, G.A, G.C, B.A, B.C (common anode/cathode)
+            // For common cathode: individual anodes HIGH = that color on
+            const element_rgb = element as HTMLElement & {
+                redValue?: boolean;
+                greenValue?: boolean;
+                blueValue?: boolean;
+            };
+            if (simulationPinStates['R.A'] !== undefined) {
+                element_rgb.redValue = simulationPinStates['R.A'];
+            }
+            if (simulationPinStates['G.A'] !== undefined) {
+                element_rgb.greenValue = simulationPinStates['G.A'];
+            }
+            if (simulationPinStates['B.A'] !== undefined) {
+                element_rgb.blueValue = simulationPinStates['B.A'];
+            }
+        }
+
+        // For buzzer elements
+        if (partType === 'buzzer' || partType === 'wokwi-buzzer') {
+            const signalHigh = simulationPinStates['1'] === true;
+            (element as HTMLElement & { hasSignal?: boolean }).hasSignal = signalHigh;
+        }
+
+    }, [simulationPinStates, partType]);
+
     return (
         <div
             ref={containerRef}
@@ -182,6 +242,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 display: 'inline-block',
                 lineHeight: 0,
             }}
+            onDoubleClick={handleDoubleClick}
         >
             {/* Render the Wokwi custom element */}
             {PartElement ? <PartElement style={{ display: 'block' }} /> : null}
@@ -267,8 +328,8 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                                 fill={isHovered ? '#D4AF37' : '#B87333'}
                                 stroke={isHovered ? '#00F0FF' : '#8B4513'}
                                 strokeWidth={isHovered ? 1 : 0.75}
-                                style={{ 
-                                    transition: 'all 0.1s ease', 
+                                style={{
+                                    transition: 'all 0.1s ease',
                                     pointerEvents: 'none',
                                     filter: isHovered ? 'drop-shadow(0 0 3px #00F0FF)' : 'none'
                                 }}

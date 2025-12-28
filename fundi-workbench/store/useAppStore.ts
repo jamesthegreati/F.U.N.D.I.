@@ -156,10 +156,10 @@ export type AppState = {
   // Image staging actions
   stageImage: (imageData: string) => void
   clearStagedImage: () => void
-  
+
   // Settings actions
   updateSettings: (settings: Partial<AppSettings>) => void
-  
+
   // Apply AI-generated circuit to canvas
   applyGeneratedCircuit: (parts: CircuitPart[], connections: Connection[]) => void
 }
@@ -231,7 +231,7 @@ function toCircuitParts(nodes: unknown): CircuitPart[] {
 
       const type =
         (nodeType === 'wokwi' && dataPartType) ? dataPartType :
-        (nodeType === 'arduino' ? 'arduino-uno' : nodeType)
+          (nodeType === 'arduino' ? 'arduino-uno' : nodeType)
       const position = isRecord(node.position) ? node.position : {}
       const x = typeof position.x === 'number' ? position.x : 0
       const y = typeof position.y === 'number' ? position.y : 0
@@ -372,7 +372,7 @@ export const useAppStore = create<AppState>()(
           const wasCurrentProject = state.currentProjectId === id
           return {
             projects: filtered,
-            currentProjectId: wasCurrentProject 
+            currentProjectId: wasCurrentProject
               ? (filtered[0]?.id || null)
               : state.currentProjectId,
           }
@@ -386,7 +386,7 @@ export const useAppStore = create<AppState>()(
       loadProject: (id) => {
         const project = get().projects.find(p => p.id === id)
         if (!project) return
-        
+
         set({
           currentProjectId: id,
           files: project.files,
@@ -403,7 +403,7 @@ export const useAppStore = create<AppState>()(
         if (!currentProjectId) return
 
         set({
-          projects: projects.map(p => 
+          projects: projects.map(p =>
             p.id === currentProjectId
               ? { ...p, files, circuitParts, connections, lastModified: Date.now() }
               : p
@@ -447,7 +447,7 @@ export const useAppStore = create<AppState>()(
 
       renameFile: (oldPath, newPath) => {
         set((state) => ({
-          files: state.files.map(f => 
+          files: state.files.map(f =>
             f.path === oldPath ? { ...f, path: newPath } : f
           ),
           openFilePaths: state.openFilePaths.map(p => p === oldPath ? newPath : p),
@@ -457,7 +457,7 @@ export const useAppStore = create<AppState>()(
 
       updateFileContent: (path, content) => {
         set((state) => ({
-          files: state.files.map(f => 
+          files: state.files.map(f =>
             f.path === path ? { ...f, content } : f
           ),
           // Also update legacy code if it's the main file
@@ -471,8 +471,8 @@ export const useAppStore = create<AppState>()(
 
       openFile: (path) => {
         set((state) => ({
-          openFilePaths: state.openFilePaths.includes(path) 
-            ? state.openFilePaths 
+          openFilePaths: state.openFilePaths.includes(path)
+            ? state.openFilePaths
             : [...state.openFilePaths, path],
           activeFilePath: path,
         }))
@@ -483,7 +483,7 @@ export const useAppStore = create<AppState>()(
           const filtered = state.openFilePaths.filter(p => p !== path)
           return {
             openFilePaths: filtered,
-            activeFilePath: state.activeFilePath === path 
+            activeFilePath: state.activeFilePath === path
               ? (filtered[filtered.length - 1] || null)
               : state.activeFilePath,
           }
@@ -492,7 +492,7 @@ export const useAppStore = create<AppState>()(
 
       toggleFileSimulation: (path) => {
         set((state) => ({
-          files: state.files.map(f => 
+          files: state.files.map(f =>
             f.path === path ? { ...f, includeInSimulation: !f.includeInSimulation } : f
           ),
         }))
@@ -535,7 +535,7 @@ export const useAppStore = create<AppState>()(
 
         try {
           const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
-          
+
           // Build files object for multi-file compilation
           const filesForCompilation = get().files
             .filter(f => f.includeInSimulation)
@@ -547,8 +547,8 @@ export const useAppStore = create<AppState>()(
           const res = await fetch(`${baseUrl}/api/v1/compile`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              code: get().code, 
+            body: JSON.stringify({
+              code: get().code,
               board,
               files: filesForCompilation,
             }),
@@ -718,7 +718,7 @@ export const useAppStore = create<AppState>()(
       submitCommand: async (text, imageData) => {
         const trimmed = text.trim()
         const finalImageData = imageData ?? get().stagedImageData
-        
+
         if (!trimmed && !finalImageData) return
 
         // Clear staged image after use
@@ -749,6 +749,9 @@ export const useAppStore = create<AppState>()(
 /help - Show this help message
 /teacher - Toggle Teacher Mode (explains concepts)
 /builder - Toggle Builder Mode (direct generation)
+/files - List all project files
+/components - List current circuit components
+/code - Show current code
 
 Or type any prompt to generate Arduino code and circuits.
 You can also upload images of physical circuits for recognition.`,
@@ -763,6 +766,32 @@ You can also upload images of physical circuits for recognition.`,
             get().setTeacherMode(false)
             return
           }
+          if (cmd === '/files') {
+            const files = get().files
+            const fileList = files.map(f => `  ${f.isMain ? '📄' : '📁'} ${f.path}${f.isMain ? ' (main)' : ''}`).join('\n')
+            get().addTerminalEntry({
+              type: 'log',
+              content: `📂 Project Files:\n${fileList || '  (no files)'}`,
+            })
+            return
+          }
+          if (cmd === '/components') {
+            const parts = get().circuitParts
+            const partList = parts.map(p => `  🔌 ${p.id}: ${p.type} at (${p.position.x}, ${p.position.y})`).join('\n')
+            get().addTerminalEntry({
+              type: 'log',
+              content: `🔧 Circuit Components (${parts.length}):\n${partList || '  (no components)'}`,
+            })
+            return
+          }
+          if (cmd === '/code') {
+            const code = get().code
+            get().addTerminalEntry({
+              type: 'log',
+              content: `📝 Current Code:\n\`\`\`cpp\n${code}\n\`\`\``,
+            })
+            return
+          }
           get().addTerminalEntry({
             type: 'error',
             content: `Unknown command: ${trimmed}. Type /help for available commands.`,
@@ -774,13 +803,30 @@ You can also upload images of physical circuits for recognition.`,
         set({ isAiLoading: true })
         try {
           const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
-          
+
+          // Sync state with backend for AI context
+          await fetch(`${baseUrl}/api/v1/ai-tools/sync-state`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              files: get().files,
+              components: get().circuitParts,
+              connections: get().connections,
+              compilation: {
+                is_compiling: get().isCompiling,
+                error: get().compilationError,
+                hex: get().hex,
+                board: get().compiledBoard,
+              },
+            }),
+          }).catch(() => { }) // Ignore sync errors
+
           // Get current circuit state for context (bi-directional awareness)
           const currentCircuit = JSON.stringify({
             parts: get().circuitParts,
             connections: get().connections,
           })
-          
+
           const res = await fetch(`${baseUrl}/api/v1/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -800,7 +846,7 @@ You can also upload images of physical circuits for recognition.`,
           }
 
           const data = await res.json()
-          
+
           // Format the AI response as a log entry
           let response = ''
           if (data.explanation) {
@@ -810,27 +856,136 @@ You can also upload images of physical circuits for recognition.`,
             response += '```cpp\n' + data.code + '\n```'
             // Also update the code editor
             set({ code: data.code })
+            // Update the main file content
+            const mainFile = get().files.find(f => f.isMain)
+            if (mainFile) {
+              get().updateFileContent(mainFile.path, data.code)
+            }
           }
-          
+
           get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
+
+          // Process file changes from AI (GitHub Copilot-like codebase modifications)
+          if (data.file_changes && Array.isArray(data.file_changes)) {
+            const fileActions: string[] = []
+            for (const change of data.file_changes) {
+              const { action, path, content, description } = change as {
+                action: string;
+                path: string;
+                content?: string;
+                description?: string
+              }
+
+              if (action === 'create' && path && content) {
+                // Check if file already exists
+                const existing = get().files.find(f => f.path === path)
+                if (!existing) {
+                  get().addFile(path, content, false)
+                  fileActions.push(`📄 Created: ${path}${description ? ` (${description})` : ''}`)
+                } else {
+                  // Update existing file
+                  get().updateFileContent(path, content)
+                  fileActions.push(`✏️ Updated: ${path}${description ? ` (${description})` : ''}`)
+                }
+              } else if (action === 'update' && path && content) {
+                get().updateFileContent(path, content)
+                fileActions.push(`✏️ Updated: ${path}${description ? ` (${description})` : ''}`)
+              } else if (action === 'delete' && path) {
+                get().deleteFile(path)
+                fileActions.push(`🗑️ Deleted: ${path}`)
+              }
+            }
+
+            if (fileActions.length > 0) {
+              get().addTerminalEntry({
+                type: 'log',
+                content: `📂 File changes applied:\n${fileActions.join('\n')}`,
+              })
+            }
+          }
+
 
           // Apply generated circuit parts and connections to canvas
           if (data.circuit_parts && Array.isArray(data.circuit_parts)) {
-            const newParts: CircuitPart[] = data.circuit_parts.map((p: { id: string; type: string; x: number; y: number; attrs?: Record<string, string> }) => ({
-              id: p.id || nanoid(),
-              type: p.type,
-              position: { x: p.x || 0, y: p.y || 0 },
-              rotate: 0,
-              attrs: p.attrs || {},
-            }))
-            
-            const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string }) => ({
-              id: nanoid(),
-              from: { partId: c.source_part, pinId: c.source_pin },
-              to: { partId: c.target_part, pinId: c.target_pin },
-              color: get().allocateNextWireColor(),
-            }))
-            
+            // Debug: Log raw AI response
+            console.log('[AI Circuit Debug] Raw parts:', data.circuit_parts)
+            console.log('[AI Circuit Debug] Raw connections:', data.connections)
+
+            // Create a mapping from AI-generated IDs to actual generated IDs
+            // This is critical for connections to work properly!
+            const idMap = new Map<string, string>()
+
+            const newParts: CircuitPart[] = data.circuit_parts.map((p: { id: string; type: string; x: number; y: number; attrs?: Record<string, string> }) => {
+              const newId = nanoid()
+              // Map the AI's ID (e.g., "arduino1") to our generated ID
+              if (p.id) {
+                idMap.set(p.id, newId)
+              }
+              return {
+                id: newId,
+                type: p.type,
+                position: { x: p.x || 0, y: p.y || 0 },
+                rotate: 0,
+                attrs: p.attrs || {},
+              }
+            })
+
+            // Helper function to get wire color based on signal type or pin name
+            const getWireColor = (conn: { color?: string; signal_type?: string; source_pin: string; target_pin: string }): string => {
+              // Use AI-provided color if available
+              if (conn.color) return conn.color
+
+              // Signal type color map
+              const signalColors: Record<string, string> = {
+                power: '#ef4444',    // Red
+                ground: '#000000',   // Black
+                digital: '#3b82f6',  // Blue
+                analog: '#22c55e',   // Green
+                pwm: '#eab308',      // Yellow
+                i2c: '#8b5cf6',      // Purple
+                spi: '#f97316',      // Orange
+                uart: '#06b6d4',     // Cyan
+              }
+
+              if (conn.signal_type && signalColors[conn.signal_type.toLowerCase()]) {
+                return signalColors[conn.signal_type.toLowerCase()]
+              }
+
+              // Infer from pin names
+              const pins = [conn.source_pin, conn.target_pin].map(p => p.toUpperCase())
+              for (const pin of pins) {
+                if (['VCC', '5V', '3V3', '3.3V', 'VIN'].includes(pin)) return signalColors.power
+                if (['GND', 'GROUND'].includes(pin)) return signalColors.ground
+                if (pin.startsWith('A')) return signalColors.analog
+                if (pin.includes('SDA') || pin.includes('SCL')) return signalColors.i2c
+                if (['MOSI', 'MISO', 'SCK', 'SS'].some(s => pin.includes(s))) return signalColors.spi
+                if (pin.includes('TX') || pin.includes('RX')) return signalColors.uart
+              }
+
+              // Fallback to allocated color
+              return get().allocateNextWireColor()
+            }
+
+            const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string; color?: string; signal_type?: string; label?: string }) => {
+              // Translate AI-generated part IDs to our actual generated IDs
+              const fromPartId = idMap.get(c.source_part) || c.source_part
+              const toPartId = idMap.get(c.target_part) || c.target_part
+
+              return {
+                id: nanoid(),
+                from: { partId: fromPartId, pinId: c.source_pin },
+                to: { partId: toPartId, pinId: c.target_pin },
+                color: getWireColor(c),
+              }
+            })
+
+            // Debug: Log ID mapping and final connections
+            console.log('[AI Circuit Debug] ID mapping:', Object.fromEntries(idMap))
+            console.log('[AI Circuit Debug] Final connections:', newConnections.map(c => ({
+              from: `${c.from.partId}:${c.from.pinId}`,
+              to: `${c.to.partId}:${c.to.pinId}`,
+            })))
+
             get().applyGeneratedCircuit(newParts, newConnections)
             get().addTerminalEntry({
               type: 'log',
