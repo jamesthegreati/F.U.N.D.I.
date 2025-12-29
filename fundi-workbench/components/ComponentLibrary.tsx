@@ -1,10 +1,10 @@
 'use client';
 
-import { memo, useMemo, useState } from 'react';
+import '@wokwi/elements';
+import { memo, useMemo, useState, useRef, useEffect } from 'react';
 import { Cpu, Lightbulb, Gauge, Monitor } from 'lucide-react';
 import type { WokwiPartType } from '@/lib/wokwiParts';
 import { WOKWI_PARTS } from '@/lib/wokwiParts';
-import { COMPONENT_SVGS } from '@/lib/componentSvgs';
 import { cn } from '@/utils/cn';
 
 export const FUNDI_PART_MIME = 'application/x-fundi-part';
@@ -21,6 +21,61 @@ type CatalogCategory = {
   items: PartCatalogItem[];
   icon: React.ComponentType<{ className?: string }>;
 };
+
+/**
+ * Renders an actual Wokwi element as a preview icon
+ */
+function WokwiElementPreview({
+  elementTag,
+  fallbackIcon: FallbackIcon,
+}: {
+  elementTag: string;
+  fallbackIcon: React.ComponentType<{ className?: string }>;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Clear any existing content
+    container.innerHTML = '';
+
+    try {
+      // Create the wokwi element
+      const element = document.createElement(elementTag);
+
+      // Set some common attributes for better preview
+      if (elementTag === 'wokwi-led') {
+        element.setAttribute('color', 'red');
+      } else if (elementTag === 'wokwi-pushbutton') {
+        element.setAttribute('color', 'red');
+      }
+
+      container.appendChild(element);
+    } catch (error) {
+      console.error(`Failed to create wokwi element: ${elementTag}`, error);
+    }
+  }, [elementTag]);
+
+  return (
+    <div className="relative h-10 w-10 flex items-center justify-center overflow-hidden">
+      {/* Wokwi element container - scaled down */}
+      <div
+        ref={containerRef}
+        className="transition-all group-hover:scale-110"
+        style={{
+          transform: 'scale(0.5)',
+          transformOrigin: 'center',
+        }}
+      />
+      {/* Fallback icon (will be hidden if wokwi element loads) */}
+      {!containerRef.current?.hasChildNodes() && (
+        <FallbackIcon className="absolute h-8 w-8 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
+      )}
+    </div>
+  );
+}
 
 export function buildPartCatalog(): CatalogCategory[] {
   const base: Record<CatalogCategory['key'], PartCatalogItem[]> = {
@@ -89,8 +144,9 @@ function ComponentLibrary() {
             No components in this category yet.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {activeCategory.items.map((item) => {
+              const wokwiConfig = WOKWI_PARTS[item.id];
               const Icon = activeCategory.icon;
 
               return (
@@ -103,26 +159,19 @@ function ComponentLibrary() {
                   }}
                   className={cn(
                     'group relative flex cursor-grab flex-col items-center justify-center',
-                    'rounded-lg border p-3 transition-all duration-200',
+                    'rounded-lg border p-2 transition-all duration-200',
                     'bg-ide-panel-surface border-ide-border',
                     'hover:border-ide-accent/50 hover:bg-ide-panel-hover',
                     'active:cursor-grabbing active:scale-95'
                   )}
                   title={item.description ?? item.name}
                 >
-                  {/* SVG Component Icon (Wokwi-style) or fallback to category icon */}
-                  {COMPONENT_SVGS[item.id] ? (
-                    <div
-                      className="h-10 w-10 transition-all group-hover:scale-110"
-                      dangerouslySetInnerHTML={{ __html: COMPONENT_SVGS[item.id] }}
-                    />
-                  ) : (
-                    <Icon className="h-8 w-8 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
-                  )}
+                  {/* Actual Wokwi Element Preview */}
+                  <WokwiElementPreview elementTag={wokwiConfig.element} fallbackIcon={Icon} />
 
                   {/* Label */}
-                  <div className="mt-2 text-center">
-                    <div className="font-mono text-[10px] text-ide-text-muted group-hover:text-ide-text transition-colors leading-tight">
+                  <div className="mt-1.5 text-center">
+                    <div className="font-mono text-[9px] text-ide-text-muted group-hover:text-ide-text transition-colors leading-tight">
                       {item.name}
                     </div>
                   </div>

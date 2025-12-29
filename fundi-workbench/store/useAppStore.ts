@@ -966,15 +966,79 @@ You can also upload images of physical circuits for recognition.`,
               return get().allocateNextWireColor()
             }
 
+            // Helper function to normalize pin names from AI output to exact wokwi-elements format
+            const normalizePinName = (pin: string, partType: string): string => {
+              const p = pin.toString().trim()
+              const pUpper = p.toUpperCase()
+              const partLower = partType.toLowerCase()
+
+              // LED pins: normalize anode/cathode variations
+              if (partLower.includes('led') && !partLower.includes('neopixel') && !partLower.includes('bar') && !partLower.includes('ring') && !partLower.includes('matrix')) {
+                if (/^(a|anode|\+|positive|vcc|an)$/i.test(p)) return 'A'
+                if (/^(c|k|cathode|-|negative|gnd|cat)$/i.test(p)) return 'C'
+              }
+
+              // Arduino digital pins: strip D/PIN prefix (D13 -> 13, PIN13 -> 13)
+              if (partLower.includes('arduino') || partLower.includes('uno') || partLower.includes('nano') || partLower.includes('mega')) {
+                const digitalMatch = p.match(/^(?:d|pin)?(\d+)$/i)
+                if (digitalMatch) return digitalMatch[1]
+
+                // Keep GND pins as-is or normalize to GND.1
+                if (/^gnd$/i.test(p)) return 'GND.1'
+              }
+
+              // Resistor pins
+              if (partLower.includes('resistor')) {
+                if (/^(1|one|left|l)$/i.test(p)) return '1'
+                if (/^(2|two|right|r)$/i.test(p)) return '2'
+              }
+
+              // Buzzer pins
+              if (partLower.includes('buzzer')) {
+                if (/^(1|signal|sig|s|\+|positive|vcc)$/i.test(p)) return '1'
+                if (/^(2|gnd|ground|-|negative)$/i.test(p)) return '2'
+              }
+
+              // Servo pins
+              if (partLower.includes('servo')) {
+                if (/^(pwm|signal|sig|s|pulse)$/i.test(p)) return 'PWM'
+                if (/^(v\+|vcc|5v|power|\+)$/i.test(p)) return 'V+'
+                if (/^(gnd|ground|-)$/i.test(p)) return 'GND'
+              }
+
+              return p // Return as-is if no normalization needed
+            }
+
+            // Get part type from AI parts for normalization
+            const getPartTypeFromAIParts = (aiPartId: string): string => {
+              const part = data.circuit_parts.find((p: { id: string; type: string }) => p.id === aiPartId)
+              return part?.type || ''
+            }
+
             const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string; color?: string; signal_type?: string; label?: string }) => {
               // Translate AI-generated part IDs to our actual generated IDs
               const fromPartId = idMap.get(c.source_part) || c.source_part
               const toPartId = idMap.get(c.target_part) || c.target_part
 
+              // Normalize pin names based on part types
+              const sourcePartType = getPartTypeFromAIParts(c.source_part)
+              const targetPartType = getPartTypeFromAIParts(c.target_part)
+              const normalizedSourcePin = normalizePinName(c.source_pin, sourcePartType)
+              const normalizedTargetPin = normalizePinName(c.target_pin, targetPartType)
+
+              console.log('[AI Circuit] Creating connection:', {
+                aiSource: c.source_part,
+                aiSourcePin: c.source_pin,
+                normalizedSourcePin,
+                aiTarget: c.target_part,
+                aiTargetPin: c.target_pin,
+                normalizedTargetPin,
+              })
+
               return {
                 id: nanoid(),
-                from: { partId: fromPartId, pinId: c.source_pin },
-                to: { partId: toPartId, pinId: c.target_pin },
+                from: { partId: fromPartId, pinId: normalizedSourcePin },
+                to: { partId: toPartId, pinId: normalizedTargetPin },
                 color: getWireColor(c),
               }
             })

@@ -449,7 +449,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           height: '100%',
           pointerEvents: 'none',
           overflow: 'visible',
-          zIndex: 10,
+          zIndex: 0,
         }}
         viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
       >

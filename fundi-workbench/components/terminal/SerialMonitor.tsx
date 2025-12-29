@@ -1,19 +1,24 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Trash2, ArrowDownToLine } from 'lucide-react'
+import { Trash2, ArrowDownToLine, Send } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
 interface SerialMonitorProps {
   serialOutput: string[]
   onClear: () => void
   isRunning: boolean
+  /** Optional callback to send input to simulation serial RX */
+  onSendInput?: (text: string) => void
 }
 
-export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonitorProps) {
+export function SerialMonitor({ serialOutput, onClear, isRunning, onSendInput }: SerialMonitorProps) {
   const [autoScroll, setAutoScroll] = useState(true)
   const [baudRate, setBaudRate] = useState(9600)
+  const [inputValue, setInputValue] = useState('')
+  const [lineEnding, setLineEnding] = useState<'none' | 'nl' | 'cr' | 'both'>('nl')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Auto-scroll to bottom when new output arrives (if enabled)
   useEffect(() => {
@@ -38,6 +43,39 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
       setAutoScroll(true)
     }
   }, [])
+
+  const handleSendInput = useCallback(() => {
+    if (!onSendInput || !inputValue) return
+
+    // Add line ending based on setting
+    let textToSend = inputValue
+    switch (lineEnding) {
+      case 'nl':
+        textToSend += '\n'
+        break
+      case 'cr':
+        textToSend += '\r'
+        break
+      case 'both':
+        textToSend += '\r\n'
+        break
+    }
+
+    // Send each character
+    for (const char of textToSend) {
+      onSendInput(char)
+    }
+
+    setInputValue('')
+    inputRef.current?.focus()
+  }, [inputValue, lineEnding, onSendInput])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendInput()
+    }
+  }, [handleSendInput])
 
   return (
     <div className="flex h-full flex-col bg-ide-panel-bg">
@@ -68,6 +106,19 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
             <option value={38400}>38400 baud</option>
             <option value={57600}>57600 baud</option>
             <option value={115200}>115200 baud</option>
+          </select>
+
+          {/* Line ending selector */}
+          <select
+            value={lineEnding}
+            onChange={(e) => setLineEnding(e.target.value as typeof lineEnding)}
+            className="h-6 rounded border border-ide-border bg-ide-panel-surface px-1.5 text-[10px] text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent"
+            title="Line ending"
+          >
+            <option value="none">No line ending</option>
+            <option value="nl">Newline</option>
+            <option value="cr">Carriage return</option>
+            <option value="both">Both NL & CR</option>
           </select>
         </div>
 
@@ -124,6 +175,45 @@ export function SerialMonitor({ serialOutput, onClear, isRunning }: SerialMonito
           ))
         )}
       </div>
+
+      {/* Input area */}
+      {onSendInput && (
+        <div className="shrink-0 border-t border-ide-border px-3 py-2">
+          <div className="flex items-center gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={!isRunning}
+              placeholder={isRunning ? "Type here to send..." : "Start simulation to send"}
+              className={cn(
+                'h-7 flex-1 rounded border bg-ide-panel-surface px-2 font-mono text-xs',
+                'text-ide-text placeholder:text-ide-text-subtle',
+                'outline-none transition-colors',
+                isRunning
+                  ? 'border-ide-border hover:border-ide-border-focus focus:border-ide-accent'
+                  : 'border-ide-border/50 cursor-not-allowed opacity-50'
+              )}
+            />
+            <button
+              type="button"
+              onClick={handleSendInput}
+              disabled={!isRunning || !inputValue}
+              title="Send"
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded transition-colors',
+                isRunning && inputValue
+                  ? 'bg-ide-accent text-white hover:bg-ide-accent/80'
+                  : 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
+              )}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

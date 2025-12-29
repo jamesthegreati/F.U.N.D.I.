@@ -342,20 +342,16 @@ function SimulationCanvasInner({
 
   // Update node data with simulation pin states for visual component updates
   useEffect(() => {
-    if (!componentPinStates || Object.keys(componentPinStates).length === 0) return
-
     setNodes((nds) =>
       nds.map((node) => {
         if (node.type === 'wokwi') {
-          const simStates = componentPinStates[node.id]
-          if (simStates) {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                simulationPinStates: simStates,
-              },
-            }
+          const simStates = componentPinStates?.[node.id]
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              simulationPinStates: simStates,
+            },
           }
         }
         return node
@@ -1028,49 +1024,103 @@ export default function Home() {
   const componentPinStates = useMemo(() => {
     const states: Record<string, Record<string, boolean>> = {}
 
-    // Find the Arduino board in circuit parts
-    const arduinoPart = circuitParts.find(p =>
-      p.type.includes('arduino') || p.type.includes('esp32')
-    )
-    if (!arduinoPart) return states
+    const mcuPart = circuitParts.find((p) => p.type.includes('arduino') || p.type.includes('esp32') || p.type.includes('pi-pico'))
+    if (!mcuPart) return states
 
-    // For each connection from Arduino, propagate the pin state to connected component
+    const keyOf = (partId: string, pinId: string) => `${partId}:${pinId}`
+
+    // Build an undirected connectivity graph of all wired pin endpoints.
+    const adjacency = new Map<string, Set<string>>()
     for (const conn of connections) {
-      let arduinoPin: string | null = null
-      let componentId: string | null = null
-      let componentPin: string | null = null
+      const a = keyOf(conn.from.partId, conn.from.pinId)
+      const b = keyOf(conn.to.partId, conn.to.pinId)
+      if (!adjacency.has(a)) adjacency.set(a, new Set())
+      if (!adjacency.has(b)) adjacency.set(b, new Set())
+      adjacency.get(a)!.add(b)
+      adjacency.get(b)!.add(a)
+    }
 
-      // Check if source is Arduino
-      if (conn.from.partId === arduinoPart.id) {
-        arduinoPin = conn.from.pinId
-        componentId = conn.to.partId
-        componentPin = conn.to.pinId
-      }
-      // Or target is Arduino
-      else if (conn.to.partId === arduinoPart.id) {
-        arduinoPin = conn.to.pinId
-        componentId = conn.from.partId
-        componentPin = conn.from.pinId
-      }
+    // Seed known net values from MCU pins + basic power/ground inference.
+    const netValue = new Map<string, boolean>()
 
-      if (arduinoPin && componentId && componentPin) {
-        // Get the Arduino pin number (e.g., "13" -> 13, "A0" -> handled differently)
-        let pinNum: number | null = null
-        if (/^\d+$/.test(arduinoPin)) {
-          pinNum = parseInt(arduinoPin, 10)
+    const normalizePinName = (pinId: string) => pinId.trim().toUpperCase()
+    const inferFixedPinValue = (pinId: string): boolean | null => {
+      const p = normalizePinName(pinId)
+      if (p === 'GND' || p === 'GROUND') return false
+      if (p === 'VCC' || p === '5V' || p === '3V3' || p === '3.3V' || p === 'VIN') return true
+      return null
+    }
+
+    const inferMcuPinValue = (pinId: string): boolean | null => {
+      const fixed = inferFixedPinValue(pinId)
+      if (fixed !== null) return fixed
+      // Digital pins exposed as numeric strings on Wokwi Arduino elements ("13", "0", ...)
+      if (/^\d+$/.test(pinId)) {
+        const pinNum = parseInt(pinId, 10)
+        const v = pinStates[pinNum]
+        return typeof v === 'boolean' ? v : null
+      }
+      return null
+    }
+
+    for (const conn of connections) {
+      for (const endpoint of [conn.from, conn.to]) {
+        if (endpoint.partId !== mcuPart.id) continue
+        const v = inferMcuPinValue(endpoint.pinId)
+        if (v === null) continue
+        netValue.set(keyOf(endpoint.partId, endpoint.pinId), v)
+      }
+    }
+
+    // Also seed any explicit power/ground pins on any part (helps when the MCU isn't directly connected).
+    for (const conn of connections) {
+      for (const endpoint of [conn.from, conn.to]) {
+        const fixed = inferFixedPinValue(endpoint.pinId)
+        if (fixed === null) continue
+        netValue.set(keyOf(endpoint.partId, endpoint.pinId), fixed)
+      }
+    }
+
+    // Propagate values across connected nets (simple BFS).
+    // If multiple seeds exist on the same net, the first discovered value wins (simplest behavior).
+    const queue: string[] = [...netValue.keys()]
+    const seen = new Set(queue)
+    while (queue.length) {
+      const cur = queue.shift()!
+      const curVal = netValue.get(cur)
+      if (curVal === undefined) continue
+      const neighbors = adjacency.get(cur)
+      if (!neighbors) continue
+      for (const n of neighbors) {
+        if (!netValue.has(n)) {
+          netValue.set(n, curVal)
         }
-
-        if (pinNum !== null && pinStates[pinNum] !== undefined) {
-          if (!states[componentId]) {
-            states[componentId] = {}
-          }
-          states[componentId][componentPin] = pinStates[pinNum]
+        if (!seen.has(n)) {
+          seen.add(n)
+          queue.push(n)
         }
       }
     }
 
+    // Materialize per-component pin states for visual updates.
+    for (const [k, v] of netValue.entries()) {
+      const idx = k.indexOf(':')
+      if (idx < 0) continue
+      const partId = k.slice(0, idx)
+      const pinId = k.slice(idx + 1)
+      if (!states[partId]) states[partId] = {}
+      states[partId][pinId] = v
+    }
+
     return states
   }, [circuitParts, connections, pinStates])
+
+  // Debug: Log componentPinStates changes
+  useEffect(() => {
+    if (Object.keys(componentPinStates).length > 0) {
+      console.log('[Page] componentPinStates updated:', componentPinStates)
+    }
+  }, [componentPinStates])
 
   // Prepare project data for publishing
   const prepareProjectForPublish = useCallback(() => {

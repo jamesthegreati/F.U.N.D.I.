@@ -17,14 +17,24 @@ import {
 
 type PinStates = Record<number, boolean>;
 
-function decodeBase64ToString(base64: string): string {
+function decodeBase64ToBytes(base64: string): Uint8Array {
   const normalized = base64.trim();
   const binary = atob(normalized);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return new TextDecoder('utf-8').decode(bytes);
+  return bytes;
+}
+
+function decodeBase64ToString(base64: string): string {
+  return new TextDecoder('utf-8').decode(decodeBase64ToBytes(base64));
+}
+
+function looksLikeIntelHex(text: string): boolean {
+  // Intel HEX files are text lines starting with ':'
+  const t = text.trimStart();
+  return t.startsWith(':');
 }
 
 function parseIntelHex(hex: string): Uint16Array {
@@ -135,6 +145,11 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     serialBufferRef.current = '';
   }, []);
 
+  const appendSerialLine = useCallback((line: string) => {
+    if (!line) return;
+    setSerialOutput((prev) => [...prev, line]);
+  }, []);
+
   const updatePortPins = useCallback((port: 'B' | 'D', value: number) => {
     setPinStates((prev) => {
       const next: PinStates = { ...prev };
@@ -175,6 +190,26 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
       while (remaining > 0) {
         const before = runner.cpu.cycles;
         avrInstruction(runner.cpu);
+
+        // Process timers/USART clock events and interrupts.
+        // Without ticking, Arduino time functions (millis/delay) and Serial output won't work.
+        const cpuAny = runner.cpu as unknown as {
+          cycles: number;
+          tick: () => void;
+          nextClockEvent: { cycles: number } | null;
+          nextInterrupt: number;
+          interruptsEnabled: boolean;
+        };
+
+        // Drain due clock events/interrupts for the current cycle.
+        // Safety cap avoids infinite loops if a peripheral misbehaves.
+        for (let i = 0; i < 32; i++) {
+          const dueEvent = cpuAny.nextClockEvent && cpuAny.nextClockEvent.cycles <= cpuAny.cycles;
+          const dueInterrupt = cpuAny.interruptsEnabled && cpuAny.nextInterrupt >= 0;
+          if (!dueEvent && !dueInterrupt) break;
+          cpuAny.tick();
+        }
+
         const delta = runner.cpu.cycles - before;
         remaining -= delta > 0 ? delta : 1;
       }
@@ -216,17 +251,41 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     console.log('[Simulation] Run requested', { hasHex: !!hexData, partType });
     if (!hexData) {
       console.warn('[Simulation] No HEX data available');
+      appendSerialLine('[Simulation] No compiled program available. Click Run to compile first.');
       return;
     }
     if (!isAvrPart(partType)) {
       console.warn('[Simulation] Unsupported part type for AVR simulation:', partType);
       // avr8js only simulates AVR8 cores; ESP32 is not supported here.
+      appendSerialLine(
+        `[Simulation] Board '${partType}' is not supported by the in-browser simulator (AVR only: Uno/Nano/Mega).`
+      );
       return;
     }
 
     if (!runnerRef.current) {
       try {
-        const hexText = decodeBase64ToString(hexData);
+        let decodedText: string;
+        try {
+          decodedText = decodeBase64ToString(hexData);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error('[Simulation] Base64 decode failed:', msg);
+          appendSerialLine(`[Simulation] Failed to decode compiled artifact: ${msg}`);
+          return;
+        }
+
+        if (!looksLikeIntelHex(decodedText)) {
+          // When compiling for non-AVR targets, the backend returns a binary (.bin) artifact.
+          // Even if the board string is AVR, this provides a clear signal to the user.
+          console.warn('[Simulation] Decoded artifact is not Intel HEX.');
+          appendSerialLine(
+            '[Simulation] Compiled output is not an Intel HEX file. Browser simulation currently supports AVR boards only.'
+          );
+          return;
+        }
+
+        const hexText = decodedText;
         const runner = new AVRRunner(hexText);
 
         const onPortB: GPIOListener = (value) => updatePortPins('B', value);
@@ -255,8 +314,11 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
         runnerRef.current = runner;
         console.log('[Simulation] AVR Runner initialized successfully');
+        appendSerialLine('[Simulation] Started (AVR8js)');
       } catch (err) {
         console.error('[Simulation] Failed to initialize AVR runner:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        appendSerialLine(`[Simulation] Failed to start: ${msg}`);
         return;
       }
     }
@@ -265,7 +327,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     runningRef.current = true;
     setIsRunning(true);
     rafRef.current = requestAnimationFrame(stepFrame);
-  }, [hexData, partType, stepFrame, updatePortPins]);
+  }, [appendSerialLine, hexData, partType, stepFrame, updatePortPins]);
 
   useEffect(() => {
     // Reset simulation when program/target changes.

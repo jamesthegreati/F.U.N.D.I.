@@ -5,6 +5,7 @@ import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import type { ElementType } from 'react';
 import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
 import type { WirePoint } from '@/types/wire';
+import { getAudioSimulation, pwmToFrequency } from '@/utils/simulation/audio';
 
 interface PinData {
     id: string;
@@ -17,8 +18,23 @@ interface WokwiPartNodeData {
     onPinClick?: (nodeId: string, pinId: string, position: WirePoint) => void;
     getCanvasRect?: () => DOMRect | null;
     onDeletePart?: (nodeId: string) => void;
-    /** Pin states from simulation - maps pin ID to HIGH/LOW state */
-    simulationPinStates?: Record<string, boolean>;
+    /** 
+     * Pin states from simulation - maps pin ID to:
+     * - boolean: HIGH/LOW digital state
+     * - number (0-255): PWM duty cycle for brightness control
+     */
+    simulationPinStates?: Record<string, boolean | number>;
+    /** Button interaction handlers */
+    onButtonPress?: (partId: string) => void;
+    onButtonRelease?: (partId: string) => void;
+    /** Interactive component value change (potentiometers, sensors, etc.) */
+    onValueChange?: (partId: string, value: number) => void;
+    /** Current interactive component value (for display) */
+    interactiveValue?: number;
+    /** Slide switch toggle callback */
+    onSwitchToggle?: (partId: string, isOn: boolean) => void;
+    /** Current switch state (for display) */
+    switchState?: boolean;
 }
 
 interface WokwiPartNodeProps {
@@ -49,7 +65,18 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const elementRef = useRef<HTMLElement | null>(null);
 
     const partConfig = WOKWI_PARTS[partType];
-    const PartElement = (partConfig?.element ?? null) as ElementType | null;
+
+    // Early return if partConfig is undefined (invalid part type)
+    if (!partConfig) {
+        console.warn(`[WokwiPartNode] Unknown part type: ${partType}`);
+        return (
+            <div className="relative glass-panel border-alchemist rounded-md p-4 text-amber-500 text-sm">
+                Unknown component: {partType}
+            </div>
+        );
+    }
+
+    const PartElement = (partConfig.element ?? null) as ElementType | null;
 
     const handleDoubleClick = useCallback(
         (e: React.MouseEvent) => {
@@ -195,44 +222,308 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     // Update element properties based on simulation pin states
     useEffect(() => {
         const element = elementRef.current;
-        if (!element || !simulationPinStates) return;
+        if (!element) return;
+
+        // Debug log when simulation states are received
+        if (simulationPinStates && Object.keys(simulationPinStates).length > 0) {
+            console.log('[WokwiPartNode] Applying simulation states:', { partType, simulationPinStates });
+        }
 
         // For LED elements: if anode (A) is HIGH and cathode (C) is LOW or ground, turn ON
         // LED element has a 'value' property (boolean) to control on/off state
+        // For PWM: use 'brightness' property (0-1) with gamma correction
         if (partType === 'led' || partType === 'wokwi-led') {
-            const anodeHigh = simulationPinStates['A'] === true;
-            // Cathode should ideally be LOW (ground) for LED to light
-            // For simplicity, if anode is connected to a HIGH pin, LED is on
-            (element as HTMLElement & { value?: boolean }).value = anodeHigh;
+            const anodeState = simulationPinStates?.['A'];
+            const ledEl = element as HTMLElement & {
+                value?: boolean;
+                brightness?: number;
+                requestUpdate?: () => void
+            };
+
+            // Apply gamma correction for realistic LED brightness
+            // Wokwi uses gamma=2.8 by default
+            const GAMMA = 2.8;
+
+            if (typeof anodeState === 'number') {
+                // PWM mode: anodeState is 0-255
+                const normalized = anodeState / 255;
+                const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
+                console.log('[LED] PWM brightness:', anodeState, '-> normalized:', normalized.toFixed(2), '-> gamma:', gammaCorrected.toFixed(2));
+                ledEl.value = anodeState > 0;
+                // Set brightness via CSS custom property for visual effect
+                element.style.setProperty('--led-brightness', gammaCorrected.toString());
+                element.style.filter = `brightness(${0.5 + gammaCorrected * 0.5})`;
+            } else {
+                // Boolean mode: simple on/off
+                const anodeHigh = anodeState === true;
+                console.log('[LED] Setting value:', anodeHigh, 'current:', ledEl.value);
+                ledEl.value = anodeHigh;
+                element.style.removeProperty('--led-brightness');
+                element.style.filter = anodeHigh ? 'brightness(1)' : '';
+            }
+
+            // Force Lit element to re-render
+            if (typeof ledEl.requestUpdate === 'function') {
+                ledEl.requestUpdate();
+            }
         }
 
         // For RGB LED elements
         if (partType === 'rgb-led' || partType === 'wokwi-rgb-led') {
             // RGB LED has pins: R.A, R.C, G.A, G.C, B.A, B.C (common anode/cathode)
             // For common cathode: individual anodes HIGH = that color on
+            // Supports both boolean and PWM values
+            const GAMMA = 2.8;
             const element_rgb = element as HTMLElement & {
                 redValue?: boolean;
                 greenValue?: boolean;
                 blueValue?: boolean;
+                requestUpdate?: () => void;
             };
-            if (simulationPinStates['R.A'] !== undefined) {
-                element_rgb.redValue = simulationPinStates['R.A'];
+
+            // Handle each color channel
+            for (const [pin, prop] of [['R.A', 'redValue'], ['G.A', 'greenValue'], ['B.A', 'blueValue']] as const) {
+                const state = simulationPinStates?.[pin];
+                if (state !== undefined) {
+                    if (typeof state === 'number') {
+                        // PWM mode
+                        const normalized = state / 255;
+                        (element_rgb as unknown as Record<string, boolean>)[prop] = normalized > 0.5;
+                    } else {
+                        // Boolean mode
+                        (element_rgb as unknown as Record<string, boolean>)[prop] = state;
+                    }
+                }
             }
-            if (simulationPinStates['G.A'] !== undefined) {
-                element_rgb.greenValue = simulationPinStates['G.A'];
-            }
-            if (simulationPinStates['B.A'] !== undefined) {
-                element_rgb.blueValue = simulationPinStates['B.A'];
+
+            if (typeof element_rgb.requestUpdate === 'function') {
+                element_rgb.requestUpdate();
             }
         }
 
-        // For buzzer elements
+        // For 7-segment display elements
+        if (partType === '7segment' || partType === 'wokwi-7segment') {
+            const segmentEl = element as HTMLElement & {
+                a?: boolean;
+                b?: boolean;
+                c?: boolean;
+                d?: boolean;
+                e?: boolean;
+                f?: boolean;
+                g?: boolean;
+                dp?: boolean;
+                requestUpdate?: () => void;
+            };
+
+            // Map pin states to segments (a-g and dp)
+            const segmentPins = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'dp'];
+            for (const seg of segmentPins) {
+                const pinState = simulationPinStates?.[seg.toUpperCase()] ?? simulationPinStates?.[seg];
+                if (pinState !== undefined) {
+                    (segmentEl as unknown as Record<string, boolean>)[seg] =
+                        typeof pinState === 'boolean' ? pinState : pinState > 0;
+                }
+            }
+
+            if (typeof segmentEl.requestUpdate === 'function') {
+                segmentEl.requestUpdate();
+            }
+        }
+
+        // For servo elements - convert PWM value to angle (0-180°)
+        if (partType === 'servo' || partType === 'wokwi-servo') {
+            const pwmValue = simulationPinStates?.['PWM'];
+            const servoEl = element as HTMLElement & {
+                angle?: number;
+                requestUpdate?: () => void
+            };
+
+            if (typeof pwmValue === 'number') {
+                // PWM value (0-255) maps to servo angle (0-180°)
+                // In real servos, pulse width 1000-2000µs = 0-180°
+                // For simulation, we use direct mapping from PWM duty cycle
+                const angle = (pwmValue / 255) * 180;
+                console.log('[Servo] PWM value:', pwmValue, '-> angle:', angle.toFixed(1));
+                servoEl.angle = angle;
+            } else if (pwmValue === true) {
+                // Digital HIGH might mean 90° (center position)
+                servoEl.angle = 90;
+            }
+
+            if (typeof servoEl.requestUpdate === 'function') {
+                servoEl.requestUpdate();
+            }
+        }
+
+        // For buzzer elements - both visual and audio feedback
         if (partType === 'buzzer' || partType === 'wokwi-buzzer') {
-            const signalHigh = simulationPinStates['1'] === true;
-            (element as HTMLElement & { hasSignal?: boolean }).hasSignal = signalHigh;
+            const signalState = simulationPinStates?.['1'];
+            const buzzerEl = element as HTMLElement & { hasSignal?: boolean; requestUpdate?: () => void };
+            const audioSimulation = getAudioSimulation();
+            const buzzerId = `buzzer-${nodeId}`;
+
+            if (typeof signalState === 'boolean') {
+                buzzerEl.hasSignal = signalState;
+
+                // Play/stop audio based on boolean state
+                if (signalState) {
+                    audioSimulation.initialize();
+                    audioSimulation.resume().then(() => {
+                        audioSimulation.playTone(buzzerId, 1000, 'square'); // 1kHz square wave
+                    });
+                } else {
+                    audioSimulation.stopTone(buzzerId);
+                }
+            } else if (typeof signalState === 'number') {
+                // PWM on buzzer - indicates tone is playing with variable frequency
+                const isActive = signalState > 0;
+                buzzerEl.hasSignal = isActive;
+
+                if (isActive) {
+                    audioSimulation.initialize();
+                    audioSimulation.resume().then(() => {
+                        // Map PWM value to frequency (100Hz - 4000Hz range)
+                        const frequency = pwmToFrequency(signalState, 100, 4000);
+                        audioSimulation.playTone(buzzerId, frequency, 'square');
+                    });
+                } else {
+                    audioSimulation.stopTone(buzzerId);
+                }
+            } else {
+                // No signal - stop audio
+                audioSimulation.stopTone(buzzerId);
+            }
+
+            if (typeof buzzerEl.requestUpdate === 'function') {
+                buzzerEl.requestUpdate();
+            }
         }
 
     }, [simulationPinStates, partType]);
+
+    // Listen for button press/release events
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const onButtonPress = data?.onButtonPress;
+        const onButtonRelease = data?.onButtonRelease;
+
+        if (!onButtonPress || !onButtonRelease) return;
+
+        // Only attach listeners if this is a button component
+        if (partType.toLowerCase().includes('pushbutton') || partType.toLowerCase().includes('button')) {
+            const handlePress = () => {
+                console.log('[WokwiPartNode] Button press detected:', nodeId);
+                onButtonPress(nodeId);
+            };
+
+            const handleRelease = () => {
+                console.log('[WokwiPartNode] Button release detected:', nodeId);
+                onButtonRelease(nodeId);
+            };
+
+            element.addEventListener('button-press', handlePress);
+            element.addEventListener('button-release', handleRelease);
+
+            return () => {
+                element.removeEventListener('button-press', handlePress);
+                element.removeEventListener('button-release', handleRelease);
+            };
+        }
+    }, [data, nodeId, partType]);
+
+    // Handle potentiometer/slider drag interaction
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const onValueChange = data?.onValueChange;
+        if (!onValueChange) return;
+
+        const isPotentiometer = partType.toLowerCase().includes('potentiometer') ||
+            partType.toLowerCase().includes('slide-potentiometer');
+
+        if (!isPotentiometer) return;
+
+        let isDragging = false;
+        let startY = 0;
+        let startValue = data?.interactiveValue ?? 512;
+
+        const handleMouseDown = (e: MouseEvent) => {
+            isDragging = true;
+            startY = e.clientY;
+            startValue = data?.interactiveValue ?? 512;
+            e.preventDefault();
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging) return;
+
+            // Calculate delta and new value
+            const deltaY = startY - e.clientY; // Inverted so dragging up increases value
+            const sensitivity = 5; // Pixels per value change
+            const deltaValue = Math.round(deltaY * sensitivity);
+            const newValue = Math.max(0, Math.min(1023, startValue + deltaValue));
+
+            onValueChange(nodeId, newValue);
+        };
+
+        const handleMouseUp = () => {
+            isDragging = false;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        // For rotary potentiometer - also handle wheel events
+        const handleWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const currentValue = data?.interactiveValue ?? 512;
+            const delta = e.deltaY > 0 ? -50 : 50;
+            const newValue = Math.max(0, Math.min(1023, currentValue + delta));
+            onValueChange(nodeId, newValue);
+        };
+
+        element.addEventListener('mousedown', handleMouseDown);
+        element.addEventListener('wheel', handleWheel, { passive: false });
+
+        return () => {
+            element.removeEventListener('mousedown', handleMouseDown);
+            element.removeEventListener('wheel', handleWheel);
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [data, nodeId, partType]);
+
+    // Handle slide switch click-to-toggle
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const onSwitchToggle = data?.onSwitchToggle;
+        if (!onSwitchToggle) return;
+
+        const isSwitch = partType.toLowerCase().includes('slide-switch') ||
+            partType.toLowerCase().includes('switch') &&
+            !partType.toLowerCase().includes('push');
+
+        if (!isSwitch) return;
+
+        const handleClick = () => {
+            const currentState = data?.switchState ?? false;
+            const newState = !currentState;
+            console.log('[WokwiPartNode] Switch toggle:', nodeId, '-> ', newState);
+            onSwitchToggle(nodeId, newState);
+        };
+
+        element.addEventListener('click', handleClick);
+
+        return () => {
+            element.removeEventListener('click', handleClick);
+        };
+    }, [data, nodeId, partType]);
 
     return (
         <div
@@ -367,4 +658,20 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     );
 }
 
-export default memo(WokwiPartNode);
+// Custom memo comparison to ensure simulationPinStates changes trigger re-renders
+export default memo(WokwiPartNode, (prevProps, nextProps) => {
+    const prevStates = prevProps.data?.simulationPinStates;
+    const nextStates = nextProps.data?.simulationPinStates;
+
+    // Always re-render if simulationPinStates changed
+    if (JSON.stringify(prevStates) !== JSON.stringify(nextStates)) {
+        return false; // Should re-render
+    }
+
+    // Default comparison for other props
+    const prevPartType = prevProps.partType ?? (prevProps.data as Record<string, unknown> | undefined)?.partType;
+    const nextPartType = nextProps.partType ?? (nextProps.data as Record<string, unknown> | undefined)?.partType;
+
+    return prevProps.id === nextProps.id && prevPartType === nextPartType;
+});
+
