@@ -523,7 +523,9 @@ export const useAppStore = create<AppState>()(
       },
 
       compileAndRun: async () => {
-        const mcu = findMicrocontroller(get().circuitParts)
+        // Capture initial state before any async operations
+        const initialState = get()
+        const mcu = findMicrocontroller(initialState.circuitParts)
         if (!mcu) {
           set({ compilationError: 'No supported microcontroller found in the circuit.', hex: null, compiledBoard: null })
           return
@@ -536,8 +538,9 @@ export const useAppStore = create<AppState>()(
         try {
           const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
 
-          // Build files object for multi-file compilation
-          const filesForCompilation = get().files
+          // Build files object for multi-file compilation using fresh state
+          const currentState = get()
+          const filesForCompilation = currentState.files
             .filter(f => f.includeInSimulation)
             .reduce((acc, f) => {
               acc[f.path] = f.content
@@ -548,7 +551,7 @@ export const useAppStore = create<AppState>()(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              code: get().code,
+              code: currentState.code,
               board,
               files: filesForCompilation,
             }),
@@ -674,7 +677,7 @@ export const useAppStore = create<AppState>()(
           timestamp: Date.now(),
           ...entry,
         }
-        set({ terminalHistory: [...get().terminalHistory, newEntry] })
+        set((state) => ({ terminalHistory: [...state.terminalHistory, newEntry] }))
       },
 
       clearTerminalHistory: () => {
@@ -717,7 +720,9 @@ export const useAppStore = create<AppState>()(
 
       submitCommand: async (text, imageData) => {
         const trimmed = text.trim()
-        const finalImageData = imageData ?? get().stagedImageData
+        // Capture initial stagedImageData before any async operations
+        const initialState = get()
+        const finalImageData = imageData ?? initialState.stagedImageData
 
         if (!trimmed && !finalImageData) return
 
@@ -726,12 +731,24 @@ export const useAppStore = create<AppState>()(
           set({ stagedImageData: null })
         }
 
-        // Add user command to history
+        // Add user command to history using functional update
         if (trimmed) {
-          get().addTerminalEntry({ type: 'cmd', content: trimmed })
+          const cmdEntry: TerminalEntry = {
+            id: nanoid(),
+            timestamp: Date.now(),
+            type: 'cmd',
+            content: trimmed,
+          }
+          set((state) => ({ terminalHistory: [...state.terminalHistory, cmdEntry] }))
         }
         if (finalImageData) {
-          get().addTerminalEntry({ type: 'log', content: '📷 Image uploaded for circuit recognition' })
+          const imgEntry: TerminalEntry = {
+            id: nanoid(),
+            timestamp: Date.now(),
+            type: 'log',
+            content: '📷 Image uploaded for circuit recognition',
+          }
+          set((state) => ({ terminalHistory: [...state.terminalHistory, imgEntry] }))
         }
 
         // Handle slash commands
@@ -742,7 +759,9 @@ export const useAppStore = create<AppState>()(
             return
           }
           if (cmd === '/help') {
-            get().addTerminalEntry({
+            const helpEntry: TerminalEntry = {
+              id: nanoid(),
+              timestamp: Date.now(),
               type: 'log',
               content: `Available commands:
 /clear - Clear terminal history
@@ -755,7 +774,8 @@ export const useAppStore = create<AppState>()(
 
 Or type any prompt to generate Arduino code and circuits.
 You can also upload images of physical circuits for recognition.`,
-            })
+            }
+            set((state) => ({ terminalHistory: [...state.terminalHistory, helpEntry] }))
             return
           }
           if (cmd === '/teacher') {
@@ -767,35 +787,50 @@ You can also upload images of physical circuits for recognition.`,
             return
           }
           if (cmd === '/files') {
-            const files = get().files
-            const fileList = files.map(f => `  ${f.isMain ? '📄' : '📁'} ${f.path}${f.isMain ? ' (main)' : ''}`).join('\n')
-            get().addTerminalEntry({
-              type: 'log',
-              content: `📂 Project Files:\n${fileList || '  (no files)'}`,
+            set((state) => {
+              const fileList = state.files.map(f => `  ${f.isMain ? '📄' : '📁'} ${f.path}${f.isMain ? ' (main)' : ''}`).join('\n')
+              const filesEntry: TerminalEntry = {
+                id: nanoid(),
+                timestamp: Date.now(),
+                type: 'log',
+                content: `📂 Project Files:\n${fileList || '  (no files)'}`,
+              }
+              return { terminalHistory: [...state.terminalHistory, filesEntry] }
             })
             return
           }
           if (cmd === '/components') {
-            const parts = get().circuitParts
-            const partList = parts.map(p => `  🔌 ${p.id}: ${p.type} at (${p.position.x}, ${p.position.y})`).join('\n')
-            get().addTerminalEntry({
-              type: 'log',
-              content: `🔧 Circuit Components (${parts.length}):\n${partList || '  (no components)'}`,
+            set((state) => {
+              const partList = state.circuitParts.map(p => `  🔌 ${p.id}: ${p.type} at (${p.position.x}, ${p.position.y})`).join('\n')
+              const componentsEntry: TerminalEntry = {
+                id: nanoid(),
+                timestamp: Date.now(),
+                type: 'log',
+                content: `🔧 Circuit Components (${state.circuitParts.length}):\n${partList || '  (no components)'}`,
+              }
+              return { terminalHistory: [...state.terminalHistory, componentsEntry] }
             })
             return
           }
           if (cmd === '/code') {
-            const code = get().code
-            get().addTerminalEntry({
-              type: 'log',
-              content: `📝 Current Code:\n\`\`\`cpp\n${code}\n\`\`\``,
+            set((state) => {
+              const codeEntry: TerminalEntry = {
+                id: nanoid(),
+                timestamp: Date.now(),
+                type: 'log',
+                content: `📝 Current Code:\n\`\`\`cpp\n${state.code}\n\`\`\``,
+              }
+              return { terminalHistory: [...state.terminalHistory, codeEntry] }
             })
             return
           }
-          get().addTerminalEntry({
+          const unknownEntry: TerminalEntry = {
+            id: nanoid(),
+            timestamp: Date.now(),
             type: 'error',
             content: `Unknown command: ${trimmed}. Type /help for available commands.`,
-          })
+          }
+          set((state) => ({ terminalHistory: [...state.terminalHistory, unknownEntry] }))
           return
         }
 
@@ -804,27 +839,33 @@ You can also upload images of physical circuits for recognition.`,
         try {
           const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
 
+          // Get fresh state for sync - use functional accessor
+          const stateForSync = get()
+          
           // Sync state with backend for AI context
           await fetch(`${baseUrl}/api/v1/ai-tools/sync-state`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              files: get().files,
-              components: get().circuitParts,
-              connections: get().connections,
+              files: stateForSync.files,
+              components: stateForSync.circuitParts,
+              connections: stateForSync.connections,
               compilation: {
-                is_compiling: get().isCompiling,
-                error: get().compilationError,
-                hex: get().hex,
-                board: get().compiledBoard,
+                is_compiling: stateForSync.isCompiling,
+                error: stateForSync.compilationError,
+                hex: stateForSync.hex,
+                board: stateForSync.compiledBoard,
               },
             }),
           }).catch(() => { }) // Ignore sync errors
 
+          // Get fresh state for generate request
+          const stateForGenerate = get()
+          
           // Get current circuit state for context (bi-directional awareness)
           const currentCircuit = JSON.stringify({
-            parts: get().circuitParts,
-            connections: get().connections,
+            parts: stateForGenerate.circuitParts,
+            connections: stateForGenerate.connections,
           })
 
           const res = await fetch(`${baseUrl}/api/v1/generate`, {
@@ -832,16 +873,22 @@ You can also upload images of physical circuits for recognition.`,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               prompt: trimmed || 'Analyze this circuit image and recreate it',
-              teacher_mode: get().teacherMode,
+              teacher_mode: stateForGenerate.teacherMode,
               image_data: finalImageData || null,
-              current_circuit: get().circuitParts.length > 0 ? currentCircuit : null,
+              current_circuit: stateForGenerate.circuitParts.length > 0 ? currentCircuit : null,
             }),
           })
 
           if (!res.ok) {
             const errorData = await res.json().catch(() => null)
             const errorMsg = errorData?.detail || res.statusText || 'Request failed'
-            get().addTerminalEntry({ type: 'error', content: `Error: ${errorMsg}` })
+            const errorEntry: TerminalEntry = {
+              id: nanoid(),
+              timestamp: Date.now(),
+              type: 'error',
+              content: `Error: ${errorMsg}`,
+            }
+            set((state) => ({ terminalHistory: [...state.terminalHistory, errorEntry] }))
             return
           }
 
@@ -854,53 +901,91 @@ You can also upload images of physical circuits for recognition.`,
           }
           if (data.code) {
             response += '```cpp\n' + data.code + '\n```'
-            // Also update the code editor
-            set({ code: data.code })
-            // Update the main file content
-            const mainFile = get().files.find(f => f.isMain)
-            if (mainFile) {
-              get().updateFileContent(mainFile.path, data.code)
-            }
+            // Use functional update to set code and update main file atomically
+            set((state) => {
+              const mainFile = state.files.find(f => f.isMain)
+              const updatedFiles = mainFile
+                ? state.files.map(f => f.path === mainFile.path ? { ...f, content: data.code } : f)
+                : state.files
+              return {
+                code: data.code,
+                files: updatedFiles,
+              }
+            })
           }
 
-          get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
+          const aiEntry: TerminalEntry = {
+            id: nanoid(),
+            timestamp: Date.now(),
+            type: 'ai',
+            content: response || 'Generated successfully.',
+          }
+          set((state) => ({ terminalHistory: [...state.terminalHistory, aiEntry] }))
 
           // Process file changes from AI (GitHub Copilot-like codebase modifications)
           if (data.file_changes && Array.isArray(data.file_changes)) {
             const fileActions: string[] = []
-            for (const change of data.file_changes) {
-              const { action, path, content, description } = change as {
-                action: string;
-                path: string;
-                content?: string;
-                description?: string
-              }
-
-              if (action === 'create' && path && content) {
-                // Check if file already exists
-                const existing = get().files.find(f => f.path === path)
-                if (!existing) {
-                  get().addFile(path, content, false)
-                  fileActions.push(`📄 Created: ${path}${description ? ` (${description})` : ''}`)
-                } else {
-                  // Update existing file
-                  get().updateFileContent(path, content)
-                  fileActions.push(`✏️ Updated: ${path}${description ? ` (${description})` : ''}`)
+            
+            set((state) => {
+              let updatedFiles = [...state.files]
+              let updatedOpenPaths = [...state.openFilePaths]
+              let newActivePath = state.activeFilePath
+              
+              for (const change of data.file_changes) {
+                const { action, path, content, description } = change as {
+                  action: string;
+                  path: string;
+                  content?: string;
+                  description?: string
                 }
-              } else if (action === 'update' && path && content) {
-                get().updateFileContent(path, content)
-                fileActions.push(`✏️ Updated: ${path}${description ? ` (${description})` : ''}`)
-              } else if (action === 'delete' && path) {
-                get().deleteFile(path)
-                fileActions.push(`🗑️ Deleted: ${path}`)
+
+                if (action === 'create' && path && content) {
+                  const existing = updatedFiles.find(f => f.path === path)
+                  if (!existing) {
+                    // Create new file
+                    updatedFiles.push({
+                      path,
+                      content,
+                      isMain: false,
+                      includeInSimulation: true,
+                    })
+                    updatedOpenPaths.push(path)
+                    newActivePath = path
+                    fileActions.push(`📄 Created: ${path}${description ? ` (${description})` : ''}`)
+                  } else {
+                    // Update existing file
+                    updatedFiles = updatedFiles.map(f => f.path === path ? { ...f, content } : f)
+                    fileActions.push(`✏️ Updated: ${path}${description ? ` (${description})` : ''}`)
+                  }
+                } else if (action === 'update' && path && content) {
+                  updatedFiles = updatedFiles.map(f => f.path === path ? { ...f, content } : f)
+                  fileActions.push(`✏️ Updated: ${path}${description ? ` (${description})` : ''}`)
+                } else if (action === 'delete' && path) {
+                  updatedFiles = updatedFiles.filter(f => f.path !== path)
+                  updatedOpenPaths = updatedOpenPaths.filter(p => p !== path)
+                  if (newActivePath === path) {
+                    const mainFile = updatedFiles.find(f => f.isMain)
+                    newActivePath = mainFile?.path || updatedFiles[0]?.path || null
+                  }
+                  fileActions.push(`🗑️ Deleted: ${path}`)
+                }
               }
-            }
+              
+              return {
+                files: updatedFiles,
+                openFilePaths: updatedOpenPaths,
+                activeFilePath: newActivePath,
+              }
+            })
 
             if (fileActions.length > 0) {
-              get().addTerminalEntry({
+              const fileChangesEntry: TerminalEntry = {
+                id: nanoid(),
+                timestamp: Date.now(),
                 type: 'log',
                 content: `📂 File changes applied:\n${fileActions.join('\n')}`,
-              })
+              }
+              set((state) => ({ terminalHistory: [...state.terminalHistory, fileChangesEntry] }))
             }
           }
 
@@ -931,9 +1016,9 @@ You can also upload images of physical circuits for recognition.`,
             })
 
             // Helper function to get wire color based on signal type or pin name
-            const getWireColor = (conn: { color?: string; signal_type?: string; source_pin: string; target_pin: string }): string => {
+            const getWireColor = (conn: { color?: string; signal_type?: string; source_pin: string; target_pin: string }, wireColorIdx: number): { color: string; nextIdx: number } => {
               // Use AI-provided color if available
-              if (conn.color) return conn.color
+              if (conn.color) return { color: conn.color, nextIdx: wireColorIdx }
 
               // Signal type color map
               const signalColors: Record<string, string> = {
@@ -948,34 +1033,43 @@ You can also upload images of physical circuits for recognition.`,
               }
 
               if (conn.signal_type && signalColors[conn.signal_type.toLowerCase()]) {
-                return signalColors[conn.signal_type.toLowerCase()]
+                return { color: signalColors[conn.signal_type.toLowerCase()], nextIdx: wireColorIdx }
               }
 
               // Infer from pin names
               const pins = [conn.source_pin, conn.target_pin].map(p => p.toUpperCase())
               for (const pin of pins) {
-                if (['VCC', '5V', '3V3', '3.3V', 'VIN'].includes(pin)) return signalColors.power
-                if (['GND', 'GROUND'].includes(pin)) return signalColors.ground
-                if (pin.startsWith('A')) return signalColors.analog
-                if (pin.includes('SDA') || pin.includes('SCL')) return signalColors.i2c
-                if (['MOSI', 'MISO', 'SCK', 'SS'].some(s => pin.includes(s))) return signalColors.spi
-                if (pin.includes('TX') || pin.includes('RX')) return signalColors.uart
+                if (['VCC', '5V', '3V3', '3.3V', 'VIN'].includes(pin)) return { color: signalColors.power, nextIdx: wireColorIdx }
+                if (['GND', 'GROUND'].includes(pin)) return { color: signalColors.ground, nextIdx: wireColorIdx }
+                if (pin.startsWith('A')) return { color: signalColors.analog, nextIdx: wireColorIdx }
+                if (pin.includes('SDA') || pin.includes('SCL')) return { color: signalColors.i2c, nextIdx: wireColorIdx }
+                if (['MOSI', 'MISO', 'SCK', 'SS'].some(s => pin.includes(s))) return { color: signalColors.spi, nextIdx: wireColorIdx }
+                if (pin.includes('TX') || pin.includes('RX')) return { color: signalColors.uart, nextIdx: wireColorIdx }
               }
 
-              // Fallback to allocated color
-              return get().allocateNextWireColor()
+              // Fallback to wire color from cycle
+              const wireColors = [
+                '#B87333', '#22c55e', '#3b82f6', '#ef4444', '#eab308',
+                '#8b5cf6', '#f97316', '#06b6d4', '#ec4899', '#000000', '#ffffff',
+              ]
+              return { color: wireColors[wireColorIdx % wireColors.length], nextIdx: wireColorIdx + 1 }
             }
 
+            // Build connections with proper wire color tracking
+            let wireColorIdx = get().nextWireColorIndex
             const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string; color?: string; signal_type?: string; label?: string }) => {
               // Translate AI-generated part IDs to our actual generated IDs
               const fromPartId = idMap.get(c.source_part) || c.source_part
               const toPartId = idMap.get(c.target_part) || c.target_part
 
+              const { color, nextIdx } = getWireColor(c, wireColorIdx)
+              wireColorIdx = nextIdx
+
               return {
                 id: nanoid(),
                 from: { partId: fromPartId, pinId: c.source_pin },
                 to: { partId: toPartId, pinId: c.target_pin },
-                color: getWireColor(c),
+                color,
               }
             })
 
@@ -986,15 +1080,30 @@ You can also upload images of physical circuits for recognition.`,
               to: `${c.to.partId}:${c.to.pinId}`,
             })))
 
-            get().applyGeneratedCircuit(newParts, newConnections)
-            get().addTerminalEntry({
+            // Apply circuit using functional update
+            set((state) => ({
+              circuitParts: newParts,
+              connections: newConnections,
+              nextWireColorIndex: wireColorIdx,
+            }))
+            
+            const circuitEntry: TerminalEntry = {
+              id: nanoid(),
+              timestamp: Date.now(),
               type: 'log',
               content: `✨ Applied ${newParts.length} components and ${newConnections.length} connections to canvas`,
-            })
+            }
+            set((state) => ({ terminalHistory: [...state.terminalHistory, circuitEntry] }))
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          get().addTerminalEntry({ type: 'error', content: `Error: ${msg}` })
+          const catchErrorEntry: TerminalEntry = {
+            id: nanoid(),
+            timestamp: Date.now(),
+            type: 'error',
+            content: `Error: ${msg}`,
+          }
+          set((state) => ({ terminalHistory: [...state.terminalHistory, catchErrorEntry] }))
         } finally {
           set({ isAiLoading: false })
         }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AVRIOPort,
   AVRClock,
@@ -128,7 +128,11 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const serialBufferRef = useRef<string>('');
   const stepFrameRef = useRef<() => void>(() => { });
 
-  const cyclesPerFrame = useMemo(() => Math.floor(16_000_000 / 60), []);
+  // Cycle accounting refs for real-time simulation
+  const lastTimeRef = useRef(performance.now());
+
+  // 16MHz clock constant
+  const CLOCK_FREQUENCY = 16_000_000;
 
   const clearSerialOutput = useCallback(() => {
     setSerialOutput([]);
@@ -170,18 +174,24 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
       const runner = runnerRef.current;
       if (!runner) return;
 
-      // Run ~16MHz/60fps CPU cycles each frame.
-      let remaining = cyclesPerFrame;
-      while (remaining > 0) {
-        const before = runner.cpu.cycles;
+      // Calculate cycles for real-time 16MHz clock simulation
+      const now = performance.now();
+      const elapsed = now - lastTimeRef.current;
+      lastTimeRef.current = now;
+
+      // Calculate how many cycles should run based on elapsed time
+      // elapsed is in milliseconds, so convert to seconds for cycle calculation
+      const cyclesToRun = Math.floor((elapsed / 1000) * CLOCK_FREQUENCY);
+      const targetCycles = runner.cpu.cycles + cyclesToRun;
+
+      // Run CPU until we've executed the required cycles
+      while (runner.cpu.cycles < targetCycles) {
         avrInstruction(runner.cpu);
-        const delta = runner.cpu.cycles - before;
-        remaining -= delta > 0 ? delta : 1;
       }
 
       rafRef.current = requestAnimationFrame(stepFrameRef.current);
     };
-  }, [cyclesPerFrame]);
+  }, []);
 
   const stepFrame = useCallback(() => {
     stepFrameRef.current();
@@ -264,6 +274,8 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     if (runningRef.current) return;
     runningRef.current = true;
     setIsRunning(true);
+    // Reset last time ref to avoid large initial delta
+    lastTimeRef.current = performance.now();
     rafRef.current = requestAnimationFrame(stepFrame);
   }, [hexData, partType, stepFrame, updatePortPins]);
 

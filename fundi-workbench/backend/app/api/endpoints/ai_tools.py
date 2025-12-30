@@ -5,14 +5,18 @@ This module provides tools that the AI can use to:
 - Create, read, update, delete project files
 - Inspect current circuit components and connections
 - Get code and compilation status
+
+Supports multi-user sessions via X-Session-ID header.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel, Field
+
+from app.core.session_manager import get_session_manager
 
 router = APIRouter()
 
@@ -108,23 +112,22 @@ class ToolResult(BaseModel):
 
 
 # ============================================================================
-# In-memory state (will be synced from frontend)
+# Session Management Helper
 # ============================================================================
 
-# This is a simple in-memory store for the current session
-# In a production system, this would be persisted or use session management
-_current_state: Dict[str, Any] = {
-    "files": [],
-    "components": [],
-    "connections": [],
-    "compilation": {
-        "is_compiling": False,
-        "error": None,
-        "hex": None,
-        "board": None,
-    },
-    "serial_output": [],
-}
+
+def _get_session_state(session_id: Optional[str]) -> tuple[str, Dict[str, Any]]:
+    """
+    Get the state for a session, creating a new session if needed.
+    
+    Args:
+        session_id: The X-Session-ID header value (or None)
+        
+    Returns:
+        Tuple of (session_id, session_state)
+    """
+    session_manager = get_session_manager()
+    return session_manager.get_or_create_session(session_id)
 
 
 # ============================================================================
@@ -142,22 +145,39 @@ class StateSyncRequest(BaseModel):
 
 
 @router.post("/api/v1/ai-tools/sync-state")
-def sync_state(req: StateSyncRequest) -> ToolResult:
-    """Sync state from frontend to backend for AI inspection."""
-    global _current_state
+def sync_state(
+    req: StateSyncRequest,
+    response: Response,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> ToolResult:
+    """
+    Sync state from frontend to backend for AI inspection.
     
+    Uses X-Session-ID header for session isolation.
+    Returns the session ID in X-Session-ID response header.
+    """
+    session_id, state = _get_session_state(x_session_id)
+    
+    # Update state with provided values
     if req.files is not None:
-        _current_state["files"] = req.files
+        state["files"] = req.files
     if req.components is not None:
-        _current_state["components"] = req.components
+        state["components"] = req.components
     if req.connections is not None:
-        _current_state["connections"] = req.connections
+        state["connections"] = req.connections
     if req.compilation is not None:
-        _current_state["compilation"] = req.compilation
+        state["compilation"] = req.compilation
     if req.serial_output is not None:
-        _current_state["serial_output"] = req.serial_output
+        state["serial_output"] = req.serial_output
     
-    return ToolResult(success=True, message="State synced successfully")
+    # Return session ID in response header for client to use
+    response.headers["X-Session-ID"] = session_id
+    
+    return ToolResult(
+        success=True, 
+        message="State synced successfully",
+        data={"session_id": session_id}
+    )
 
 
 # ============================================================================
@@ -166,8 +186,11 @@ def sync_state(req: StateSyncRequest) -> ToolResult:
 
 
 @router.get("/api/v1/ai-tools/files", response_model=FileListResponse)
-def list_files() -> FileListResponse:
+def list_files(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> FileListResponse:
     """List all project files."""
+    _, state = _get_session_state(x_session_id)
     files = [
         FileInfo(
             path=f.get("path", ""),
@@ -175,15 +198,19 @@ def list_files() -> FileListResponse:
             is_main=f.get("isMain", False),
             include_in_simulation=f.get("includeInSimulation", True),
         )
-        for f in _current_state.get("files", [])
+        for f in state.get("files", [])
     ]
     return FileListResponse(files=files)
 
 
 @router.post("/api/v1/ai-tools/files/read")
-def read_file(req: FileReadRequest) -> ToolResult:
+def read_file(
+    req: FileReadRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> ToolResult:
     """Read a specific file's content."""
-    for f in _current_state.get("files", []):
+    _, state = _get_session_state(x_session_id)
+    for f in state.get("files", []):
         if f.get("path") == req.path:
             return ToolResult(
                 success=True,
@@ -195,10 +222,14 @@ def read_file(req: FileReadRequest) -> ToolResult:
 
 
 @router.post("/api/v1/ai-tools/files/create")
-def create_file(req: FileCreateRequest) -> ToolResult:
+def create_file(
+    req: FileCreateRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> ToolResult:
     """Create a new file (returns instruction for frontend to execute)."""
+    _, state = _get_session_state(x_session_id)
     # Check if file already exists
-    for f in _current_state.get("files", []):
+    for f in state.get("files", []):
         if f.get("path") == req.path:
             raise HTTPException(status_code=409, detail=f"File '{req.path}' already exists")
     
@@ -215,11 +246,15 @@ def create_file(req: FileCreateRequest) -> ToolResult:
 
 
 @router.post("/api/v1/ai-tools/files/update")
-def update_file(req: FileUpdateRequest) -> ToolResult:
+def update_file(
+    req: FileUpdateRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> ToolResult:
     """Update an existing file (returns instruction for frontend to execute)."""
+    _, state = _get_session_state(x_session_id)
     # Check if file exists
     found = False
-    for f in _current_state.get("files", []):
+    for f in state.get("files", []):
         if f.get("path") == req.path:
             found = True
             break
@@ -239,11 +274,15 @@ def update_file(req: FileUpdateRequest) -> ToolResult:
 
 
 @router.post("/api/v1/ai-tools/files/delete")
-def delete_file(req: FileDeleteRequest) -> ToolResult:
+def delete_file(
+    req: FileDeleteRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> ToolResult:
     """Delete a file (returns instruction for frontend to execute)."""
+    _, state = _get_session_state(x_session_id)
     # Check if file exists
     found = False
-    for f in _current_state.get("files", []):
+    for f in state.get("files", []):
         if f.get("path") == req.path:
             found = True
             break
@@ -267,8 +306,11 @@ def delete_file(req: FileDeleteRequest) -> ToolResult:
 
 
 @router.get("/api/v1/ai-tools/components", response_model=CircuitStateResponse)
-def get_components() -> CircuitStateResponse:
+def get_components(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> CircuitStateResponse:
     """Get all circuit components and connections."""
+    _, state = _get_session_state(x_session_id)
     components = [
         ComponentInfo(
             id=c.get("id", ""),
@@ -277,7 +319,7 @@ def get_components() -> CircuitStateResponse:
             y=c.get("position", {}).get("y", c.get("y", 0)),
             attrs=c.get("attrs", {}),
         )
-        for c in _current_state.get("components", [])
+        for c in state.get("components", [])
     ]
     
     connections = [
@@ -289,7 +331,7 @@ def get_components() -> CircuitStateResponse:
             toPin=conn.get("to", {}).get("pinId", ""),
             color=conn.get("color", "#B87333"),
         )
-        for conn in _current_state.get("connections", [])
+        for conn in state.get("connections", [])
     ]
     
     return CircuitStateResponse(
@@ -301,8 +343,11 @@ def get_components() -> CircuitStateResponse:
 
 
 @router.get("/api/v1/ai-tools/code", response_model=CodeStateResponse)
-def get_code() -> CodeStateResponse:
+def get_code(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> CodeStateResponse:
     """Get current code state."""
+    _, state = _get_session_state(x_session_id)
     files = [
         FileInfo(
             path=f.get("path", ""),
@@ -310,7 +355,7 @@ def get_code() -> CodeStateResponse:
             is_main=f.get("isMain", False),
             include_in_simulation=f.get("includeInSimulation", True),
         )
-        for f in _current_state.get("files", [])
+        for f in state.get("files", [])
     ]
     
     main_content = None
@@ -323,9 +368,12 @@ def get_code() -> CodeStateResponse:
 
 
 @router.get("/api/v1/ai-tools/compilation", response_model=CompilationStatusResponse)
-def get_compilation_status() -> CompilationStatusResponse:
+def get_compilation_status(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> CompilationStatusResponse:
     """Get current compilation status."""
-    comp = _current_state.get("compilation", {})
+    _, state = _get_session_state(x_session_id)
+    comp = state.get("compilation", {})
     return CompilationStatusResponse(
         is_compiling=comp.get("is_compiling", False),
         has_error=comp.get("error") is not None,
@@ -336,9 +384,12 @@ def get_compilation_status() -> CompilationStatusResponse:
 
 
 @router.get("/api/v1/ai-tools/serial")
-def get_serial_output() -> ToolResult:
+def get_serial_output(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> ToolResult:
     """Get recent serial output."""
-    output = _current_state.get("serial_output", [])
+    _, state = _get_session_state(x_session_id)
+    output = state.get("serial_output", [])
     return ToolResult(
         success=True,
         message=f"Retrieved {len(output)} lines of serial output",
