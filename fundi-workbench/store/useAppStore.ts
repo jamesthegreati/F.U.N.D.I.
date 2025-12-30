@@ -685,13 +685,18 @@ export const useAppStore = create<AppState>()(
       },
 
       setTeacherMode: (enabled) => {
-        set({ teacherMode: enabled })
-        get().addTerminalEntry({
+        const modeEntry: TerminalEntry = {
+          id: nanoid(),
+          timestamp: Date.now(),
           type: 'log',
           content: enabled
             ? '🎓 Teacher Mode enabled. AI will explain concepts before providing implementations.'
             : '🔧 Builder Mode enabled. AI will focus on generating code and circuits.',
-        })
+        }
+        set((state) => ({
+          teacherMode: enabled,
+          terminalHistory: [...state.terminalHistory, modeEntry],
+        }))
       },
 
       // Image staging
