@@ -1,18 +1,181 @@
 /**
  * Orthogonal wire routing utilities
- * 
+ *
  * Wokwi-style routing: all wire segments are strictly horizontal or vertical,
  * alternating between the two to create clean orthogonal paths.
+ *
+ * Enhanced with component avoidance: wires wrap around components instead of
+ * crossing through them, keeping pins and connections visible.
  */
 
 import type { WirePoint } from '@/types/wire';
 
 type FirstLeg = 'horizontal' | 'vertical';
 
+/**
+ * Bounding box of a component for obstacle avoidance
+ */
+export interface ComponentBounds {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+/**
+ * Result of checking if a segment intersects an obstacle
+ */
+interface IntersectionResult {
+    intersects: boolean;
+    normalizedPath: WirePoint[];
+}
+
 export function snapToGrid(value: number, gridSize: number): number {
     if (!Number.isFinite(value)) return value;
     if (!gridSize || gridSize <= 0) return value;
     return Math.round(value / gridSize) * gridSize;
+}
+
+/**
+ * Check if a line segment (horizontal or vertical) intersects a bounding box
+ * Returns true if the segment goes through or touches the box
+ */
+function segmentIntersectsBounds(
+    start: WirePoint,
+    end: WirePoint,
+    bounds: ComponentBounds,
+    margin: number = 15
+): boolean {
+    const expanded = {
+        left: bounds.x - margin,
+        right: bounds.x + bounds.width + margin,
+        top: bounds.y - margin,
+        bottom: bounds.y + bounds.height + margin,
+    };
+
+    // Horizontal segment
+    if (start.y === end.y) {
+        const y = start.y;
+        if (y < expanded.top || y > expanded.bottom) return false;
+
+        const minX = Math.min(start.x, end.x);
+        const maxX = Math.max(start.x, end.x);
+
+        // Check if horizontal line crosses the expanded box
+        return maxX >= expanded.left && minX <= expanded.right;
+    }
+
+    // Vertical segment
+    if (start.x === end.x) {
+        const x = start.x;
+        if (x < expanded.left || x > expanded.right) return false;
+
+        const minY = Math.min(start.y, end.y);
+        const maxY = Math.max(start.y, end.y);
+
+        // Check if vertical line crosses the expanded box
+        return maxY >= expanded.top && minY <= expanded.bottom;
+    }
+
+    // Diagonal segment - shouldn't happen in our orthogonal routing, but handle it
+    return false;
+}
+
+/**
+ * Find all bounding boxes that a path segment intersects
+ */
+function findIntersectingBounds(
+    start: WirePoint,
+    end: WirePoint,
+    obstacles: ComponentBounds[]
+): ComponentBounds[] {
+    return obstacles.filter((obs) => segmentIntersectsBounds(start, end, obs));
+}
+
+/**
+ * Calculate the shortest detour around an obstacle for a given segment
+ * Returns a new path that goes around the obstacle
+ */
+function calculateDetour(
+    start: WirePoint,
+    end: WirePoint,
+    obstacle: ComponentBounds,
+    originalPathType: 'horizontal' | 'vertical',
+    gridSize: number
+): WirePoint[] {
+    const margin = 25; // Extra spacing from component edge for visibility
+    const expLeft = obstacle.x - margin;
+    const expRight = obstacle.x + obstacle.width + margin;
+    const expTop = obstacle.y - margin;
+    const expBottom = obstacle.y + obstacle.height + margin;
+
+    // For horizontal segments that cross through
+    if (originalPathType === 'horizontal') {
+        const y = start.y;
+        const above = y < obstacle.y + obstacle.height / 2;
+        const detourY = above ? expTop : expBottom;
+
+        // Route: go up/down around, then across, then back down/up
+        return [
+            start,
+            { x: start.x, y: detourY },
+            { x: end.x, y: detourY },
+            end,
+        ];
+    }
+
+    // For vertical segments that cross through
+    const x = start.x;
+    const left = x < obstacle.x + obstacle.width / 2;
+    const detourX = left ? expLeft : expRight;
+
+    // Route: go left/right around, then up/down, then back
+    return [
+        start,
+        { x: detourX, y: start.y },
+        { x: detourX, y: end.y },
+        end,
+    ];
+}
+
+/**
+ * Check if a point is inside any bounding box
+ */
+function pointInBounds(point: WirePoint, obstacles: ComponentBounds[], margin: number = 5): boolean {
+    return obstacles.some((obs) => {
+        const expanded = {
+            left: obs.x - margin,
+            right: obs.x + obs.width + margin,
+            top: obs.y - margin,
+            bottom: obs.y + obs.height + margin,
+        };
+        return (
+            point.x >= expanded.left &&
+            point.x <= expanded.right &&
+            point.y >= expanded.top &&
+            point.y <= expanded.bottom
+        );
+    });
+}
+
+/**
+ * Check if a whole path segment (between two points) would cross through obstacles
+ * Returns true if the segment intersects any obstacle bounding box
+ */
+function pathIntersectsObstacles(
+    start: WirePoint,
+    end: WirePoint,
+    obstacles: ComponentBounds[]
+): boolean {
+    // Check if any point along the path is inside an obstacle
+    // For orthogonal paths, we need to check the entire segment
+    for (const obs of obstacles) {
+        if (segmentIntersectsBounds(start, end, obs)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 export function snapPointToGrid(point: WirePoint, gridSize: number): WirePoint {
@@ -412,32 +575,97 @@ export function moveSegment(
  * - Produces only horizontal/vertical segments.
  * - Optionally threads through `waypoints` (manual bends).
  * - Uses a simple 2-segment strategy per hop.
+ *
+ * @param start - Starting point
+ * @param end - Ending point
+ * @param waypoints - Optional manual waypoints
+ * @param options - Routing options including component bounds for avoidance
  */
 export function calculateOrthogonalPoints(
     start: WirePoint,
     end: WirePoint,
     waypoints: WirePoint[] = [],
-    options: { firstLeg?: FirstLeg } = {}
+    options: { firstLeg?: FirstLeg; obstacles?: ComponentBounds[]; gridSize?: number } = {}
 ): WirePoint[] {
     const firstLeg = options.firstLeg ?? 'horizontal';
+    const obstacles = options.obstacles ?? [];
+    const gridSize = options.gridSize ?? 10;
     const all = [start, ...waypoints, end];
     const out: WirePoint[] = [start];
 
+    // If no obstacles, use the original simple routing
+    if (obstacles.length === 0) {
+        for (let i = 1; i < all.length; i++) {
+            const a = all[i - 1];
+            const b = all[i];
+            if (a.x === b.x && a.y === b.y) continue;
+
+            if (firstLeg === 'horizontal') {
+                const mid: WirePoint = { x: b.x, y: a.y };
+                if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            } else {
+                const mid: WirePoint = { x: a.x, y: b.y };
+                if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            }
+            out.push(b);
+        }
+        return dedupeColinear(out);
+    }
+
+    // Enhanced routing with component avoidance
     for (let i = 1; i < all.length; i++) {
         const a = all[i - 1];
         const b = all[i];
 
-        // Same point.
         if (a.x === b.x && a.y === b.y) continue;
 
+        // Build the initial path for this segment
+        let segmentPath: WirePoint[];
         if (firstLeg === 'horizontal') {
             const mid: WirePoint = { x: b.x, y: a.y };
-            if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            segmentPath = [a, mid, b];
         } else {
             const mid: WirePoint = { x: a.x, y: b.y };
-            if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            segmentPath = [a, mid, b];
         }
-        out.push(b);
+
+        // Check each segment of the path for obstacle intersections
+        const finalPath: WirePoint[] = [a];
+        for (let segIdx = 0; segIdx < segmentPath.length - 1; segIdx++) {
+            const segStart = segmentPath[segIdx];
+            const segEnd = segmentPath[segIdx + 1];
+
+            // Skip if zero length
+            if (segStart.x === segEnd.x && segStart.y === segEnd.y) continue;
+
+            // Check if this segment intersects any obstacles
+            const intersectsObs = findIntersectingBounds(segStart, segEnd, obstacles);
+
+            if (intersectsObs.length === 0) {
+                // No intersection, add segment directly
+                finalPath.push(segEnd);
+            } else {
+                // Find the first obstacle that intersects
+                const obstacle = intersectsObs[0];
+
+                // Determine if this is horizontal or vertical segment
+                const isHorizontal = segStart.y === segEnd.y;
+                const pathType = isHorizontal ? 'horizontal' : 'vertical';
+
+                // Calculate detour around the obstacle
+                const detour = calculateDetour(segStart, segEnd, obstacle, pathType, gridSize);
+
+                // Add intermediate detour points (excluding start since it's already in finalPath)
+                for (let j = 1; j < detour.length; j++) {
+                    finalPath.push(detour[j]);
+                }
+            }
+        }
+
+        // Add all points from this segment to the main output (skip first since it's the previous end)
+        for (let j = 1; j < finalPath.length; j++) {
+            out.push(finalPath[j]);
+        }
     }
 
     return dedupeColinear(out);

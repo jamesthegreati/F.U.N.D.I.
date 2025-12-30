@@ -11,6 +11,7 @@ import {
   moveSegment,
   snapPointToGrid,
   avoidParallelOverlaps,
+  type ComponentBounds,
 } from '@/utils/wireRouting';
 
 type PinRef = { partId: string; pinId: string };
@@ -186,6 +187,43 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef, dimensions.width, dimensions.height, zoom, flowNodes]);
 
+  // Precompute component bounding boxes for obstacle avoidance
+  const componentBounds = useMemo(() => {
+    const container = containerRef.current;
+    if (!container) return [] as ComponentBounds[];
+
+    const containerRect = container.getBoundingClientRect();
+    // Get all node elements (excluding the wiring layer itself which is in an SVG)
+    // Looking for elements with data-node-id attribute
+    const nodeElements = container.querySelectorAll<HTMLElement>('[data-node-id]');
+    const bounds: ComponentBounds[] = [];
+
+    nodeElements.forEach((el) => {
+      const partId = el.getAttribute('data-node-id');
+      if (!partId) return;
+
+      // Get the bounding box of the node element
+      const rect = el.getBoundingClientRect();
+
+      // Convert to container-relative coordinates
+      const x = rect.left - containerRect.left;
+      const y = rect.top - containerRect.top;
+      const width = rect.width;
+      const height = rect.height;
+
+      // Filter out tiny elements (like the pin hitboxes which have node-id too)
+      if (width < 20 || height < 20) return;
+
+      // Check if we already have bounds for this part (multiple pin elements might exist)
+      if (!bounds.find(b => b.id === partId)) {
+        bounds.push({ id: partId, x, y, width, height });
+      }
+    });
+
+    return bounds;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerRef, dimensions.width, dimensions.height, zoom, flowNodes]);
+
   const getPinPoint = useCallback(
     (pin: PinRef): WirePoint | null => {
       return pinCenters.get(`${pin.partId}:${pin.pinId}`) ?? null;
@@ -207,7 +245,11 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           ? wirePointOverrides.get(c.id) ?? []
           : c.points ?? [];
 
-        const points = calculateOrthogonalPoints(start, end, waypoints, { firstLeg: 'horizontal' });
+        const points = calculateOrthogonalPoints(start, end, waypoints, {
+          firstLeg: 'horizontal',
+          obstacles: componentBounds,
+          gridSize,
+        });
         return { id: c.id, color: c.color, points };
       })
       .filter((x): x is { id: string; color: string; points: WirePoint[] } => Boolean(x));
@@ -222,7 +264,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
       const points = adjusted.get(w.id) ?? w.points;
       return { ...w, points, d: pointsToPathD(points) };
     });
-  }, [connections, getPinPoint, wirePointOverrides, gridSize, pinCenters]);
+  }, [connections, getPinPoint, wirePointOverrides, gridSize, pinCenters, componentBounds]);
 
   const selectedWire = useMemo(() => {
     if (!selectedId) return null;
@@ -424,9 +466,11 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     const end = creating.hoveredPoint ?? creating.cursor;
     const points = calculateOrthogonalPoints(creating.fromPoint, end, creating.waypoints, {
       firstLeg: 'vertical',
+      obstacles: componentBounds,
+      gridSize,
     });
     return { d: pointsToPathD(points), color: creating.color };
-  }, [creating, forceTick]);
+  }, [creating, forceTick, componentBounds, gridSize]);
 
   if (dimensions.width === 0 || dimensions.height === 0) return null;
 
@@ -449,7 +493,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           height: '100%',
           pointerEvents: 'none',
           overflow: 'visible',
-          zIndex: 0,
+          zIndex: 15,
         }}
         viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
       >

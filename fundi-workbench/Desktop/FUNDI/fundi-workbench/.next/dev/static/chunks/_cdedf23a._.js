@@ -3514,9 +3514,12 @@ if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelper
 
 /**
  * Orthogonal wire routing utilities
- * 
+ *
  * Wokwi-style routing: all wire segments are strictly horizontal or vertical,
  * alternating between the two to create clean orthogonal paths.
+ *
+ * Enhanced with component avoidance: wires wrap around components instead of
+ * crossing through them, keeping pins and connections visible.
  */ __turbopack_context__.s([
     "avoidParallelOverlaps",
     ()=>avoidParallelOverlaps,
@@ -3549,6 +3552,114 @@ function snapToGrid(value, gridSize) {
     if (!Number.isFinite(value)) return value;
     if (!gridSize || gridSize <= 0) return value;
     return Math.round(value / gridSize) * gridSize;
+}
+/**
+ * Check if a line segment (horizontal or vertical) intersects a bounding box
+ * Returns true if the segment goes through or touches the box
+ */ function segmentIntersectsBounds(start, end, bounds, margin = 15) {
+    const expanded = {
+        left: bounds.x - margin,
+        right: bounds.x + bounds.width + margin,
+        top: bounds.y - margin,
+        bottom: bounds.y + bounds.height + margin
+    };
+    // Horizontal segment
+    if (start.y === end.y) {
+        const y = start.y;
+        if (y < expanded.top || y > expanded.bottom) return false;
+        const minX = Math.min(start.x, end.x);
+        const maxX = Math.max(start.x, end.x);
+        // Check if horizontal line crosses the expanded box
+        return maxX >= expanded.left && minX <= expanded.right;
+    }
+    // Vertical segment
+    if (start.x === end.x) {
+        const x = start.x;
+        if (x < expanded.left || x > expanded.right) return false;
+        const minY = Math.min(start.y, end.y);
+        const maxY = Math.max(start.y, end.y);
+        // Check if vertical line crosses the expanded box
+        return maxY >= expanded.top && minY <= expanded.bottom;
+    }
+    // Diagonal segment - shouldn't happen in our orthogonal routing, but handle it
+    return false;
+}
+/**
+ * Find all bounding boxes that a path segment intersects
+ */ function findIntersectingBounds(start, end, obstacles) {
+    return obstacles.filter((obs)=>segmentIntersectsBounds(start, end, obs));
+}
+/**
+ * Calculate the shortest detour around an obstacle for a given segment
+ * Returns a new path that goes around the obstacle
+ */ function calculateDetour(start, end, obstacle, originalPathType, gridSize) {
+    const margin = 25; // Extra spacing from component edge for visibility
+    const expLeft = obstacle.x - margin;
+    const expRight = obstacle.x + obstacle.width + margin;
+    const expTop = obstacle.y - margin;
+    const expBottom = obstacle.y + obstacle.height + margin;
+    // For horizontal segments that cross through
+    if (originalPathType === 'horizontal') {
+        const y = start.y;
+        const above = y < obstacle.y + obstacle.height / 2;
+        const detourY = above ? expTop : expBottom;
+        // Route: go up/down around, then across, then back down/up
+        return [
+            start,
+            {
+                x: start.x,
+                y: detourY
+            },
+            {
+                x: end.x,
+                y: detourY
+            },
+            end
+        ];
+    }
+    // For vertical segments that cross through
+    const x = start.x;
+    const left = x < obstacle.x + obstacle.width / 2;
+    const detourX = left ? expLeft : expRight;
+    // Route: go left/right around, then up/down, then back
+    return [
+        start,
+        {
+            x: detourX,
+            y: start.y
+        },
+        {
+            x: detourX,
+            y: end.y
+        },
+        end
+    ];
+}
+/**
+ * Check if a point is inside any bounding box
+ */ function pointInBounds(point, obstacles, margin = 5) {
+    return obstacles.some((obs)=>{
+        const expanded = {
+            left: obs.x - margin,
+            right: obs.x + obs.width + margin,
+            top: obs.y - margin,
+            bottom: obs.y + obs.height + margin
+        };
+        return point.x >= expanded.left && point.x <= expanded.right && point.y >= expanded.top && point.y <= expanded.bottom;
+    });
+}
+/**
+ * Check if a whole path segment (between two points) would cross through obstacles
+ * Returns true if the segment intersects any obstacle bounding box
+ */ function pathIntersectsObstacles(start, end, obstacles) {
+    // Check if any point along the path is inside an obstacle
+    // For orthogonal paths, we need to check the entire segment
+    for (const obs of obstacles){
+        if (segmentIntersectsBounds(start, end, obs)) {
+            return true;
+        }
+    }
+    return false;
 }
 function snapPointToGrid(point, gridSize) {
     return {
@@ -3896,6 +4007,8 @@ function moveSegment(points, segmentIndex, delta, options = {}) {
 }
 function calculateOrthogonalPoints(start, end, waypoints = [], options = {}) {
     const firstLeg = options.firstLeg ?? 'horizontal';
+    const obstacles = options.obstacles ?? [];
+    const gridSize = options.gridSize ?? 10;
     const all = [
         start,
         ...waypoints,
@@ -3904,25 +4017,89 @@ function calculateOrthogonalPoints(start, end, waypoints = [], options = {}) {
     const out = [
         start
     ];
+    // If no obstacles, use the original simple routing
+    if (obstacles.length === 0) {
+        for(let i = 1; i < all.length; i++){
+            const a = all[i - 1];
+            const b = all[i];
+            if (a.x === b.x && a.y === b.y) continue;
+            if (firstLeg === 'horizontal') {
+                const mid = {
+                    x: b.x,
+                    y: a.y
+                };
+                if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            } else {
+                const mid = {
+                    x: a.x,
+                    y: b.y
+                };
+                if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            }
+            out.push(b);
+        }
+        return dedupeColinear(out);
+    }
+    // Enhanced routing with component avoidance
     for(let i = 1; i < all.length; i++){
         const a = all[i - 1];
         const b = all[i];
-        // Same point.
         if (a.x === b.x && a.y === b.y) continue;
+        // Build the initial path for this segment
+        let segmentPath;
         if (firstLeg === 'horizontal') {
             const mid = {
                 x: b.x,
                 y: a.y
             };
-            if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            segmentPath = [
+                a,
+                mid,
+                b
+            ];
         } else {
             const mid = {
                 x: a.x,
                 y: b.y
             };
-            if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
+            segmentPath = [
+                a,
+                mid,
+                b
+            ];
         }
-        out.push(b);
+        // Check each segment of the path for obstacle intersections
+        const finalPath = [
+            a
+        ];
+        for(let segIdx = 0; segIdx < segmentPath.length - 1; segIdx++){
+            const segStart = segmentPath[segIdx];
+            const segEnd = segmentPath[segIdx + 1];
+            // Skip if zero length
+            if (segStart.x === segEnd.x && segStart.y === segEnd.y) continue;
+            // Check if this segment intersects any obstacles
+            const intersectsObs = findIntersectingBounds(segStart, segEnd, obstacles);
+            if (intersectsObs.length === 0) {
+                // No intersection, add segment directly
+                finalPath.push(segEnd);
+            } else {
+                // Find the first obstacle that intersects
+                const obstacle = intersectsObs[0];
+                // Determine if this is horizontal or vertical segment
+                const isHorizontal = segStart.y === segEnd.y;
+                const pathType = isHorizontal ? 'horizontal' : 'vertical';
+                // Calculate detour around the obstacle
+                const detour = calculateDetour(segStart, segEnd, obstacle, pathType, gridSize);
+                // Add intermediate detour points (excluding start since it's already in finalPath)
+                for(let j = 1; j < detour.length; j++){
+                    finalPath.push(detour[j]);
+                }
+            }
+        }
+        // Add all points from this segment to the main output (skip first since it's the previous end)
+        for(let j = 1; j < finalPath.length; j++){
+            out.push(finalPath[j]);
+        }
     }
     return dedupeColinear(out);
 }
@@ -4230,6 +4407,53 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
         zoom,
         flowNodes
     ]);
+    // Precompute component bounding boxes for obstacle avoidance
+    const componentBounds = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useMemo"])({
+        "WiringLayer.useMemo[componentBounds]": ()=>{
+            const container = containerRef.current;
+            if (!container) return [];
+            const containerRect = container.getBoundingClientRect();
+            // Get all node elements (excluding the wiring layer itself which is in an SVG)
+            // Looking for elements with data-node-id attribute
+            const nodeElements = container.querySelectorAll('[data-node-id]');
+            const bounds = [];
+            nodeElements.forEach({
+                "WiringLayer.useMemo[componentBounds]": (el)=>{
+                    const partId = el.getAttribute('data-node-id');
+                    if (!partId) return;
+                    // Get the bounding box of the node element
+                    const rect = el.getBoundingClientRect();
+                    // Convert to container-relative coordinates
+                    const x = rect.left - containerRect.left;
+                    const y = rect.top - containerRect.top;
+                    const width = rect.width;
+                    const height = rect.height;
+                    // Filter out tiny elements (like the pin hitboxes which have node-id too)
+                    if (width < 20 || height < 20) return;
+                    // Check if we already have bounds for this part (multiple pin elements might exist)
+                    if (!bounds.find({
+                        "WiringLayer.useMemo[componentBounds]": (b)=>b.id === partId
+                    }["WiringLayer.useMemo[componentBounds]"])) {
+                        bounds.push({
+                            id: partId,
+                            x,
+                            y,
+                            width,
+                            height
+                        });
+                    }
+                }
+            }["WiringLayer.useMemo[componentBounds]"]);
+            return bounds;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        }
+    }["WiringLayer.useMemo[componentBounds]"], [
+        containerRef,
+        dimensions.width,
+        dimensions.height,
+        zoom,
+        flowNodes
+    ]);
     const getPinPoint = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
         "WiringLayer.useCallback[getPinPoint]": (pin)=>{
             return pinCenters.get(`${pin.partId}:${pin.pinId}`) ?? null;
@@ -4248,7 +4472,9 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                     }
                     const waypoints = wirePointOverrides?.has(c.id) ? wirePointOverrides.get(c.id) ?? [] : c.points ?? [];
                     const points = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$wireRouting$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["calculateOrthogonalPoints"])(start, end, waypoints, {
-                        firstLeg: 'horizontal'
+                        firstLeg: 'horizontal',
+                        obstacles: componentBounds,
+                        gridSize
                     });
                     return {
                         id: c.id,
@@ -4284,7 +4510,8 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
         getPinPoint,
         wirePointOverrides,
         gridSize,
-        pinCenters
+        pinCenters,
+        componentBounds
     ]);
     const selectedWire = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useMemo"])({
         "WiringLayer.useMemo[selectedWire]": ()=>{
@@ -4520,7 +4747,9 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
             if (!creating) return null;
             const end = creating.hoveredPoint ?? creating.cursor;
             const points = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$wireRouting$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["calculateOrthogonalPoints"])(creating.fromPoint, end, creating.waypoints, {
-                firstLeg: 'vertical'
+                firstLeg: 'vertical',
+                obstacles: componentBounds,
+                gridSize
             });
             return {
                 d: (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$wireRouting$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["pointsToPathD"])(points),
@@ -4529,7 +4758,9 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
         }
     }["WiringLayer.useMemo[preview]"], [
         creating,
-        forceTick
+        forceTick,
+        componentBounds,
+        gridSize
     ]);
     if (dimensions.width === 0 || dimensions.height === 0) return null;
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
@@ -4547,7 +4778,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                     height: '100%',
                     pointerEvents: 'none',
                     overflow: 'visible',
-                    zIndex: 0
+                    zIndex: 15
                 },
                 viewBox: `0 0 ${dimensions.width} ${dimensions.height}`,
                 className: "jsx-ed133a751aa94545",
@@ -4611,7 +4842,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                         className: "jsx-ed133a751aa94545"
                                     }, void 0, false, {
                                         fileName: "[project]/components/WiringLayer.tsx",
-                                        lineNumber: 466,
+                                        lineNumber: 510,
                                         columnNumber: 17
                                     }, this),
                                     isSelected && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("path", {
@@ -4629,7 +4860,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                         className: "jsx-ed133a751aa94545"
                                     }, void 0, false, {
                                         fileName: "[project]/components/WiringLayer.tsx",
-                                        lineNumber: 511,
+                                        lineNumber: 555,
                                         columnNumber: 19
                                     }, this),
                                     (isHovered || isSelected) && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("path", {
@@ -4648,7 +4879,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                         className: "jsx-ed133a751aa94545"
                                     }, void 0, false, {
                                         fileName: "[project]/components/WiringLayer.tsx",
-                                        lineNumber: 528,
+                                        lineNumber: 572,
                                         columnNumber: 19
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("path", {
@@ -4665,13 +4896,13 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                         className: "jsx-ed133a751aa94545"
                                     }, void 0, false, {
                                         fileName: "[project]/components/WiringLayer.tsx",
-                                        lineNumber: 545,
+                                        lineNumber: 589,
                                         columnNumber: 17
                                     }, this)
                                 ]
                             }, w.id, true, {
                                 fileName: "[project]/components/WiringLayer.tsx",
-                                lineNumber: 464,
+                                lineNumber: 508,
                                 columnNumber: 15
                             }, this);
                         }),
@@ -4690,18 +4921,18 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                             className: "jsx-ed133a751aa94545"
                         }, void 0, false, {
                             fileName: "[project]/components/WiringLayer.tsx",
-                            lineNumber: 563,
+                            lineNumber: 607,
                             columnNumber: 13
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/components/WiringLayer.tsx",
-                    lineNumber: 456,
+                    lineNumber: 500,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/WiringLayer.tsx",
-                lineNumber: 443,
+                lineNumber: 487,
                 columnNumber: 7
             }, this),
             selectedWire && selectedMidpoint && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4730,19 +4961,19 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                 className: "jsx-ed133a751aa94545" + " " + ('h-5 w-5 rounded border-2 transition-all ' + (selectedWire.color.toLowerCase() === c.color.toLowerCase() ? 'border-electric scale-110 shadow-lg shadow-electric/50' : 'border-transparent hover:border-brass hover:scale-105') || "")
                             }, c.key, false, {
                                 fileName: "[project]/components/WiringLayer.tsx",
-                                lineNumber: 596,
+                                lineNumber: 640,
                                 columnNumber: 15
                             }, this))
                     }, void 0, false, {
                         fileName: "[project]/components/WiringLayer.tsx",
-                        lineNumber: 594,
+                        lineNumber: 638,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                         className: "jsx-ed133a751aa94545" + " " + "mx-1 h-5 w-px bg-brass/30"
                     }, void 0, false, {
                         fileName: "[project]/components/WiringLayer.tsx",
-                        lineNumber: 612,
+                        lineNumber: 656,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -4756,13 +4987,13 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                         children: "Delete"
                     }, void 0, false, {
                         fileName: "[project]/components/WiringLayer.tsx",
-                        lineNumber: 614,
+                        lineNumber: 658,
                         columnNumber: 11
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/components/WiringLayer.tsx",
-                lineNumber: 580,
+                lineNumber: 624,
                 columnNumber: 9
             }, this),
             hoveredId && !selectedId && (()=>{
@@ -4790,7 +5021,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                     children: hoveredConn.from.partId
                                 }, void 0, false, {
                                     fileName: "[project]/components/WiringLayer.tsx",
-                                    lineNumber: 651,
+                                    lineNumber: 695,
                                     columnNumber: 17
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -4798,7 +5029,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                     children: hoveredConn.from.pinId
                                 }, void 0, false, {
                                     fileName: "[project]/components/WiringLayer.tsx",
-                                    lineNumber: 652,
+                                    lineNumber: 696,
                                     columnNumber: 17
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -4806,7 +5037,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                     children: "→"
                                 }, void 0, false, {
                                     fileName: "[project]/components/WiringLayer.tsx",
-                                    lineNumber: 653,
+                                    lineNumber: 697,
                                     columnNumber: 17
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -4814,7 +5045,7 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                     children: hoveredConn.to.partId
                                 }, void 0, false, {
                                     fileName: "[project]/components/WiringLayer.tsx",
-                                    lineNumber: 654,
+                                    lineNumber: 698,
                                     columnNumber: 17
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -4822,30 +5053,30 @@ function WiringLayer({ containerRef, wirePointOverrides }) {
                                     children: hoveredConn.to.pinId
                                 }, void 0, false, {
                                     fileName: "[project]/components/WiringLayer.tsx",
-                                    lineNumber: 655,
+                                    lineNumber: 699,
                                     columnNumber: 17
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/components/WiringLayer.tsx",
-                            lineNumber: 650,
+                            lineNumber: 694,
                             columnNumber: 15
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/components/WiringLayer.tsx",
-                        lineNumber: 649,
+                        lineNumber: 693,
                         columnNumber: 13
                     }, this)
                 }, void 0, false, {
                     fileName: "[project]/components/WiringLayer.tsx",
-                    lineNumber: 641,
+                    lineNumber: 685,
                     columnNumber: 11
                 }, this);
             })()
         ]
     }, void 0, true);
 }
-_s(WiringLayer, "X9ey0TckbEbC/fa6p9sjUwDHv98=", false, function() {
+_s(WiringLayer, "lyF8GpYY0DHMV2CtehU5rpVYGaU=", false, function() {
     return [
         __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
         __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
