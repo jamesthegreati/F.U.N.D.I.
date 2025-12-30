@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Mic, MicOff, GraduationCap, Wrench, Send, ImagePlus, X, Sparkles } from 'lucide-react'
 import { useAppStore, type TerminalEntry } from '@/store/useAppStore'
 import { cn } from '@/utils/cn'
@@ -57,8 +57,8 @@ function ChatMessage({ entry }: { entry: TerminalEntry }) {
     )}>
       <div className={cn(
         'max-w-[85%] rounded-lg px-3 py-2',
-        isUser 
-          ? 'bg-ide-accent/20 text-ide-text border border-ide-accent/30' 
+        isUser
+          ? 'bg-ide-accent/20 text-ide-text border border-ide-accent/30'
           : isError
             ? 'bg-ide-error/10 text-ide-error border border-ide-error/30'
             : isAi
@@ -94,11 +94,20 @@ export function CommandInterface() {
 
   const [input, setInput] = useState('')
   const [isListening, setIsListening] = useState(false)
+  // Command history navigation state
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const [tempInput, setTempInput] = useState('') // Store current input when navigating
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
+
+  // Get user command history (most recent first)
+  const commandHistory = useMemo(() =>
+    terminalHistory.filter(e => e.type === 'cmd').map(e => e.content).reverse(),
+    [terminalHistory]
+  )
 
   // Auto-scroll to bottom when new entries arrive
   useEffect(() => {
@@ -151,13 +160,39 @@ export function CommandInterface() {
   )
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Submit on Enter (without Shift)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (!input.trim() || isAiLoading) return
       void submitCommand(input)
       setInput('')
+      setHistoryIndex(-1)
+      setTempInput('')
     }
-  }, [input, isAiLoading, submitCommand])
+    // Navigate up through history
+    else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (commandHistory.length === 0) return
+      if (historyIndex === -1) {
+        setTempInput(input) // Save current input
+      }
+      const newIndex = Math.min(historyIndex + 1, commandHistory.length - 1)
+      setHistoryIndex(newIndex)
+      setInput(commandHistory[newIndex])
+    }
+    // Navigate down through history
+    else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (historyIndex <= 0) {
+        setHistoryIndex(-1)
+        setInput(tempInput) // Restore original input
+        return
+      }
+      const newIndex = historyIndex - 1
+      setHistoryIndex(newIndex)
+      setInput(commandHistory[newIndex])
+    }
+  }, [input, isAiLoading, submitCommand, commandHistory, historyIndex, tempInput])
 
   const toggleVoiceInput = useCallback(() => {
     if (!recognitionRef.current) {
@@ -284,9 +319,9 @@ export function CommandInterface() {
             {stagedImageData && (
               <div className="border-b border-ide-border p-2">
                 <div className="relative inline-block">
-                  <img 
-                    src={stagedImageData} 
-                    alt="Staged circuit" 
+                  <img
+                    src={stagedImageData}
+                    alt="Staged circuit"
                     className="h-20 rounded border border-ide-border object-cover"
                   />
                   <button

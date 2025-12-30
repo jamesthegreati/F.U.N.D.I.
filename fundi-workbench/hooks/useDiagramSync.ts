@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { WOKWI_PARTS } from '@/lib/wokwiParts';
 
@@ -16,8 +16,9 @@ export function useDiagramSync() {
   const connections = useAppStore((s) => s.connections);
   const setDiagramJson = useAppStore((s) => s.setDiagramJson);
 
-  const diagram = useMemo(() => {
-    return {
+  // Memoize the JSON string directly to prevent unnecessary re-serialization
+  const diagramJson = useMemo(() => {
+    const diagram = {
       version: 1,
       parts: circuitParts.map((p) => ({
         id: p.id,
@@ -34,9 +35,16 @@ export function useDiagramSync() {
         [],
       ]),
     };
+    return JSON.stringify(diagram, null, 2);
   }, [circuitParts, connections]);
 
+  // Track previous value to prevent unnecessary updates
+  const prevJsonRef = useRef<string>('');
+
   useEffect(() => {
-    setDiagramJson(JSON.stringify(diagram, null, 2));
-  }, [diagram, setDiagramJson]);
+    if (diagramJson !== prevJsonRef.current) {
+      prevJsonRef.current = diagramJson;
+      setDiagramJson(diagramJson);
+    }
+  }, [diagramJson, setDiagramJson]);
 }

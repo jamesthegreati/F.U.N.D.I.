@@ -266,12 +266,75 @@ export function avoidParallelOverlaps(
 
 /**
  * Convert an array of points to an SVG path `d` string.
- * Uses straight line segments between points.
+ * Supports smooth corners with optional quadratic Bezier curves.
+ * @param points - Array of wire waypoints
+ * @param cornerRadius - Radius for rounded corners (0 = sharp corners)
  */
-export function pointsToPathD(points: WirePoint[]): string {
+export function pointsToPathD(points: WirePoint[], cornerRadius: number = 8): string {
     if (points.length === 0) return '';
-    const [first, ...rest] = points;
-    return `M ${first.x} ${first.y}` + rest.map((p) => ` L ${p.x} ${p.y}`).join('');
+    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+
+    // If no corner radius, use simple straight lines
+    if (cornerRadius <= 0 || points.length === 2) {
+        const [first, ...rest] = points;
+        return `M ${first.x} ${first.y}` + rest.map((p) => ` L ${p.x} ${p.y}`).join('');
+    }
+
+    // With corner radius: use quadratic curves at bends
+    let d = `M ${points[0].x} ${points[0].y}`;
+
+    for (let i = 1; i < points.length - 1; i++) {
+        const prev = points[i - 1];
+        const curr = points[i];
+        const next = points[i + 1];
+
+        // Calculate the maximum radius we can use at this corner
+        const distToPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        const distToNext = Math.hypot(next.x - curr.x, next.y - curr.y);
+        const r = Math.min(cornerRadius, distToPrev / 2, distToNext / 2);
+
+        if (r <= 0) {
+            // No room for corner, use straight line
+            d += ` L ${curr.x} ${curr.y}`;
+            continue;
+        }
+
+        // Calculate direction vectors
+        const dx1 = curr.x - prev.x;
+        const dy1 = curr.y - prev.y;
+        const dx2 = next.x - curr.x;
+        const dy2 = next.y - curr.y;
+
+        // Normalize directions
+        const len1 = Math.hypot(dx1, dy1);
+        const len2 = Math.hypot(dx2, dy2);
+
+        if (len1 === 0 || len2 === 0) {
+            d += ` L ${curr.x} ${curr.y}`;
+            continue;
+        }
+
+        const nx1 = dx1 / len1;
+        const ny1 = dy1 / len1;
+        const nx2 = dx2 / len2;
+        const ny2 = dy2 / len2;
+
+        // Points where corner curve starts and ends
+        const startX = curr.x - nx1 * r;
+        const startY = curr.y - ny1 * r;
+        const endX = curr.x + nx2 * r;
+        const endY = curr.y + ny2 * r;
+
+        // Line to start of corner, then quadratic curve through corner
+        d += ` L ${startX} ${startY}`;
+        d += ` Q ${curr.x} ${curr.y} ${endX} ${endY}`;
+    }
+
+    // Line to final point
+    const last = points[points.length - 1];
+    d += ` L ${last.x} ${last.y}`;
+
+    return d;
 }
 
 export function findSegmentIndex(

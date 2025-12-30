@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Trash2, ArrowDownToLine, Send } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Trash2, ArrowDownToLine, Send, Binary } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
 interface SerialMonitorProps {
@@ -17,11 +17,26 @@ export function SerialMonitor({ serialOutput, onClear, isRunning, onSendInput }:
   const [baudRate, setBaudRate] = useState(9600)
   const [inputValue, setInputValue] = useState('')
   const [lineEnding, setLineEnding] = useState<'none' | 'nl' | 'cr' | 'both'>('nl')
+  const [viewMode, setViewMode] = useState<'ascii' | 'hex'>('ascii')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Convert string to hex representation
+  const toHex = useCallback((str: string) => {
+    return str.split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ')
+  }, [])
+
+  // Process output based on view mode  
+  const displayOutput = useMemo(() => {
+    if (viewMode === 'hex') {
+      return serialOutput.map(line => toHex(line))
+    }
+    return serialOutput
+  }, [serialOutput, viewMode, toHex])
+
   // Auto-scroll to bottom when new output arrives (if enabled)
-  useEffect(() => {
+  // Using useLayoutEffect to ensure scroll happens after DOM update (fixes race condition)
+  useLayoutEffect(() => {
     if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
@@ -123,6 +138,22 @@ export function SerialMonitor({ serialOutput, onClear, isRunning, onSendInput }:
         </div>
 
         <div className="flex items-center gap-1">
+          {/* Hex view toggle */}
+          <button
+            type="button"
+            onClick={() => setViewMode(v => v === 'ascii' ? 'hex' : 'ascii')}
+            title={viewMode === 'ascii' ? 'Switch to HEX view' : 'Switch to ASCII view'}
+            className={cn(
+              'flex h-6 items-center gap-1 px-1.5 rounded text-[10px] font-medium transition-colors',
+              viewMode === 'hex'
+                ? 'bg-ide-accent/20 text-ide-accent'
+                : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+            )}
+          >
+            <Binary className="h-3.5 w-3.5" />
+            <span>{viewMode === 'hex' ? 'HEX' : 'ASCII'}</span>
+          </button>
+
           {/* Scroll to bottom / Auto-scroll toggle */}
           <button
             type="button"
@@ -168,8 +199,11 @@ export function SerialMonitor({ serialOutput, onClear, isRunning, onSendInput }:
             </div>
           </div>
         ) : (
-          serialOutput.map((line, index) => (
-            <div key={index} className="leading-relaxed text-ide-success">
+          displayOutput.map((line, index) => (
+            <div key={index} className={cn(
+              'leading-relaxed font-mono',
+              viewMode === 'hex' ? 'text-ide-warning tracking-wide' : 'text-ide-success'
+            )}>
               {line || '\u00A0'}
             </div>
           ))

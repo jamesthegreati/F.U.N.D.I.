@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
+import { calculateCircuitLayout } from '@/utils/circuitLayout'
 
 export type CircuitPart = {
   id: string
@@ -708,9 +709,20 @@ export const useAppStore = create<AppState>()(
       },
 
       applyGeneratedCircuit: (parts, newConnections) => {
+        // Check if AI provided meaningful positions (non-zero coordinates)
+        const hasAiPositions = parts.some(p =>
+          p.position && (p.position.x !== 0 || p.position.y !== 0)
+        )
+
+        // Only apply layout algorithm if AI didn't provide positions
+        // This preserves AI's intended layout when coordinates exist
+        const finalParts = hasAiPositions
+          ? parts
+          : calculateCircuitLayout(parts, newConnections)
+
         // Replace current circuit with AI-generated one
         set({
-          circuitParts: parts,
+          circuitParts: finalParts,
           connections: newConnections,
         })
       },
@@ -972,39 +984,237 @@ You can also upload images of physical circuits for recognition.`,
               const pUpper = p.toUpperCase()
               const partLower = partType.toLowerCase()
 
+              // ========================
+              // ESP32 GPIO pins
+              // ========================
+              if (partLower.includes('esp32')) {
+                // GPIO13 → 13, IO13 → 13, D13 → 13
+                const gpioMatch = p.match(/^(?:gpio|io|d)?(\d+)$/i)
+                if (gpioMatch) return gpioMatch[1]
+                // I2C defaults for ESP32: SDA → 21, SCL → 22
+                if (/^sda$/i.test(p)) return '21'
+                if (/^scl$/i.test(p)) return '22'
+                // Power pins
+                if (/^(3v3?|3\.3v)$/i.test(p)) return '3V3'
+                if (/^(5v|vin)$/i.test(p)) return 'VIN'
+                if (/^gnd$/i.test(p)) return 'GND.1'
+              }
+
+              // ========================
               // LED pins: normalize anode/cathode variations
+              // ========================
               if (partLower.includes('led') && !partLower.includes('neopixel') && !partLower.includes('bar') && !partLower.includes('ring') && !partLower.includes('matrix')) {
                 if (/^(a|anode|\+|positive|vcc|an)$/i.test(p)) return 'A'
                 if (/^(c|k|cathode|-|negative|gnd|cat)$/i.test(p)) return 'C'
               }
 
-              // Arduino digital pins: strip D/PIN prefix (D13 -> 13, PIN13 -> 13)
+              // ========================
+              // NeoPixel / WS2812 / Addressable LEDs
+              // ========================
+              if (partLower.includes('neopixel') || partLower.includes('ws2812')) {
+                if (/^(din|data|in|signal)$/i.test(p)) return 'DIN'
+                if (/^(dout|do|out)$/i.test(p)) return 'DOUT'
+                if (/^(vcc|5v|\+|vdd)$/i.test(p)) return 'VCC'
+                if (/^(gnd|vss|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // Arduino digital/analog pins
+              // ========================
               if (partLower.includes('arduino') || partLower.includes('uno') || partLower.includes('nano') || partLower.includes('mega')) {
-                const digitalMatch = p.match(/^(?:d|pin)?(\d+)$/i)
+                // Digital: D13 → 13, PIN13 → 13, also handles mega pins 22-53
+                const digitalMatch = p.match(/^(?:d|pin)?(\d{1,2})$/i)
                 if (digitalMatch) return digitalMatch[1]
-
-                // Keep GND pins as-is or normalize to GND.1
+                // Analog: A0, A1, etc. - keep as-is but uppercase
+                const analogMatch = p.match(/^a(\d)$/i)
+                if (analogMatch) return `A${analogMatch[1]}`
+                // Power pins
+                if (/^(5v|vcc)$/i.test(p)) return '5V'
+                if (/^(3v3?|3\.3v)$/i.test(p)) return '3.3V'
+                if (/^vin$/i.test(p)) return 'VIN'
+                // GND pins - normalize to GND.1
                 if (/^gnd$/i.test(p)) return 'GND.1'
+                if (/^gnd\.?[123]$/i.test(p)) return p.toUpperCase().replace('.', '.')
               }
 
+              // ========================
+              // LCD1602 / LCD2004 displays
+              // ========================
+              if (partLower.includes('lcd1602') || partLower.includes('lcd2004') || partLower.includes('lcd')) {
+                // I2C mode pins
+                if (/^sda$/i.test(p)) return 'SDA'
+                if (/^scl$/i.test(p)) return 'SCL'
+                // Parallel mode pins
+                if (/^(rs|register.?select)$/i.test(p)) return 'RS'
+                if (/^(e|en|enable)$/i.test(p)) return 'E'
+                if (/^(rw|read.?write)$/i.test(p)) return 'RW'
+                if (/^(v0|contrast|vo)$/i.test(p)) return 'V0'
+                if (/^(vss|gnd)$/i.test(p)) return 'VSS'
+                if (/^(vdd|vcc|5v)$/i.test(p)) return 'VDD'
+                if (/^(led\+|a|backlight\+)$/i.test(p)) return 'A'
+                if (/^(led-|k|backlight-)$/i.test(p)) return 'K'
+                // Data pins D0-D7
+                const dataMatch = p.match(/^d?([0-7])$/i)
+                if (dataMatch) return `D${dataMatch[1]}`
+              }
+
+              // ========================
+              // SSD1306 / OLED displays (I2C)
+              // ========================
+              if (partLower.includes('ssd1306') || partLower.includes('oled')) {
+                if (/^sda$/i.test(p)) return 'SDA'
+                if (/^scl$/i.test(p)) return 'SCL'
+                if (/^(vcc|vdd|3v3?|5v|\+)$/i.test(p)) return 'VCC'
+                if (/^(gnd|ground|vss|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // DHT22 / DHT11 temperature sensors
+              // ========================
+              if (partLower.includes('dht')) {
+                if (/^(data|sda|out|signal|dat)$/i.test(p)) return 'SDA'
+                if (/^(vcc|vdd|\+|5v|3v3?)$/i.test(p)) return 'VCC'
+                if (/^(gnd|ground|-)$/i.test(p)) return 'GND'
+                if (/^nc$/i.test(p)) return 'NC'
+              }
+
+              // ========================
+              // HC-SR04 Ultrasonic sensor
+              // ========================
+              if (partLower.includes('hc-sr04') || partLower.includes('sr04') || partLower.includes('ultrasonic')) {
+                if (/^(trig|trigger)$/i.test(p)) return 'TRIG'
+                if (/^echo$/i.test(p)) return 'ECHO'
+                if (/^(vcc|5v|\+)$/i.test(p)) return 'VCC'
+                if (/^(gnd|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // Potentiometer
+              // ========================
+              if (partLower.includes('potentiometer')) {
+                if (/^(sig|signal|wiper|out|w)$/i.test(p)) return 'SIG'
+                if (/^(vcc|\+|5v|cw)$/i.test(p)) return 'VCC'
+                if (/^(gnd|-|ccw)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // Slide potentiometer
+              // ========================
+              if (partLower.includes('slide') && partLower.includes('potentiometer')) {
+                if (/^(sig|signal|wiper|out)$/i.test(p)) return 'SIG'
+                if (/^(vcc|\+|5v)$/i.test(p)) return 'VCC'
+                if (/^(gnd|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // Pushbutton
+              // ========================
+              if (partLower.includes('pushbutton') || partLower.includes('button')) {
+                // Wokwi uses 1.l, 1.r, 2.l, 2.r for 4-pin buttons
+                if (/^(1|left|l|in|a)$/i.test(p)) return '1.l'
+                if (/^(2|right|r|out|b)$/i.test(p)) return '2.l'
+                // Already correct formats - normalize case
+                if (/^[12]\.[lr]$/i.test(p)) return p.toLowerCase()
+              }
+
+              // ========================
               // Resistor pins
+              // ========================
               if (partLower.includes('resistor')) {
-                if (/^(1|one|left|l)$/i.test(p)) return '1'
-                if (/^(2|two|right|r)$/i.test(p)) return '2'
+                if (/^(1|one|left|l|a)$/i.test(p)) return '1'
+                if (/^(2|two|right|r|b)$/i.test(p)) return '2'
               }
 
+              // ========================
               // Buzzer pins
+              // ========================
               if (partLower.includes('buzzer')) {
                 if (/^(1|signal|sig|s|\+|positive|vcc)$/i.test(p)) return '1'
                 if (/^(2|gnd|ground|-|negative)$/i.test(p)) return '2'
               }
 
+              // ========================
               // Servo pins
+              // ========================
               if (partLower.includes('servo')) {
-                if (/^(pwm|signal|sig|s|pulse)$/i.test(p)) return 'PWM'
+                if (/^(pwm|signal|sig|s|pulse|ctrl|control)$/i.test(p)) return 'PWM'
                 if (/^(v\+|vcc|5v|power|\+)$/i.test(p)) return 'V+'
                 if (/^(gnd|ground|-)$/i.test(p)) return 'GND'
               }
+
+              // ========================
+              // PIR Motion sensor
+              // ========================
+              if (partLower.includes('pir') || partLower.includes('motion')) {
+                if (/^(out|signal|sig|data)$/i.test(p)) return 'OUT'
+                if (/^(vcc|5v|\+)$/i.test(p)) return 'VCC'
+                if (/^(gnd|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // Photoresistor / LDR
+              // ========================
+              if (partLower.includes('photoresistor') || partLower.includes('ldr')) {
+                if (/^(ao|out|signal|a0)$/i.test(p)) return 'AO'
+                if (/^(do|digital)$/i.test(p)) return 'DO'
+                if (/^(vcc|5v|\+)$/i.test(p)) return 'VCC'
+                if (/^(gnd|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // IR Receiver
+              // ========================
+              if (partLower.includes('ir') && partLower.includes('receiver')) {
+                if (/^(out|signal|data)$/i.test(p)) return 'OUT'
+                if (/^(vcc|\+|5v)$/i.test(p)) return 'VCC'
+                if (/^(gnd|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // Membrane Keypad
+              // ========================
+              if (partLower.includes('keypad') || partLower.includes('membrane')) {
+                // Row pins R1-R4
+                const rowMatch = p.match(/^r(\d)$/i)
+                if (rowMatch) return `R${rowMatch[1]}`
+                // Column pins C1-C4
+                const colMatch = p.match(/^c(\d)$/i)
+                if (colMatch) return `C${colMatch[1]}`
+              }
+
+              // ========================
+              // Rotary Encoder (KY-040)
+              // ========================
+              if (partLower.includes('rotary') || partLower.includes('encoder') || partLower.includes('ky-040')) {
+                if (/^(clk|clock|a)$/i.test(p)) return 'CLK'
+                if (/^(dt|data|b)$/i.test(p)) return 'DT'
+                if (/^(sw|switch|button)$/i.test(p)) return 'SW'
+                if (/^(vcc|\+|5v)$/i.test(p)) return 'VCC'
+                if (/^(gnd|-)$/i.test(p)) return 'GND'
+              }
+
+              // ========================
+              // MPU6050 accelerometer/gyroscope
+              // ========================
+              if (partLower.includes('mpu6050') || partLower.includes('accelerometer') || partLower.includes('gyro')) {
+                if (/^sda$/i.test(p)) return 'SDA'
+                if (/^scl$/i.test(p)) return 'SCL'
+                if (/^(vcc|3v3?)$/i.test(p)) return 'VCC'
+                if (/^gnd$/i.test(p)) return 'GND'
+                if (/^int$/i.test(p)) return 'INT'
+              }
+
+              // ========================
+              // Generic I2C devices fallback
+              // ========================
+              if (/^sda$/i.test(p)) return 'SDA'
+              if (/^scl$/i.test(p)) return 'SCL'
+
+              // ========================
+              // Generic power pins fallback
+              // ========================
+              if (/^(vcc|5v|3v3?|vin|\+)$/i.test(p)) return pUpper.replace('3V3', '3.3V')
+              if (/^(gnd|ground|vss|-)$/i.test(p)) return 'GND'
 
               return p // Return as-is if no normalization needed
             }
@@ -1074,3 +1284,101 @@ You can also upload images of physical circuits for recognition.`,
     }
   )
 )
+
+// Temporal store type for undo/redo
+type TemporalState = {
+  pastStates: Partial<AppState>[]
+  futureStates: Partial<AppState>[]
+  undo: () => void
+  redo: () => void
+  clear: () => void
+}
+
+// Create a separate temporal store that wraps the main store's state
+const temporalHistory: { past: Partial<AppState>[]; future: Partial<AppState>[] } = {
+  past: [],
+  future: [],
+}
+
+const MAX_HISTORY = 50
+
+// Helper to get trackable state
+const getTrackableState = (): Partial<AppState> => {
+  const state = useAppStore.getState()
+  return {
+    circuitParts: [...state.circuitParts],
+    connections: [...state.connections],
+    code: state.code,
+  }
+}
+
+// Helper to check if state changed
+const statesEqual = (a: Partial<AppState>, b: Partial<AppState>): boolean => {
+  return (
+    JSON.stringify(a.circuitParts) === JSON.stringify(b.circuitParts) &&
+    JSON.stringify(a.connections) === JSON.stringify(b.connections) &&
+    a.code === b.code
+  )
+}
+
+// Subscribe to store changes and track history
+let lastTrackedState = getTrackableState()
+useAppStore.subscribe((state) => {
+  const currentTrackable = {
+    circuitParts: state.circuitParts,
+    connections: state.connections,
+    code: state.code,
+  }
+
+  if (!statesEqual(lastTrackedState, currentTrackable)) {
+    temporalHistory.past.push(lastTrackedState)
+    if (temporalHistory.past.length > MAX_HISTORY) {
+      temporalHistory.past.shift()
+    }
+    temporalHistory.future = [] // Clear redo stack on new change
+    lastTrackedState = { ...currentTrackable }
+  }
+})
+
+// Undo function
+export const undo = (): void => {
+  if (temporalHistory.past.length === 0) return
+
+  const previousState = temporalHistory.past.pop()!
+  temporalHistory.future.push(getTrackableState())
+
+  useAppStore.setState({
+    circuitParts: previousState.circuitParts || [],
+    connections: previousState.connections || [],
+    code: previousState.code || '',
+  })
+  lastTrackedState = { ...previousState }
+}
+
+// Redo function  
+export const redo = (): void => {
+  if (temporalHistory.future.length === 0) return
+
+  const nextState = temporalHistory.future.pop()!
+  temporalHistory.past.push(getTrackableState())
+
+  useAppStore.setState({
+    circuitParts: nextState.circuitParts || [],
+    connections: nextState.connections || [],
+    code: nextState.code || '',
+  })
+  lastTrackedState = { ...nextState }
+}
+
+// Check if undo is available
+export const canUndo = (): boolean => temporalHistory.past.length > 0
+
+// Check if redo is available
+export const canRedo = (): boolean => temporalHistory.future.length > 0
+
+// Clear history
+export const clearHistory = (): void => {
+  temporalHistory.past = []
+  temporalHistory.future = []
+  lastTrackedState = getTrackableState()
+}

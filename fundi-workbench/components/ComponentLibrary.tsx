@@ -152,16 +152,28 @@ function ComponentLibrary() {
               return (
                 <div
                   key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Add ${item.name} component`}
                   draggable
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = 'copy';
                     e.dataTransfer.setData(FUNDI_PART_MIME, item.id);
+                  }}
+                  onKeyDown={(e) => {
+                    // Allow keyboard users to trigger component addition
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      // Show component info on keyboard activation
+                      alert(`Drag '${item.name}' to the canvas to add it.\n\n${item.description || 'No description available.'}`);
+                    }
                   }}
                   className={cn(
                     'group relative flex cursor-grab flex-col items-center justify-center',
                     'rounded-lg border p-2 transition-all duration-200',
                     'bg-ide-panel-surface border-ide-border',
                     'hover:border-ide-accent/50 hover:bg-ide-panel-hover',
+                    'focus:outline-none focus:ring-2 focus:ring-ide-accent focus:ring-offset-2 focus:ring-offset-ide-panel-bg',
                     'active:cursor-grabbing active:scale-95'
                   )}
                   title={item.description ?? item.name}

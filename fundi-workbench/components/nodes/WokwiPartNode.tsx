@@ -3,6 +3,7 @@
 import '@wokwi/elements';
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import type { ElementType } from 'react';
+import { Trash2 } from 'lucide-react';
 import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
 import type { WirePoint } from '@/types/wire';
 import { getAudioSimulation, pwmToFrequency } from '@/utils/simulation/audio';
@@ -61,6 +62,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const [hoveredPin, setHoveredPin] = useState<string | null>(null);
     const [pins, setPins] = useState<PinData[]>([]);
     const [svgDimensions, setSvgDimensions] = useState({ width: 100, height: 100 });
+    const [isSelected, setIsSelected] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const elementRef = useRef<HTMLElement | null>(null);
 
@@ -78,18 +80,51 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
 
     const PartElement = (partConfig.element ?? null) as ElementType | null;
 
-    const handleDoubleClick = useCallback(
+    // Handle click to select/deselect component
+    const handleClick = useCallback(
+        (e: React.MouseEvent) => {
+            // Don't select if clicking on a pin
+            const target = e.target as HTMLElement;
+            if (target.hasAttribute('data-fundi-pin')) return;
+
+            e.stopPropagation();
+            if (nodeId === 'preview') return;
+
+            setIsSelected(prev => !prev);
+        },
+        [nodeId]
+    );
+
+    // Handle delete button click
+    const handleDelete = useCallback(
         (e: React.MouseEvent) => {
             e.stopPropagation();
             if (!onDeletePart || nodeId === 'preview') return;
-
-            // Show confirmation before deleting
-            if (confirm(`Delete this ${partConfig?.name || 'component'}?`)) {
-                onDeletePart(nodeId);
-            }
+            onDeletePart(nodeId);
         },
-        [onDeletePart, nodeId, partConfig?.name]
+        [onDeletePart, nodeId]
     );
+
+    // Click outside to deselect
+    useEffect(() => {
+        if (!isSelected) return;
+
+        const handleClickOutside = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                setIsSelected(false);
+            }
+        };
+
+        // Delay adding listener to avoid immediate deselection
+        const timer = setTimeout(() => {
+            document.addEventListener('click', handleClickOutside);
+        }, 0);
+
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener('click', handleClickOutside);
+        };
+    }, [isSelected]);
 
     const handlePinClick = useCallback(
         (e: React.MouseEvent, pin: PinData) => {
@@ -528,13 +563,36 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     return (
         <div
             ref={containerRef}
-            className="relative glass-panel border-alchemist rounded-md"
+            className={`relative rounded-md transition-all duration-200 ${isSelected
+                    ? 'ring-2 ring-cyan-500/70 ring-offset-2 ring-offset-transparent shadow-lg shadow-cyan-500/20'
+                    : 'glass-panel border-alchemist hover:ring-1 hover:ring-amber-500/30'
+                }`}
             style={{
                 display: 'inline-block',
                 lineHeight: 0,
             }}
-            onDoubleClick={handleDoubleClick}
+            onClick={handleClick}
         >
+            {/* Delete button - appears when selected */}
+            {isSelected && nodeId !== 'preview' && onDeletePart && (
+                <button
+                    onClick={handleDelete}
+                    className="absolute -top-3 -right-3 z-50 p-1.5 bg-red-500/90 hover:bg-red-600 text-white rounded-full shadow-lg transition-all duration-150 hover:scale-110"
+                    title="Delete component"
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                </button>
+            )}
+
+            {/* Selection indicator label */}
+            {isSelected && (
+                <div className="absolute -top-6 left-0 right-0 flex justify-center pointer-events-none z-40">
+                    <span className="px-2 py-0.5 text-[10px] font-medium bg-cyan-500/90 text-white rounded shadow-sm">
+                        {partConfig?.name || partType}
+                    </span>
+                </div>
+            )}
+
             {/* Render the Wokwi custom element */}
             {PartElement ? <PartElement style={{ display: 'block' }} /> : null}
 
