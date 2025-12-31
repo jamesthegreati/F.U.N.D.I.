@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.circuit import AIResponse
 from app.services.ai_generator import generate_circuit
+from app.services.conversation_memory import get_session, clear_session
 
 router = APIRouter()
 
@@ -26,6 +27,7 @@ class GenerateRequest(BaseModel):
         default=None, 
         description="Previous messages in the conversation for iterative development context"
     )
+    session_id: Optional[str] = Field(default=None, description="Session ID for persistent conversation memory")
 
     @field_validator("prompt")
     @classmethod
@@ -53,18 +55,40 @@ class GenerateRequest(BaseModel):
 @router.post("/api/v1/generate", response_model=AIResponse)
 def generate(req: GenerateRequest) -> AIResponse:
     try:
-        # Convert conversation history to dict format for AI generator
+        # Get or use conversation history
         history = None
-        if req.conversation_history:
+        
+        if req.session_id:
+            # Use persistent session memory
+            memory = get_session(req.session_id)
+            memory.add_message("user", req.prompt)
+            history = memory.get_conversation_for_api()
+        elif req.conversation_history:
+            # Use provided conversation history
             history = [{"role": msg.role, "content": msg.content} for msg in req.conversation_history]
         
-        return generate_circuit(
+        response = generate_circuit(
             prompt=req.prompt,
             teacher_mode=req.teacher_mode,
             image_data=req.image_data,
             current_circuit=req.current_circuit,
             conversation_history=history,
         )
+        
+        # Store assistant response in session memory
+        if req.session_id:
+            memory = get_session(req.session_id)
+            memory.add_message(
+                "assistant",
+                response.explanation or "Circuit generated.",
+                circuit_state={
+                    "parts": [p.model_dump() for p in response.circuit_parts],
+                    "connections": [c.model_dump() for c in response.connections],
+                    "code": response.code,
+                }
+            )
+        
+        return response
     except ValueError as exc:
         # Client errors (bad input)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -77,4 +101,11 @@ def generate(req: GenerateRequest) -> AIResponse:
             status_code=500,
             detail=f"Internal server error during circuit generation: {str(exc)}"
         ) from exc
+
+
+@router.delete("/api/v1/generate/session/{session_id}")
+def clear_session_endpoint(session_id: str) -> dict:
+    """Clear a conversation session."""
+    clear_session(session_id)
+    return {"status": "ok", "message": f"Session {session_id} cleared"}
 

@@ -92,6 +92,9 @@ export type AppState = {
 
   selectedPartIds: string[]
 
+  // Counter to trigger auto-fit after AI generates a circuit
+  circuitGeneratedVersion: number
+
   // Terminal/AI Chat state
   terminalHistory: TerminalEntry[]
   isAiLoading: boolean
@@ -337,6 +340,9 @@ export const useAppStore = create<AppState>()(
       nextWireColorIndex: 0,
 
       selectedPartIds: [],
+
+      // Counter to trigger auto-fit after AI generates a circuit
+      circuitGeneratedVersion: 0,
 
       // Terminal/AI Chat state
       terminalHistory: [],
@@ -721,10 +727,12 @@ export const useAppStore = create<AppState>()(
           : calculateCircuitLayout(parts, newConnections)
 
         // Replace current circuit with AI-generated one
-        set({
+        // Increment version to trigger auto-fit in canvas
+        set((state) => ({
           circuitParts: finalParts,
           connections: newConnections,
-        })
+          circuitGeneratedVersion: state.circuitGeneratedVersion + 1,
+        }))
       },
 
       submitCommand: async (text, imageData) => {

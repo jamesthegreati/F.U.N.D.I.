@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import re
 from typing import Optional, List
@@ -10,7 +9,14 @@ from google import genai
 from app.core.config import settings
 from app.schemas.circuit import AIResponse
 
-# Enhanced system prompt for better layout and educational explanations
+# Import the new prompt manager (with fallback to embedded prompts)
+try:
+    from app.prompt_manager import build_system_prompt, get_vision_prompt
+    USE_MODULAR_PROMPTS = True
+except ImportError:
+    USE_MODULAR_PROMPTS = False
+
+# Fallback embedded prompts (used if modular prompts fail to load)
 _SYSTEM_PROMPT_BUILDER = """You are an Embedded Systems Engineer and IoT Expert. Your role is to help students build circuits.
 
 STRICT REQUIREMENTS:
@@ -248,13 +254,40 @@ def generate_circuit(
     """
     client = _client()
     
-    # Select system prompt based on mode
-    if image_data:
-        system_prompt = _VISION_SYSTEM_PROMPT
-    elif teacher_mode:
-        system_prompt = _SYSTEM_PROMPT_TEACHER
+    # Select system prompt based on mode - try modular prompts first
+    if USE_MODULAR_PROMPTS:
+        try:
+            if image_data:
+                system_prompt = get_vision_prompt()
+            elif teacher_mode:
+                system_prompt = build_system_prompt(
+                    mode="teacher",
+                    include_examples=True,
+                    user_prompt=prompt
+                )
+            else:
+                system_prompt = build_system_prompt(
+                    mode="builder",
+                    include_examples=True,
+                    user_prompt=prompt
+                )
+        except Exception as e:
+            # Fall back to embedded prompts on error
+            print(f"Warning: Failed to load modular prompts: {e}")
+            if image_data:
+                system_prompt = _VISION_SYSTEM_PROMPT
+            elif teacher_mode:
+                system_prompt = _SYSTEM_PROMPT_TEACHER
+            else:
+                system_prompt = _SYSTEM_PROMPT_BUILDER
     else:
-        system_prompt = _SYSTEM_PROMPT_BUILDER
+        # Use embedded prompts
+        if image_data:
+            system_prompt = _VISION_SYSTEM_PROMPT
+        elif teacher_mode:
+            system_prompt = _SYSTEM_PROMPT_TEACHER
+        else:
+            system_prompt = _SYSTEM_PROMPT_BUILDER
     
     # Build conversation contents with history for iterative development
     contents = []

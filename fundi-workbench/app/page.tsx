@@ -239,10 +239,12 @@ function SimulationCanvasInner({
   canvasRef,
   isRunning,
   componentPinStates,
+  componentPwmStates,
 }: {
   canvasRef: React.RefObject<HTMLDivElement | null>
   isRunning: boolean
   componentPinStates?: Record<string, Record<string, boolean>>
+  componentPwmStates?: Record<string, number>
 }) {
   const addPart = useAppStore((s) => s.addPart)
   const removePart = useAppStore((s) => s.removePart)
@@ -253,10 +255,22 @@ function SimulationCanvasInner({
   const connections = useAppStore((s) => s.connections)
   const updateWire = useAppStore((s) => s.updateWire)
   const circuitParts = useAppStore((s) => s.circuitParts)
+  const circuitGeneratedVersion = useAppStore((s) => s.circuitGeneratedVersion)
 
   useDiagramSync()
 
   const { zoomIn, zoomOut, fitView, setViewport } = useReactFlow()
+
+  // Auto-fit view after AI generates a circuit
+  useEffect(() => {
+    if (circuitGeneratedVersion > 0 && circuitParts.length > 0) {
+      // Delay to allow nodes to render in ReactFlow
+      const timer = setTimeout(() => {
+        fitView({ padding: 0.2, duration: 500 })
+      }, 150)
+      return () => clearTimeout(timer)
+    }
+  }, [circuitGeneratedVersion, fitView, circuitParts.length])
 
   const getCanvasRect = useCallback(() => {
     return canvasRef.current?.getBoundingClientRect() ?? null
@@ -346,18 +360,20 @@ function SimulationCanvasInner({
       nds.map((node) => {
         if (node.type === 'wokwi') {
           const simStates = componentPinStates?.[node.id]
+          const pwmValue = componentPwmStates?.[node.id]
           return {
             ...node,
             data: {
               ...node.data,
               simulationPinStates: simStates,
+              pwmValue: pwmValue,
             },
           }
         }
         return node
       })
     )
-  }, [componentPinStates, setNodes])
+  }, [componentPinStates, componentPwmStates, setNodes])
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
@@ -581,6 +597,8 @@ function SimulationCanvasInner({
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        snapToGrid={true}
+        snapGrid={[20, 20]}
         fitView
         className="h-full w-full"
         style={{ cursor: 'inherit', background: 'transparent' }}
@@ -605,10 +623,12 @@ function SimulationCanvasInner({
 
 function SimulationCanvas({
   isRunning,
-  componentPinStates
+  componentPinStates,
+  componentPwmStates,
 }: {
   isRunning: boolean
   componentPinStates?: Record<string, Record<string, boolean>>
+  componentPwmStates?: Record<string, number>
 }) {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   return (
@@ -617,6 +637,7 @@ function SimulationCanvas({
         canvasRef={canvasRef}
         isRunning={isRunning}
         componentPinStates={componentPinStates}
+        componentPwmStates={componentPwmStates}
       />
     </ReactFlowProvider>
   )
@@ -1006,6 +1027,7 @@ export default function Home() {
     stop: simStop,
     isRunning: simIsRunning,
     pinStates,
+    pwmStates,
     serialOutput,
     clearSerialOutput,
   } = useSimulation(hex, compiledBoard ?? '')
@@ -1114,6 +1136,44 @@ export default function Home() {
 
     return states
   }, [circuitParts, connections, pinStates])
+
+  // Compute PWM values for components based on connections to PWM pins
+  const componentPwmStates = useMemo(() => {
+    const states: Record<string, number> = {}
+    
+    const mcuPart = circuitParts.find((p) => p.type.includes('arduino') || p.type.includes('esp32') || p.type.includes('pi-pico'))
+    if (!mcuPart) return states
+
+    // Find components connected to PWM pins and map their PWM values
+    for (const conn of connections) {
+      let mcuEndpoint = null
+      let componentEndpoint = null
+      
+      if (conn.from.partId === mcuPart.id) {
+        mcuEndpoint = conn.from
+        componentEndpoint = conn.to
+      } else if (conn.to.partId === mcuPart.id) {
+        mcuEndpoint = conn.to
+        componentEndpoint = conn.from
+      }
+      
+      if (!mcuEndpoint || !componentEndpoint) continue
+      
+      // Check if MCU pin is a PWM pin (3, 5, 6, 9, 10, 11 for Arduino Uno)
+      const pinNum = parseInt(mcuEndpoint.pinId, 10)
+      if (isNaN(pinNum)) continue
+      
+      const pwmPins = [3, 5, 6, 9, 10, 11]
+      if (pwmPins.includes(pinNum)) {
+        const pwmValue = pwmStates[pinNum]
+        if (typeof pwmValue === 'number' && pwmValue > 0) {
+          states[componentEndpoint.partId] = pwmValue
+        }
+      }
+    }
+    
+    return states
+  }, [circuitParts, connections, pwmStates])
 
   // Debug: Log componentPinStates changes
   useEffect(() => {
@@ -1294,6 +1354,7 @@ export default function Home() {
                   <SimulationCanvas
                     isRunning={simIsRunning}
                     componentPinStates={componentPinStates}
+                    componentPwmStates={componentPwmStates}
                   />
 
                   {/* Unified Action Bar */}

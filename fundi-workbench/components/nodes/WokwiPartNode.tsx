@@ -25,6 +25,10 @@ interface WokwiPartNodeData {
      * - number (0-255): PWM duty cycle for brightness control
      */
     simulationPinStates?: Record<string, boolean | number>;
+    /** PWM duty cycle value for the component (0-255) - for LED brightness */
+    pwmValue?: number;
+    /** Part type for this component */
+    partType?: WokwiPartType;
     /** Button interaction handlers */
     onButtonPress?: (partId: string) => void;
     onButtonRelease?: (partId: string) => void;
@@ -57,6 +61,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const getCanvasRect = data?.getCanvasRect;
     const onDeletePart = data?.onDeletePart;
     const simulationPinStates = data?.simulationPinStates;
+    const pwmValue = data?.pwmValue;
     const partType = propPartType ?? getPartTypeFromData(data) ?? 'arduino-uno';
 
     const [hoveredPin, setHoveredPin] = useState<string | null>(null);
@@ -261,7 +266,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
 
         // Debug log when simulation states are received
         if (simulationPinStates && Object.keys(simulationPinStates).length > 0) {
-            console.log('[WokwiPartNode] Applying simulation states:', { partType, simulationPinStates });
+            console.log('[WokwiPartNode] Applying simulation states:', { partType, simulationPinStates, pwmValue });
         }
 
         // For LED elements: if anode (A) is HIGH and cathode (C) is LOW or ground, turn ON
@@ -279,22 +284,30 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             // Wokwi uses gamma=2.8 by default
             const GAMMA = 2.8;
 
-            if (typeof anodeState === 'number') {
+            // Check for PWM value first (from componentPwmStates), then fall back to pin state
+            if (typeof pwmValue === 'number' && pwmValue > 0) {
+                // PWM mode from componentPwmStates
+                const normalized = pwmValue / 255;
+                const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
+                console.log('[LED] PWM brightness from pwmValue:', pwmValue, '-> gamma:', gammaCorrected.toFixed(2));
+                ledEl.value = true;
+                element.style.setProperty('--led-brightness', gammaCorrected.toString());
+                element.style.opacity = (0.3 + gammaCorrected * 0.7).toString();
+            } else if (typeof anodeState === 'number') {
                 // PWM mode: anodeState is 0-255
                 const normalized = anodeState / 255;
                 const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
-                console.log('[LED] PWM brightness:', anodeState, '-> normalized:', normalized.toFixed(2), '-> gamma:', gammaCorrected.toFixed(2));
+                console.log('[LED] PWM brightness from pin:', anodeState, '-> gamma:', gammaCorrected.toFixed(2));
                 ledEl.value = anodeState > 0;
-                // Set brightness via CSS custom property for visual effect
                 element.style.setProperty('--led-brightness', gammaCorrected.toString());
-                element.style.filter = `brightness(${0.5 + gammaCorrected * 0.5})`;
+                element.style.opacity = (0.3 + gammaCorrected * 0.7).toString();
             } else {
                 // Boolean mode: simple on/off
                 const anodeHigh = anodeState === true;
                 console.log('[LED] Setting value:', anodeHigh, 'current:', ledEl.value);
                 ledEl.value = anodeHigh;
                 element.style.removeProperty('--led-brightness');
-                element.style.filter = anodeHigh ? 'brightness(1)' : '';
+                element.style.opacity = anodeHigh ? '1' : '0.3';
             }
 
             // Force Lit element to re-render
@@ -434,7 +447,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             }
         }
 
-    }, [simulationPinStates, partType]);
+    }, [simulationPinStates, pwmValue, partType, nodeId]);
 
     // Listen for button press/release events
     useEffect(() => {

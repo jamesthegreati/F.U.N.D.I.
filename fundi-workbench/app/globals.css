@@ -285,6 +285,15 @@ body {
   background: var(--ide-border-focus);
 }
 
+/* Hidden scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* XYFlow / ReactFlow Dark Theme */
 .react-flow__controls {
   border: 1px solid var(--ide-border);

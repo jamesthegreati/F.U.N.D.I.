@@ -109,12 +109,16 @@ class AVRRunner {
   }
 }
 
+// PWM state for analog output (0-255 duty cycle)
+type PwmStates = Record<number, number>;
+
 export type UseSimulationControls = {
   run: () => void;
   stop: () => void;
   pause: () => void;
   isRunning: boolean;
   pinStates: PinStates;
+  pwmStates: PwmStates;
   serialOutput: string[];
   clearSerialOutput: () => void;
 };
@@ -127,9 +131,20 @@ function isAvrPart(partType: string): boolean {
   );
 }
 
+// Arduino Uno PWM pins and their timer/OCR register mappings
+const PWM_PIN_CONFIGS: Record<number, { timer: string; ocrOffset: number }> = {
+  3: { timer: 'timer2', ocrOffset: 0xB4 },  // OC2B - OCR2B
+  5: { timer: 'timer0', ocrOffset: 0x47 },  // OC0B - OCR0B
+  6: { timer: 'timer0', ocrOffset: 0x47 },  // OC0A - OCR0A (note: shares with 5)
+  9: { timer: 'timer1', ocrOffset: 0x88 },  // OC1A - OCR1AL
+  10: { timer: 'timer1', ocrOffset: 0x8A }, // OC1B - OCR1BL
+  11: { timer: 'timer2', ocrOffset: 0xB3 }, // OC2A - OCR2A
+};
+
 export function useSimulation(hexData: string | null | undefined, partType: string): UseSimulationControls {
   const [isRunning, setIsRunning] = useState(false);
   const [pinStates, setPinStates] = useState<PinStates>({});
+  const [pwmStates, setPwmStates] = useState<PwmStates>({});
   const [serialOutput, setSerialOutput] = useState<string[]>([]);
 
   const runnerRef = useRef<AVRRunner | null>(null);
@@ -165,6 +180,32 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
           const pin = 8 + bit;
           next[pin] = (value & (1 << bit)) !== 0;
         }
+      }
+      return next;
+    });
+  }, []);
+
+  // Read PWM duty cycle values from timer OCR registers
+  const updatePwmStates = useCallback((runner: AVRRunner) => {
+    setPwmStates((prev) => {
+      const next: PwmStates = { ...prev };
+      // Read OCR values for PWM pins
+      // Pin 3: OC2B - OCR2B at 0xB4
+      // Pin 5: OC0B - OCR0B at 0x48
+      // Pin 6: OC0A - OCR0A at 0x47
+      // Pin 9: OC1A - OCR1AL at 0x88
+      // Pin 10: OC1B - OCR1BL at 0x8A
+      // Pin 11: OC2A - OCR2A at 0xB3
+      try {
+        const data = runner.cpu.data;
+        next[3] = data[0xB4] ?? 0;   // OCR2B
+        next[5] = data[0x48] ?? 0;   // OCR0B
+        next[6] = data[0x47] ?? 0;   // OCR0A
+        next[9] = data[0x88] ?? 0;   // OCR1AL (low byte)
+        next[10] = data[0x8A] ?? 0;  // OCR1BL (low byte)
+        next[11] = data[0xB3] ?? 0;  // OCR2A
+      } catch {
+        // Ignore errors reading CPU data
       }
       return next;
     });
@@ -214,9 +255,12 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         remaining -= delta > 0 ? delta : 1;
       }
 
+      // Update PWM states once per frame (not every instruction)
+      updatePwmStates(runner);
+
       rafRef.current = requestAnimationFrame(stepFrameRef.current);
     };
-  }, [cyclesPerFrame]);
+  }, [cyclesPerFrame, updatePwmStates]);
 
   const stepFrame = useCallback(() => {
     stepFrameRef.current();
@@ -233,6 +277,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
     runnerRef.current = null;
     setPinStates({});
+    setPwmStates({});
     setSerialOutput([]);
     serialBufferRef.current = '';
   }, []);
@@ -340,5 +385,5 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     };
   }, [stop]);
 
-  return { run, stop, pause, isRunning, pinStates, serialOutput, clearSerialOutput };
+  return { run, stop, pause, isRunning, pinStates, pwmStates, serialOutput, clearSerialOutput };
 }

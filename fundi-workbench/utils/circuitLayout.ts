@@ -4,7 +4,7 @@
  * Smart Circuit Layout Algorithm
  * 
  * Positions AI-generated circuit components in a neat, organized layout.
- * Places microcontroller at center-left, peripherals arranged around it.
+ * Places microcontroller at center-left, peripherals arranged around it by type.
  */
 
 import type { CircuitPart, Connection } from '@/store/useAppStore';
@@ -12,9 +12,10 @@ import type { CircuitPart, Connection } from '@/store/useAppStore';
 // Layout configuration constants
 const GRID_SIZE = 20; // Match ReactFlow snap grid
 const MCU_POSITION = { x: 0, y: 0 };
-const HORIZONTAL_SPACING = 200; // Space between MCU and peripheral column
-const VERTICAL_SPACING = 120; // Space between components in same column
-const MAX_COMPONENTS_PER_COLUMN = 4;
+const COLUMN_WIDTH = 160; // Horizontal spacing between columns
+const VERTICAL_SPACING = 100; // Vertical spacing between components
+const MIN_VERTICAL_SPACING = 80; // Minimum spacing for densely packed columns
+const MAX_COMPONENTS_PER_COLUMN = 5;
 
 // Microcontroller part types
 const MCU_TYPES = new Set([
@@ -23,7 +24,32 @@ const MCU_TYPES = new Set([
     'arduino-mega', 'wokwi-arduino-mega',
     'esp32-devkit-v1', 'wokwi-esp32-devkit-v1',
     'pi-pico', 'wokwi-pi-pico',
+    'attiny85', 'wokwi-attiny85',
+    'franzininho', 'wokwi-franzininho',
+    'nano-rp2040-connect', 'wokwi-nano-rp2040-connect',
 ]);
+
+// Component categories for layout grouping
+type ComponentLayoutCategory = 'mcu' | 'power' | 'output' | 'input' | 'display' | 'other';
+
+const CATEGORY_PATTERNS: Record<ComponentLayoutCategory, RegExp> = {
+    mcu: /arduino|esp32|pi-pico|attiny|franzininho|rp2040/i,
+    power: /resistor|capacitor|vcc|gnd|power|breadboard/i,
+    output: /led|buzzer|relay|speaker|rgb|neopixel|servo|motor|stepper/i,
+    input: /button|pushbutton|switch|potentiometer|sensor|dht|hc-sr|pir|ldr|joystick|encoder|keypad|ir-receiver|ir-remote/i,
+    display: /lcd|oled|ssd1306|segment|ili9341|max7219|tm1637|matrix/i,
+    other: /.*/,
+};
+
+// Column X positions for each category (relative to MCU)
+const CATEGORY_COLUMNS: Record<ComponentLayoutCategory, number> = {
+    mcu: 0,
+    power: 1,      // Column 1: Power/Passive (x = 160)
+    output: 2,     // Column 2: LEDs/Outputs (x = 320)
+    input: 3,      // Column 3: Buttons/Inputs (x = 480)
+    display: 4,    // Column 4: Displays (x = 640)
+    other: 5,      // Column 5: Other (x = 800)
+};
 
 /**
  * Snap a coordinate to the grid
@@ -38,6 +64,20 @@ function snapToGrid(value: number): number {
 function isMicrocontroller(partType: string): boolean {
     const normalized = partType.toLowerCase().replace('wokwi-', '');
     return MCU_TYPES.has(partType) || MCU_TYPES.has(`wokwi-${normalized}`) || MCU_TYPES.has(normalized);
+}
+
+/**
+ * Categorize a component based on its type
+ */
+function categorizeComponent(partType: string): ComponentLayoutCategory {
+    const normalized = partType.toLowerCase();
+    
+    if (CATEGORY_PATTERNS.mcu.test(normalized)) return 'mcu';
+    if (CATEGORY_PATTERNS.display.test(normalized)) return 'display';
+    if (CATEGORY_PATTERNS.input.test(normalized)) return 'input';
+    if (CATEGORY_PATTERNS.output.test(normalized)) return 'output';
+    if (CATEGORY_PATTERNS.power.test(normalized)) return 'power';
+    return 'other';
 }
 
 /**
@@ -62,41 +102,25 @@ function getConnectionCounts(
 }
 
 /**
- * Group parts by their connections to the MCU
+ * Group parts by their layout category
  */
-function groupPartsByConnection(
-    parts: CircuitPart[],
-    connections: Connection[],
-    mcuId: string | null
-): { direct: CircuitPart[]; indirect: CircuitPart[] } {
-    if (!mcuId) {
-        return { direct: parts, indirect: [] };
+function groupPartsByCategory(
+    parts: CircuitPart[]
+): Map<ComponentLayoutCategory, CircuitPart[]> {
+    const groups = new Map<ComponentLayoutCategory, CircuitPart[]>();
+    
+    for (const category of Object.keys(CATEGORY_COLUMNS) as ComponentLayoutCategory[]) {
+        groups.set(category, []);
     }
-
-    const directlyConnected = new Set<string>();
-
-    for (const conn of connections) {
-        if (conn.from.partId === mcuId) {
-            directlyConnected.add(conn.to.partId);
-        }
-        if (conn.to.partId === mcuId) {
-            directlyConnected.add(conn.from.partId);
-        }
-    }
-
-    const direct: CircuitPart[] = [];
-    const indirect: CircuitPart[] = [];
-
+    
     for (const part of parts) {
-        if (part.id === mcuId) continue;
-        if (directlyConnected.has(part.id)) {
-            direct.push(part);
-        } else {
-            indirect.push(part);
-        }
+        const category = categorizeComponent(part.type);
+        const group = groups.get(category) || [];
+        group.push(part);
+        groups.set(category, group);
     }
-
-    return { direct, indirect };
+    
+    return groups;
 }
 
 /**
@@ -108,72 +132,66 @@ export function calculateCircuitLayout(
 ): CircuitPart[] {
     if (parts.length === 0) return parts;
 
-    // Find the microcontroller
-    const mcu = parts.find(p => isMicrocontroller(p.type));
-    const mcuId = mcu?.id || null;
-
-    // Get connection counts for sorting
+    // Get connection counts for sorting within categories
     const connectionCounts = getConnectionCounts(parts, connections);
-
-    // Group parts by connection to MCU
-    const { direct, indirect } = groupPartsByConnection(parts, connections, mcuId);
-
-    // Sort by connection count (most connected first)
-    const sortByConnections = (a: CircuitPart, b: CircuitPart) =>
-        (connectionCounts.get(b.id) || 0) - (connectionCounts.get(a.id) || 0);
-
-    direct.sort(sortByConnections);
-    indirect.sort(sortByConnections);
-
+    
+    // Group parts by category
+    const categoryGroups = groupPartsByCategory(parts);
+    
     // Calculate positions
     const positioned: CircuitPart[] = [];
-
-    // Position MCU at center-left
-    if (mcu) {
+    
+    // Position MCUs first at center-left
+    const mcus = categoryGroups.get('mcu') || [];
+    let mcuYOffset = 0;
+    for (const mcu of mcus) {
         positioned.push({
             ...mcu,
-            position: { x: snapToGrid(MCU_POSITION.x), y: snapToGrid(MCU_POSITION.y) },
+            position: { 
+                x: snapToGrid(MCU_POSITION.x), 
+                y: snapToGrid(MCU_POSITION.y + mcuYOffset) 
+            },
         });
+        mcuYOffset += VERTICAL_SPACING * 2; // MCUs are taller
     }
 
-    // Position directly connected parts in first column to the right of MCU
-    let columnIndex = 0;
-    let rowIndex = 0;
-
-    for (const part of direct) {
-        const x = snapToGrid(MCU_POSITION.x + HORIZONTAL_SPACING * (columnIndex + 1));
-        const y = snapToGrid(MCU_POSITION.y - ((direct.length - 1) * VERTICAL_SPACING / 2) + (rowIndex * VERTICAL_SPACING));
-
-        positioned.push({
-            ...part,
-            position: { x, y },
-        });
-
-        rowIndex++;
-        if (rowIndex >= MAX_COMPONENTS_PER_COLUMN) {
-            rowIndex = 0;
-            columnIndex++;
-        }
-    }
-
-    // Position indirectly connected parts in subsequent columns
-    if (indirect.length > 0) {
-        columnIndex++;
-        rowIndex = 0;
-
-        for (const part of indirect) {
-            const x = snapToGrid(MCU_POSITION.x + HORIZONTAL_SPACING * (columnIndex + 1));
-            const y = snapToGrid(MCU_POSITION.y - ((indirect.length - 1) * VERTICAL_SPACING / 2) + (rowIndex * VERTICAL_SPACING));
-
+    // Position other categories in their designated columns
+    const categories: ComponentLayoutCategory[] = ['power', 'output', 'input', 'display', 'other'];
+    
+    for (const category of categories) {
+        const partsInCategory = categoryGroups.get(category) || [];
+        if (partsInCategory.length === 0) continue;
+        
+        // Sort by connection count (most connected first)
+        partsInCategory.sort((a, b) => 
+            (connectionCounts.get(b.id) || 0) - (connectionCounts.get(a.id) || 0)
+        );
+        
+        const columnIndex = CATEGORY_COLUMNS[category];
+        const baseX = MCU_POSITION.x + COLUMN_WIDTH * columnIndex;
+        
+        // Center the column vertically around MCU
+        const totalHeight = (partsInCategory.length - 1) * VERTICAL_SPACING;
+        const startY = MCU_POSITION.y - totalHeight / 2;
+        
+        let columnCount = 0;
+        let subColumnIndex = 0;
+        
+        for (let i = 0; i < partsInCategory.length; i++) {
+            const part = partsInCategory[i];
+            const rowInColumn = columnCount % MAX_COMPONENTS_PER_COLUMN;
+            
+            const x = snapToGrid(baseX + subColumnIndex * COLUMN_WIDTH);
+            const y = snapToGrid(startY + rowInColumn * VERTICAL_SPACING);
+            
             positioned.push({
                 ...part,
                 position: { x, y },
             });
-
-            rowIndex++;
-            if (rowIndex >= MAX_COMPONENTS_PER_COLUMN) {
-                rowIndex = 0;
-                columnIndex++;
+            
+            columnCount++;
+            if (columnCount % MAX_COMPONENTS_PER_COLUMN === 0) {
+                subColumnIndex++;
             }
         }
     }
