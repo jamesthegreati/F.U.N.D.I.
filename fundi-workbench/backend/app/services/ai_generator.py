@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
-from typing import Optional
+from typing import Optional, List
 
 from google import genai
 
@@ -30,9 +30,28 @@ STRICT REQUIREMENTS:
    - Breadboards: Place at x = 400, y = 200
    - Use spacing of at least 120 pixels between components vertically
    - NEVER stack components at the same coordinates
-5. For resistors, specify the 'value' attribute in ohms (e.g., {"value": "220"} for 220Ω).
 
-6. WOKWI PIN NAMES - USE EXACTLY THESE STRINGS (case-sensitive):
+5. LED COLORS - CRITICAL (use 'attrs' property):
+   - LEDs support different colors via the "attrs" property
+   - Available color names: "red", "green", "blue", "yellow", "white", "orange", "purple"
+   - Can also use hex colors like "#FF00FF" for custom colors
+   - ALWAYS specify color in attrs when user requests colored LEDs
+   - Example: { "id": "led1", "type": "wokwi-led", "x": 400, "y": 0, "attrs": { "color": "green" } }
+   - Example multiple LEDs: 
+     { "id": "led1", "type": "wokwi-led", "x": 400, "y": 0, "attrs": { "color": "red" } }
+     { "id": "led2", "type": "wokwi-led", "x": 400, "y": 120, "attrs": { "color": "green" } }
+     { "id": "led3", "type": "wokwi-led", "x": 400, "y": 240, "attrs": { "color": "blue" } }
+   - For RGB controllable LEDs use 'wokwi-rgb-led', for addressable NeoPixels use 'wokwi-neopixel'
+
+6. BREADBOARDS - Use for complex circuits:
+   - Full-size breadboard: 'wokwi-breadboard' (830 tie points)
+   - Mini breadboard: 'wokwi-breadboard-mini' (170 tie points)
+   - Place breadboard at x=400, y=200 (to the right of MCU)
+   - Example: { "id": "bb1", "type": "wokwi-breadboard", "x": 400, "y": 200 }
+
+7. For resistors, specify the 'value' attribute in ohms (e.g., {"value": "220"} for 220Ω).
+
+8. WOKWI PIN NAMES - USE EXACTLY THESE STRINGS (case-sensitive):
    
    Arduino Uno/Nano/Mega DIGITAL pins (use just the number):
    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"
@@ -65,7 +84,7 @@ STRICT REQUIREMENTS:
    wokwi-potentiometer pins:
    "GND", "SIG", "VCC"
 
-7. EXAMPLE CORRECT CONNECTIONS - Follow this format EXACTLY:
+9. EXAMPLE CORRECT CONNECTIONS - Follow this format EXACTLY:
    
    LED blink circuit (pin 13 → LED → resistor → GND):
    [
@@ -81,22 +100,29 @@ STRICT REQUIREMENTS:
    - "GND" instead of "GND.1"
    - "PIN13" instead of "13"
 
-8. WIRE CONNECTIONS - CRITICAL for visual appeal:
-   - For EACH connection, specify color based on signal type:
-     * Power (VCC, 5V, 3.3V): color="#ef4444" (red), signal_type="power", label="VCC"
-     * Ground (GND): color="#000000" (black), signal_type="ground", label="GND"
-     * Digital pins: color="#3b82f6" (blue), signal_type="digital", label="D13" etc.
-     * Analog pins: color="#22c55e" (green), signal_type="analog", label="A0" etc.
-     * PWM pins: color="#eab308" (yellow), signal_type="pwm", label="PWM"
-     * I2C (SDA/SCL): color="#8b5cf6" (purple), signal_type="i2c"
-     * SPI (MOSI/MISO/SCK): color="#f97316" (orange), signal_type="spi"
-   - Always include label with the pin name for clarity
+10. WIRE CONNECTIONS - CRITICAL for visual appeal:
+    - For EACH connection, specify color based on signal type:
+      * Power (VCC, 5V, 3.3V): color="#ef4444" (red), signal_type="power", label="VCC"
+      * Ground (GND): color="#000000" (black), signal_type="ground", label="GND"
+      * Digital pins: color="#3b82f6" (blue), signal_type="digital", label="D13" etc.
+      * Analog pins: color="#22c55e" (green), signal_type="analog", label="A0" etc.
+      * PWM pins: color="#eab308" (yellow), signal_type="pwm", label="PWM"
+      * I2C (SDA/SCL): color="#8b5cf6" (purple), signal_type="i2c"
+      * SPI (MOSI/MISO/SCK): color="#f97316" (orange), signal_type="spi"
+    - Always include label with the pin name for clarity
 
-9. FILE CHANGES - For complex projects, you can suggest additional files:
-   - Use file_changes to create helper files (e.g., "sensors.h", "config.h")
-   - Specify action: "create", "update", or "delete"
-   - Include full file content for create/update actions
-   - Common patterns: separate sensor code, configuration constants, utility functions
+11. ITERATIVE MODIFICATIONS - When modifying an existing circuit:
+    - Preserve unrelated components and their positions
+    - Only add/remove/modify the components specifically mentioned by the user
+    - Reference existing component IDs when reconnecting wires
+    - Maintain existing layout positions for unchanged components
+    - If user says "change LED color", update the attrs.color, don't replace the component
+
+12. FILE CHANGES - For complex projects, you can suggest additional files:
+    - Use file_changes to create helper files (e.g., "sensors.h", "config.h")
+    - Specify action: "create", "update", or "delete"
+    - Include full file content for create/update actions
+    - Common patterns: separate sensor code, configuration constants, utility functions
 """
 
 
@@ -209,6 +235,7 @@ def generate_circuit(
     teacher_mode: bool = False,
     image_data: Optional[str] = None,
     current_circuit: Optional[str] = None,
+    conversation_history: Optional[List[dict]] = None,
 ) -> AIResponse:
     """Generate Arduino code + Wokwi circuit description from a user prompt.
     
@@ -217,6 +244,7 @@ def generate_circuit(
         teacher_mode: If True, AI explains concepts before providing implementation
         image_data: Optional base64-encoded image for vision-based circuit recognition
         current_circuit: Optional JSON string of current circuit state for context
+        conversation_history: Optional list of previous messages for iterative development
     """
     client = _client()
     
@@ -228,7 +256,21 @@ def generate_circuit(
     else:
         system_prompt = _SYSTEM_PROMPT_BUILDER
     
-    # Build content parts
+    # Build conversation contents with history for iterative development
+    contents = []
+    
+    # Add conversation history (last 5 exchanges for context)
+    if conversation_history:
+        for msg in conversation_history[-10:]:  # Last 10 messages (5 exchanges)
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if content:
+                contents.append({
+                    "role": role,
+                    "parts": [{"text": content}]
+                })
+    
+    # Build current request parts
     parts: list[dict] = []
     
     # Add context about current circuit if available
@@ -266,7 +308,9 @@ def generate_circuit(
     else:
         parts.append({"text": prompt})
     
-    contents = [{"role": "user", "parts": parts}]
+    # Add current request to contents
+    contents.append({"role": "user", "parts": parts})
+
 
     # Prefer the model that is known to exist in your project (per user request),
     # then fall back to other common Flash variants.

@@ -68,49 +68,84 @@ export interface FundiCircuit {
  * Wokwi to FUNDI part type mapping
  */
 const WOKWI_TO_FUNDI_TYPE: Record<string, string> = {
+    // Microcontrollers
     'wokwi-arduino-uno': 'arduino-uno',
     'wokwi-arduino-nano': 'arduino-nano',
     'wokwi-arduino-mega': 'arduino-mega',
     'wokwi-esp32-devkit-v1': 'esp32-devkit-v1',
+    'wokwi-attiny85': 'attiny85',
+    'wokwi-pi-pico': 'pi-pico',
+
+    // LEDs
     'wokwi-led': 'led',
     'wokwi-led-ring': 'led-ring',
     'wokwi-rgb-led': 'rgb-led',
-    'wokwi-resistor': 'resistor',
-    'wokwi-pushbutton': 'pushbutton',
-    'wokwi-slide-switch': 'slide-switch',
-    'wokwi-servo': 'servo',
-    'wokwi-potentiometer': 'potentiometer',
-    'wokwi-dht22': 'dht22',
-    'wokwi-hc-sr04': 'hc-sr04',
-    'wokwi-buzzer': 'buzzer',
-    'wokwi-lcd1602': 'lcd1602',
-    'wokwi-lcd2004': 'lcd2004',
-    'wokwi-ssd1306': 'ssd1306',
-    'wokwi-membrane-keypad': 'membrane-keypad',
-    'wokwi-7segment': '7segment',
-    'wokwi-breadboard': 'breadboard',
-    'wokwi-breadboard-mini': 'breadboard-mini',
     'wokwi-neopixel': 'neopixel',
     'wokwi-neopixel-matrix': 'neopixel-matrix',
+    'wokwi-led-bar-graph': 'led-bar-graph',
+    'wokwi-nlsf595': 'nlsf595',
+
+    // Input devices
+    'wokwi-resistor': 'resistor',
+    'wokwi-pushbutton': 'pushbutton',
+    'wokwi-pushbutton-6mm': 'pushbutton-6mm',
+    'wokwi-slide-switch': 'slide-switch',
+    'wokwi-potentiometer': 'potentiometer',
+    'wokwi-slide-potentiometer': 'slide-potentiometer',
+    'wokwi-dip-switch-8': 'dip-switch-8',
+    'wokwi-analog-joystick': 'analog-joystick',
+    'wokwi-ky-040': 'rotary-encoder',
+    'wokwi-rotary-encoder': 'rotary-encoder',
+    'wokwi-membrane-keypad': 'membrane-keypad',
+
+    // Sensors
+    'wokwi-dht22': 'dht22',
+    'wokwi-hc-sr04': 'hc-sr04',
+    'wokwi-pir-motion-sensor': 'pir-motion',
+    'wokwi-photoresistor-sensor': 'photoresistor',
+    'wokwi-ds18b20': 'ds18b20',
+    'wokwi-ds1307': 'ds1307',
+    'wokwi-mpu6050': 'mpu6050',
+    'wokwi-ntc-temperature-sensor': 'ntc-temperature-sensor',
+    'wokwi-hx711': 'hx711',
+    'wokwi-gas-sensor': 'gas-sensor',
+    'wokwi-tilt-sensor': 'tilt-sensor',
+    'wokwi-heart-beat-sensor': 'heart-beat-sensor',
     'wokwi-ir-receiver': 'ir-receiver',
     'wokwi-ir-remote': 'ir-remote',
-    'wokwi-pir-motion-sensor': 'pir-motion-sensor',
-    'wokwi-photoresistor-sensor': 'photoresistor-sensor',
-    'wokwi-ds18b20': 'ds18b20',
+
+    // Displays
+    'wokwi-lcd1602': 'lcd1602',
+    'wokwi-lcd2004': 'lcd2004',
+    'wokwi-ssd1306': 'oled-128x64-i2c',
+    'wokwi-7segment': 'seven-segment',
+    'wokwi-ili9341': 'ili9341',
+    'wokwi-max7219-matrix': 'max7219-matrix',
+    'wokwi-tm1637-7segment': 'tm1637-7segment',
+
+    // Motors
+    'wokwi-servo': 'servo',
     'wokwi-stepper-motor': 'stepper-motor',
-    'wokwi-sd-card': 'sd-card',
     'wokwi-biaxial-stepper': 'biaxial-stepper',
-    'wokwi-relay-module': 'relay-module',
+    'wokwi-a4988': 'a4988',
     'wokwi-motor': 'motor',
+
+    // Output
+    'wokwi-buzzer': 'buzzer',
+    'wokwi-relay-module': 'relay-module',
+
+    // Logic ICs
+    'wokwi-74hc595': '74hc595',
+    'wokwi-74hc165': '74hc165',
+
+    // Passive/Wiring
+    'wokwi-breadboard': 'breadboard',
+    'wokwi-breadboard-mini': 'breadboard-mini',
+    'wokwi-microsd-card': 'microsd-card',
+    'wokwi-sd-card': 'sd-card',
+
+    // Misc
     'wokwi-text': 'text',
-    'wokwi-ntc-temperature-sensor': 'ntc-temperature-sensor',
-    'wokwi-analog-joystick': 'analog-joystick',
-    'wokwi-gas-sensor': 'gas-sensor',
-    'wokwi-rotary-encoder': 'rotary-encoder',
-    'wokwi-tilt-sensor': 'tilt-sensor',
-    'wokwi-dip-switch-8': 'dip-switch-8',
-    'wokwi-slide-potentiometer': 'slide-potentiometer',
-    'wokwi-heart-beat-sensor': 'heart-beat-sensor',
 };
 
 /**

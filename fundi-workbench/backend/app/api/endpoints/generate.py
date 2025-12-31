@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -11,11 +11,21 @@ from app.services.ai_generator import generate_circuit
 router = APIRouter()
 
 
+class ConversationMessage(BaseModel):
+    """A single message in the conversation history."""
+    role: str = Field(..., description="Either 'user' or 'assistant'")
+    content: str = Field(..., description="The message content")
+
+
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=5000, description="User prompt for circuit generation")
     teacher_mode: bool = Field(default=False, description="Enable educational explanations")
     image_data: Optional[str] = Field(default=None, description="Base64-encoded image data")
     current_circuit: Optional[str] = Field(default=None, max_length=100000, description="Current circuit JSON state")
+    conversation_history: Optional[List[ConversationMessage]] = Field(
+        default=None, 
+        description="Previous messages in the conversation for iterative development context"
+    )
 
     @field_validator("prompt")
     @classmethod
@@ -43,11 +53,17 @@ class GenerateRequest(BaseModel):
 @router.post("/api/v1/generate", response_model=AIResponse)
 def generate(req: GenerateRequest) -> AIResponse:
     try:
+        # Convert conversation history to dict format for AI generator
+        history = None
+        if req.conversation_history:
+            history = [{"role": msg.role, "content": msg.content} for msg in req.conversation_history]
+        
         return generate_circuit(
             prompt=req.prompt,
             teacher_mode=req.teacher_mode,
             image_data=req.image_data,
             current_circuit=req.current_circuit,
+            conversation_history=history,
         )
     except ValueError as exc:
         # Client errors (bad input)
@@ -61,3 +77,4 @@ def generate(req: GenerateRequest) -> AIResponse:
             status_code=500,
             detail=f"Internal server error during circuit generation: {str(exc)}"
         ) from exc
+

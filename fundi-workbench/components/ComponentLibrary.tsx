@@ -2,9 +2,9 @@
 
 import '@wokwi/elements';
 import { memo, useMemo, useState, useRef, useEffect } from 'react';
-import { Cpu, Lightbulb, Gauge, Monitor } from 'lucide-react';
+import { Cpu, Lightbulb, Gauge, Monitor, Zap, CircuitBoard, Settings, Cog } from 'lucide-react';
 import type { WokwiPartType } from '@/lib/wokwiParts';
-import { WOKWI_PARTS } from '@/lib/wokwiParts';
+import { WOKWI_PARTS, type ComponentCategory } from '@/lib/wokwiParts';
 import { cn } from '@/utils/cn';
 
 export const FUNDI_PART_MIME = 'application/x-fundi-part';
@@ -16,7 +16,7 @@ type PartCatalogItem = {
 };
 
 type CatalogCategory = {
-  key: 'mcu' | 'displays' | 'leds' | 'sensors';
+  key: ComponentCategory;
   title: string;
   items: PartCatalogItem[];
   icon: React.ComponentType<{ className?: string }>;
@@ -78,27 +78,35 @@ function WokwiElementPreview({
 }
 
 export function buildPartCatalog(): CatalogCategory[] {
-  const base: Record<CatalogCategory['key'], PartCatalogItem[]> = {
+  const base: Record<ComponentCategory, PartCatalogItem[]> = {
     mcu: [],
     displays: [],
     leds: [],
-    sensors: [],
+    input: [],
+    output: [],
+    passive: [],
+    logic: [],
+    motors: [],
   };
 
   for (const id of Object.keys(WOKWI_PARTS) as WokwiPartType[]) {
     const cfg = WOKWI_PARTS[id];
     const cat = cfg.category ?? 'mcu';
-    base[cat].push({ id, name: cfg.name, description: cfg.description });
+    if (base[cat]) {
+      base[cat].push({ id, name: cfg.name, description: cfg.description });
+    }
   }
 
-  return (
-    [
-      { key: 'mcu', title: 'MCU', items: base.mcu, icon: Cpu },
-      { key: 'displays', title: 'Display', items: base.displays, icon: Monitor },
-      { key: 'leds', title: 'LEDs', items: base.leds, icon: Lightbulb },
-      { key: 'sensors', title: 'Input', items: base.sensors, icon: Gauge },
-    ] satisfies CatalogCategory[]
-  );
+  return [
+    { key: 'mcu', title: 'MCU', items: base.mcu, icon: Cpu },
+    { key: 'displays', title: 'Display', items: base.displays, icon: Monitor },
+    { key: 'leds', title: 'LEDs', items: base.leds, icon: Lightbulb },
+    { key: 'input', title: 'Input', items: base.input, icon: Gauge },
+    { key: 'output', title: 'Output', items: base.output, icon: Zap },
+    { key: 'passive', title: 'Wiring', items: base.passive, icon: CircuitBoard },
+    { key: 'logic', title: 'Logic', items: base.logic, icon: Settings },
+    { key: 'motors', title: 'Motors', items: base.motors, icon: Cog },
+  ] satisfies CatalogCategory[];
 }
 
 function ComponentLibrary() {
