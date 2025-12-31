@@ -109,31 +109,33 @@ function ComponentLibrary() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Category Tabs - Horizontal Pills */}
+      {/* Category Tabs - Horizontal Scrollable with Snap Points */}
       <div className="shrink-0 border-b border-ide-border pb-3 mb-3">
-        <div className="flex gap-1">
-          {categories.map((cat) => {
-            const isActive = cat.key === active;
-            const Icon = cat.icon;
+        <div className="relative">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-smooth pb-1">
+            {categories.map((cat) => {
+              const isActive = cat.key === active;
+              const Icon = cat.icon;
 
-            return (
-              <button
-                key={cat.key}
-                type="button"
-                onClick={() => setActive(cat.key)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all',
-                  isActive
-                    ? 'bg-ide-accent/20 text-ide-accent'
-                    : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
-                )}
-                title={cat.title}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span>{cat.title}</span>
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => setActive(cat.key)}
+                  className={cn(
+                    'snap-start shrink-0 min-w-[60px] flex flex-col items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all',
+                    isActive
+                      ? 'bg-ide-accent/20 text-ide-accent'
+                      : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
+                  )}
+                  title={cat.title}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="text-[10px] leading-tight">{cat.title}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
