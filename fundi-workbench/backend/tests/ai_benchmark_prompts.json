@@ -1,0 +1,113 @@
+[
+  {
+    "id": "led_blink_basic",
+    "prompt": "Create a simple LED blink circuit on pin 13",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-led", "wokwi-resistor"],
+    "required_code_patterns": ["pinMode", "digitalWrite", "delay"],
+    "validation": {
+      "min_parts": 3,
+      "max_parts": 5,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "traffic_light",
+    "prompt": "Create a traffic light with red, yellow, green LEDs that cycles every 5 seconds",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-led", "wokwi-led", "wokwi-led", "wokwi-resistor", "wokwi-resistor", "wokwi-resistor"],
+    "required_code_patterns": ["digitalWrite", "delay"],
+    "validation": {
+      "min_parts": 7,
+      "max_parts": 10,
+      "must_have_mcu": true,
+      "led_colors": ["red", "yellow", "green"]
+    }
+  },
+  {
+    "id": "button_led",
+    "prompt": "Create a circuit where pressing a button turns on an LED",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-led", "wokwi-resistor", "wokwi-pushbutton"],
+    "required_code_patterns": ["pinMode", "digitalRead", "digitalWrite", "INPUT_PULLUP"],
+    "validation": {
+      "min_parts": 4,
+      "max_parts": 6,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "potentiometer_led",
+    "prompt": "Create a circuit where a potentiometer controls LED brightness using PWM",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-led", "wokwi-resistor", "wokwi-potentiometer"],
+    "required_code_patterns": ["analogRead", "analogWrite"],
+    "validation": {
+      "min_parts": 4,
+      "max_parts": 6,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "servo_control",
+    "prompt": "Create a circuit with a servo motor that sweeps back and forth",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-servo"],
+    "required_code_patterns": ["Servo", "attach", "write"],
+    "validation": {
+      "min_parts": 2,
+      "max_parts": 4,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "buzzer_melody",
+    "prompt": "Create a circuit with a buzzer that plays a simple melody",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-buzzer"],
+    "required_code_patterns": ["tone", "noTone"],
+    "validation": {
+      "min_parts": 2,
+      "max_parts": 4,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "temperature_display",
+    "prompt": "Build a temperature display with DHT22 sensor showing readings on a 16x2 LCD",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-dht22", "wokwi-lcd1602"],
+    "required_code_patterns": ["DHT", "readTemperature", "lcd.print"],
+    "validation": {
+      "min_parts": 3,
+      "max_parts": 6,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "ultrasonic_distance",
+    "prompt": "Create a distance measurement circuit with HC-SR04 ultrasonic sensor",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-hc-sr04"],
+    "required_code_patterns": ["pulseIn", "digitalWrite"],
+    "validation": {
+      "min_parts": 2,
+      "max_parts": 5,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "rgb_led_cycle",
+    "prompt": "Create an RGB LED that cycles through different colors",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-rgb-led"],
+    "required_code_patterns": ["analogWrite"],
+    "validation": {
+      "min_parts": 2,
+      "max_parts": 6,
+      "must_have_mcu": true
+    }
+  },
+  {
+    "id": "motion_alarm",
+    "prompt": "Create a motion-activated alarm with PIR sensor and buzzer",
+    "expected_components": ["wokwi-arduino-uno", "wokwi-pir-motion-sensor", "wokwi-buzzer"],
+    "required_code_patterns": ["digitalRead", "tone"],
+    "validation": {
+      "min_parts": 3,
+      "max_parts": 6,
+      "must_have_mcu": true
+    }
+  }
+]

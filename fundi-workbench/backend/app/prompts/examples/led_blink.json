@@ -1,0 +1,17 @@
+{
+  "name": "LED Blink",
+  "description": "Basic LED blink on pin 13 with proper resistor",
+  "complexity": "simple",
+  "code": "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}",
+  "circuit_parts": [
+    {"id": "arduino1", "type": "wokwi-arduino-uno", "x": 0, "y": 0},
+    {"id": "led1", "type": "wokwi-led", "x": 320, "y": 40, "attrs": {"color": "red"}},
+    {"id": "r1", "type": "wokwi-resistor", "x": 320, "y": 120, "attrs": {"value": "220"}}
+  ],
+  "connections": [
+    {"source_part": "arduino1", "source_pin": "13", "target_part": "led1", "target_pin": "A", "color": "#3b82f6", "signal_type": "digital"},
+    {"source_part": "led1", "source_pin": "C", "target_part": "r1", "target_pin": "1", "color": "#3b82f6", "signal_type": "digital"},
+    {"source_part": "r1", "source_pin": "2", "target_part": "arduino1", "target_pin": "GND.1", "color": "#000000", "signal_type": "ground"}
+  ],
+  "explanation": "Simple LED blink circuit. The Arduino pin 13 controls the LED through a 220Ω current-limiting resistor."
+}
