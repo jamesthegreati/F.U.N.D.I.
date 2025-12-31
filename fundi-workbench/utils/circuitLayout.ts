@@ -12,18 +12,66 @@ import type { CircuitPart, Connection } from '@/store/useAppStore';
 // Layout configuration constants
 const GRID_SIZE = 20; // Match ReactFlow snap grid
 const MCU_POSITION = { x: 0, y: 0 };
-const HORIZONTAL_SPACING = 200; // Space between MCU and peripheral column
+const COLUMN_SPACING = 300; // Increased space between columns
 const VERTICAL_SPACING = 120; // Space between components in same column
 const MAX_COMPONENTS_PER_COLUMN = 4;
 
-// Microcontroller part types
-const MCU_TYPES = new Set([
+// Component type categories for smart positioning
+const COMPONENT_CATEGORIES = {
+  mcu: new Set([
     'arduino-uno', 'wokwi-arduino-uno',
     'arduino-nano', 'wokwi-arduino-nano',
     'arduino-mega', 'wokwi-arduino-mega',
     'esp32-devkit-v1', 'wokwi-esp32-devkit-v1',
     'pi-pico', 'wokwi-pi-pico',
-]);
+    'nano-rp2040-connect', 'wokwi-nano-rp2040-connect',
+    'franzininho', 'wokwi-franzininho',
+  ]),
+  power: new Set([
+    'resistor', 'wokwi-resistor',
+    'potentiometer', 'wokwi-potentiometer',
+    'slide-potentiometer', 'wokwi-slide-potentiometer',
+  ]),
+  outputs: new Set([
+    'led', 'wokwi-led',
+    'rgb-led', 'wokwi-rgb-led',
+    'neopixel', 'wokwi-neopixel',
+    'neopixel-matrix', 'wokwi-neopixel-matrix',
+    'led-bar-graph', 'wokwi-led-bar-graph',
+    'led-ring', 'wokwi-led-ring',
+    'buzzer', 'wokwi-buzzer',
+    'servo', 'wokwi-servo',
+  ]),
+  inputs: new Set([
+    'pushbutton', 'wokwi-pushbutton',
+    'pushbutton-6mm', 'wokwi-pushbutton-6mm',
+    'slide-switch', 'wokwi-slide-switch',
+    'dip-switch-8', 'wokwi-dip-switch-8',
+    'membrane-keypad', 'wokwi-membrane-keypad',
+    'analog-joystick', 'wokwi-analog-joystick',
+    'rotary-encoder', 'wokwi-ky-040',
+  ]),
+  sensors: new Set([
+    'dht22', 'wokwi-dht22',
+    'hc-sr04', 'wokwi-hc-sr04',
+    'pir-motion', 'wokwi-pir-motion-sensor',
+    'photoresistor', 'wokwi-photoresistor-sensor',
+    'mpu6050', 'wokwi-mpu6050',
+    'ds1307', 'wokwi-ds1307',
+    'ir-receiver', 'wokwi-ir-receiver',
+    'ir-remote', 'wokwi-ir-remote',
+  ]),
+  displays: new Set([
+    'oled-128x64-i2c', 'wokwi-ssd1306',
+    'lcd1602', 'wokwi-lcd1602',
+    'lcd2004', 'wokwi-lcd2004',
+    'seven-segment', 'wokwi-7segment',
+    'ili9341', 'wokwi-ili9341',
+  ]),
+};
+
+// Microcontroller part types (keep for backward compatibility)
+const MCU_TYPES = COMPONENT_CATEGORIES.mcu;
 
 /**
  * Snap a coordinate to the grid
@@ -38,6 +86,21 @@ function snapToGrid(value: number): number {
 function isMicrocontroller(partType: string): boolean {
     const normalized = partType.toLowerCase().replace('wokwi-', '');
     return MCU_TYPES.has(partType) || MCU_TYPES.has(`wokwi-${normalized}`) || MCU_TYPES.has(normalized);
+}
+
+/**
+ * Categorize a part by its type
+ */
+function categorizeComponent(partType: string): 'mcu' | 'power' | 'outputs' | 'inputs' | 'sensors' | 'displays' | 'other' {
+    const normalized = partType.toLowerCase().replace('wokwi-', '');
+    
+    for (const [category, types] of Object.entries(COMPONENT_CATEGORIES)) {
+        if (types.has(partType) || types.has(`wokwi-${normalized}`) || types.has(normalized)) {
+            return category as 'mcu' | 'power' | 'outputs' | 'inputs' | 'sensors' | 'displays';
+        }
+    }
+    
+    return 'other';
 }
 
 /**
@@ -112,18 +175,34 @@ export function calculateCircuitLayout(
     const mcu = parts.find(p => isMicrocontroller(p.type));
     const mcuId = mcu?.id || null;
 
-    // Get connection counts for sorting
+    // Get connection counts for sorting within categories
     const connectionCounts = getConnectionCounts(parts, connections);
 
-    // Group parts by connection to MCU
-    const { direct, indirect } = groupPartsByConnection(parts, connections, mcuId);
+    // Categorize all non-MCU parts
+    const categorized: Record<string, CircuitPart[]> = {
+        power: [],
+        outputs: [],
+        inputs: [],
+        sensors: [],
+        displays: [],
+        other: [],
+    };
 
-    // Sort by connection count (most connected first)
+    for (const part of parts) {
+        if (part.id === mcuId) continue;
+        const category = categorizeComponent(part.type);
+        if (category !== 'mcu') {
+            categorized[category].push(part);
+        }
+    }
+
+    // Sort each category by connection count
     const sortByConnections = (a: CircuitPart, b: CircuitPart) =>
         (connectionCounts.get(b.id) || 0) - (connectionCounts.get(a.id) || 0);
 
-    direct.sort(sortByConnections);
-    indirect.sort(sortByConnections);
+    for (const category of Object.keys(categorized)) {
+        categorized[category].sort(sortByConnections);
+    }
 
     // Calculate positions
     const positioned: CircuitPart[] = [];
@@ -136,44 +215,56 @@ export function calculateCircuitLayout(
         });
     }
 
-    // Position directly connected parts in first column to the right of MCU
-    let columnIndex = 0;
-    let rowIndex = 0;
+    // Column assignments for different categories
+    // Column 1 (x=300): Power components & resistors
+    // Column 2 (x=500): LEDs & outputs  
+    // Column 3 (x=650): Buttons & inputs
+    // Column 4 (x=800): Sensors
+    // Row below MCU (y=400): Displays
 
-    for (const part of direct) {
-        const x = snapToGrid(MCU_POSITION.x + HORIZONTAL_SPACING * (columnIndex + 1));
-        const y = snapToGrid(MCU_POSITION.y - ((direct.length - 1) * VERTICAL_SPACING / 2) + (rowIndex * VERTICAL_SPACING));
+    const columnAssignments = {
+        power: 1,
+        outputs: 2,
+        inputs: 3,
+        sensors: 4,
+        displays: 0, // Special: placed below MCU
+        other: 5,
+    };
 
-        positioned.push({
-            ...part,
-            position: { x, y },
-        });
+    // Position components by category
+    for (const [category, parts] of Object.entries(categorized)) {
+        if (parts.length === 0) continue;
 
-        rowIndex++;
-        if (rowIndex >= MAX_COMPONENTS_PER_COLUMN) {
-            rowIndex = 0;
-            columnIndex++;
-        }
-    }
+        const columnIndex = columnAssignments[category as keyof typeof columnAssignments];
 
-    // Position indirectly connected parts in subsequent columns
-    if (indirect.length > 0) {
-        columnIndex++;
-        rowIndex = 0;
+        if (category === 'displays') {
+            // Special positioning for displays - below MCU in a row
+            for (let i = 0; i < parts.length; i++) {
+                const x = snapToGrid(MCU_POSITION.x + (i * COLUMN_SPACING));
+                const y = snapToGrid(MCU_POSITION.y + 400);
 
-        for (const part of indirect) {
-            const x = snapToGrid(MCU_POSITION.x + HORIZONTAL_SPACING * (columnIndex + 1));
-            const y = snapToGrid(MCU_POSITION.y - ((indirect.length - 1) * VERTICAL_SPACING / 2) + (rowIndex * VERTICAL_SPACING));
+                positioned.push({
+                    ...parts[i],
+                    position: { x, y },
+                });
+            }
+        } else {
+            // Standard column positioning
+            const numInColumn = Math.min(parts.length, MAX_COMPONENTS_PER_COLUMN);
+            const startY = MCU_POSITION.y - ((numInColumn - 1) * VERTICAL_SPACING / 2);
 
-            positioned.push({
-                ...part,
-                position: { x, y },
-            });
+            for (let i = 0; i < parts.length; i++) {
+                const col = columnIndex + Math.floor(i / MAX_COMPONENTS_PER_COLUMN);
+                const row = i % MAX_COMPONENTS_PER_COLUMN;
+                const rowOffset = row - (Math.min(parts.length, MAX_COMPONENTS_PER_COLUMN) - 1) / 2;
 
-            rowIndex++;
-            if (rowIndex >= MAX_COMPONENTS_PER_COLUMN) {
-                rowIndex = 0;
-                columnIndex++;
+                const x = snapToGrid(MCU_POSITION.x + COLUMN_SPACING * col);
+                const y = snapToGrid(MCU_POSITION.y + rowOffset * VERTICAL_SPACING);
+
+                positioned.push({
+                    ...parts[i],
+                    position: { x, y },
+                });
             }
         }
     }

@@ -33,6 +33,7 @@ function WokwiElementPreview({
   fallbackIcon: React.ComponentType<{ className?: string }>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -45,16 +46,26 @@ function WokwiElementPreview({
       // Create the wokwi element
       const element = document.createElement(elementTag);
 
-      // Set some common attributes for better preview
+      // Set common attributes for better preview appearance
       if (elementTag === 'wokwi-led') {
         element.setAttribute('color', 'red');
-      } else if (elementTag === 'wokwi-pushbutton') {
+      } else if (elementTag === 'wokwi-rgb-led') {
+        element.setAttribute('color', '#ff0000');
+      } else if (elementTag === 'wokwi-pushbutton' || elementTag === 'wokwi-pushbutton-6mm') {
         element.setAttribute('color', 'red');
+      } else if (elementTag === 'wokwi-resistor') {
+        element.setAttribute('value', '220');
+      } else if (elementTag === 'wokwi-potentiometer' || elementTag === 'wokwi-slide-potentiometer') {
+        element.setAttribute('value', '50');
       }
 
       container.appendChild(element);
+      
+      // Mark as loaded after a brief delay to ensure element is rendered
+      setTimeout(() => setHasLoaded(true), 100);
     } catch (error) {
       console.error(`Failed to create wokwi element: ${elementTag}`, error);
+      setHasLoaded(false);
     }
   }, [elementTag]);
 
@@ -69,8 +80,8 @@ function WokwiElementPreview({
           transformOrigin: 'center',
         }}
       />
-      {/* Fallback icon (will be hidden if wokwi element loads) */}
-      {!containerRef.current?.hasChildNodes() && (
+      {/* Fallback icon - shown if element hasn't loaded */}
+      {!hasLoaded && (
         <FallbackIcon className="absolute h-8 w-8 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
       )}
     </div>
@@ -109,31 +120,33 @@ function ComponentLibrary() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Category Tabs - Horizontal Pills */}
+      {/* Category Tabs - Horizontal Scrollable with Snap Points */}
       <div className="shrink-0 border-b border-ide-border pb-3 mb-3">
-        <div className="flex gap-1">
-          {categories.map((cat) => {
-            const isActive = cat.key === active;
-            const Icon = cat.icon;
+        <div className="relative">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-smooth pb-1">
+            {categories.map((cat) => {
+              const isActive = cat.key === active;
+              const Icon = cat.icon;
 
-            return (
-              <button
-                key={cat.key}
-                type="button"
-                onClick={() => setActive(cat.key)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all',
-                  isActive
-                    ? 'bg-ide-accent/20 text-ide-accent'
-                    : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
-                )}
-                title={cat.title}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span>{cat.title}</span>
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => setActive(cat.key)}
+                  className={cn(
+                    'snap-start shrink-0 min-w-[60px] flex flex-col items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all',
+                    isActive
+                      ? 'bg-ide-accent/20 text-ide-accent'
+                      : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
+                  )}
+                  title={cat.title}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="text-[10px] leading-tight">{cat.title}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 

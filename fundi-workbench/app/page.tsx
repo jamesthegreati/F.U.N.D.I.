@@ -315,6 +315,19 @@ function SimulationCanvasInner({
     }
   }, [circuitParts, getCanvasRect, nodes, removePart, selectedPartIds, setNodes])
 
+  // Auto-fit view when circuit parts change (e.g., after AI generation)
+  useEffect(() => {
+    if (!initializedRef.current) return
+    if (circuitParts.length === 0) return
+
+    // Delay to allow nodes to render before fitting view
+    const timeoutId = setTimeout(() => {
+      fitView({ padding: 0.2, duration: 500 })
+    }, 100)
+
+    return () => clearTimeout(timeoutId)
+  }, [circuitParts.length, fitView])
+
   // Update node data when handlers change
   useEffect(() => {
     setNodes((nds) =>
@@ -581,6 +594,8 @@ function SimulationCanvasInner({
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        snapToGrid={true}
+        snapGrid={[20, 20]}
         fitView
         className="h-full w-full"
         style={{ cursor: 'inherit', background: 'transparent' }}
