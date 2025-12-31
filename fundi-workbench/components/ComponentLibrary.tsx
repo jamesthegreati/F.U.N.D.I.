@@ -33,6 +33,7 @@ function WokwiElementPreview({
   fallbackIcon: React.ComponentType<{ className?: string }>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -45,16 +46,26 @@ function WokwiElementPreview({
       // Create the wokwi element
       const element = document.createElement(elementTag);
 
-      // Set some common attributes for better preview
+      // Set common attributes for better preview appearance
       if (elementTag === 'wokwi-led') {
         element.setAttribute('color', 'red');
-      } else if (elementTag === 'wokwi-pushbutton') {
+      } else if (elementTag === 'wokwi-rgb-led') {
+        element.setAttribute('color', '#ff0000');
+      } else if (elementTag === 'wokwi-pushbutton' || elementTag === 'wokwi-pushbutton-6mm') {
         element.setAttribute('color', 'red');
+      } else if (elementTag === 'wokwi-resistor') {
+        element.setAttribute('value', '220');
+      } else if (elementTag === 'wokwi-potentiometer' || elementTag === 'wokwi-slide-potentiometer') {
+        element.setAttribute('value', '50');
       }
 
       container.appendChild(element);
+      
+      // Mark as loaded after a brief delay to ensure element is rendered
+      setTimeout(() => setHasLoaded(true), 100);
     } catch (error) {
       console.error(`Failed to create wokwi element: ${elementTag}`, error);
+      setHasLoaded(false);
     }
   }, [elementTag]);
 
@@ -69,8 +80,8 @@ function WokwiElementPreview({
           transformOrigin: 'center',
         }}
       />
-      {/* Fallback icon (will be hidden if wokwi element loads) */}
-      {!containerRef.current?.hasChildNodes() && (
+      {/* Fallback icon - shown if element hasn't loaded */}
+      {!hasLoaded && (
         <FallbackIcon className="absolute h-8 w-8 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
       )}
     </div>
