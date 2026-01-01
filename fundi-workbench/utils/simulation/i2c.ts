@@ -12,15 +12,17 @@ export interface I2CDevice {
     address: number;
     /** Device name for logging/debugging */
     name: string;
-    /** Handle a write transaction (called on STOP or immediately if streamingWrite is true) */
+    /** Handle a write transaction. Called on STOP condition for buffered devices. */
     write?: (data: number[]) => void;
     /** Handle a read request - return the data to send back */
     read?: () => number[];
     /** Reset the device state */
     reset?: () => void;
     /** 
-     * If true, write() is called immediately for each byte instead of buffering until STOP.
-     * Required for devices like LCD1602 (PCF8574 backpack) that need real-time byte processing.
+     * If true, write() is called immediately for each byte instead of buffering.
+     * Streaming mode bypasses the internal buffer entirely - each I2C data byte 
+     * triggers an immediate write([byte]) call. Required for devices like LCD1602
+     * (PCF8574 backpack) that need real-time byte processing to detect signal edges.
      */
     streamingWrite?: boolean;
 }
