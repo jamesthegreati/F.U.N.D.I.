@@ -1,0 +1,28 @@
+{
+  "id": "potentiometer-led",
+  "name": "Potentiometer LED Dimmer",
+  "description": "Control LED brightness with a potentiometer using analog input and PWM output",
+  "difficulty": "beginner",
+  "tags": ["potentiometer", "led", "analog-input", "pwm", "analog"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -120, "left": 220, "attrs": { "color": "blue" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -80, "left": 220, "attrs": { "value": "220" } },
+      { "type": "wokwi-potentiometer", "id": "pot1", "top": -120, "left": 80 }
+    ],
+    "connections": [
+      ["uno:9", "r1:1", "blue", []],
+      ["r1:2", "led1:A", "blue", []],
+      ["led1:C", "uno:GND.1", "black", []],
+      ["pot1:VCC", "uno:5V", "red", []],
+      ["pot1:GND", "uno:GND.2", "black", []],
+      ["pot1:SIG", "uno:A0", "green", []]
+    ]
+  },
+  "code": "// Potentiometer LED Dimmer\n// Read analog input from potentiometer and control LED brightness via PWM\n\nconst int POT_PIN = A0;    // Analog input\nconst int LED_PIN = 9;     // PWM output (pins 3, 5, 6, 9, 10, 11)\n\nvoid setup() {\n  pinMode(LED_PIN, OUTPUT);\n  Serial.begin(9600);\n  Serial.println(\"Potentiometer LED Dimmer\");\n  Serial.println(\"Turn the potentiometer to adjust brightness\");\n}\n\nvoid loop() {\n  // Read potentiometer (0-1023)\n  int potValue = analogRead(POT_PIN);\n  \n  // Map to PWM range (0-255)\n  int brightness = map(potValue, 0, 1023, 0, 255);\n  \n  // Set LED brightness\n  analogWrite(LED_PIN, brightness);\n  \n  // Print values for debugging\n  Serial.print(\"Pot: \");\n  Serial.print(potValue);\n  Serial.print(\" -> Brightness: \");\n  Serial.println(brightness);\n  \n  delay(100);  // Update rate\n}"
+}

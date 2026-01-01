@@ -17,6 +17,9 @@ import {
   timer0Config,
   usart0Config,
   type GPIOListener,
+  AVRADC,
+  adcConfig,
+  ADCMuxInputType,
 } from 'avr8js';
 
 import { useAppStore } from '@/store/useAppStore';
@@ -24,6 +27,7 @@ import { getI2CBus } from '@/utils/simulation/i2c';
 import { getLCD1602 } from '@/utils/simulation/lcd1602';
 import { getSSD1306 } from '@/utils/simulation/ssd1306';
 import { DHTDevice, type DHTType } from '@/utils/simulation/dht';
+import { getInteractiveComponentManager } from '@/utils/simulation/interactiveComponents';
 
 type PinStates = Record<number, boolean>;
 
@@ -105,6 +109,7 @@ class AVRRunner {
   readonly timer0: AVRTimer;
   readonly usart: AVRUSART;
   readonly twi: AVRTWI;
+  readonly adc: AVRADC;
 
   constructor(hexText: string) {
     const program = parseIntelHex(hexText);
@@ -116,6 +121,9 @@ class AVRRunner {
     // Provide basic Arduino timing (millis/delay rely on timer0 on Uno).
     this.clock = new AVRClock(this.cpu, 16_000_000);
     this.timer0 = new AVRTimer(this.cpu, timer0Config);
+
+    // ADC for analogRead() support
+    this.adc = new AVRADC(this.cpu, adcConfig);
 
     // USART for Serial communication
     this.usart = new AVRUSART(this.cpu, usart0Config, 16_000_000);
@@ -590,6 +598,74 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         runner.portB.addListener(onPortB);
         runner.portC.addListener(onPortC);
         runner.portD.addListener(onPortD);
+
+        // Set up ADC channel value provider for analogRead() support
+        // This allows potentiometers and other analog sensors to provide values
+        // Normalize partType for comparison (handle both "wokwi-" prefixed and non-prefixed)
+        const normalizedPartType = partType.replace('wokwi-', '');
+        const mcuPart = circuitParts.find((p) => {
+          const normalizedPType = p.type.replace('wokwi-', '');
+          return normalizedPType === normalizedPartType;
+        });
+        
+        console.log('[ADC Setup] Looking for MCU:', partType, 'normalized:', normalizedPartType);
+        console.log('[ADC Setup] Circuit parts:', circuitParts.map(p => ({ id: p.id, type: p.type })));
+        console.log('[ADC Setup] Found MCU:', mcuPart?.id, mcuPart?.type);
+        
+        if (mcuPart) {
+          const adjacency = buildAdjacency(connections);
+          
+          // Map analog channels to the components connected to them
+          const analogChannelMap = new Map<number, string>(); // channel -> partId
+          const interactiveManager = getInteractiveComponentManager();
+          
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            // Check for analog input components
+            if (typeLower.includes('potentiometer') || 
+                typeLower.includes('photoresistor') ||
+                typeLower.includes('ntc') ||
+                typeLower.includes('ldr')) {
+              // Register the component with the interactive manager
+              interactiveManager.registerComponent(part.id, part.type);
+              
+              // Find which analog pin this component's signal pin is connected to
+              const signalPins = ['SIG', 'SIGNAL', 'OUT', 'WIPER', 'AO'];
+              for (const pinName of signalPins) {
+                const startKey = `${part.id}:${pinName}`;
+                const mcuPin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (mcuPin != null && mcuPin >= 14 && mcuPin <= 19) {
+                  // Analog pins A0-A5 are digital pins 14-19
+                  const channel = mcuPin - 14;
+                  analogChannelMap.set(channel, part.id);
+                  console.log(`[ADC] Mapped ${part.id} (${pinName}) to analog channel ${channel} (A${channel})`);
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Set up ADC channel value callback
+          // The callback receives an ADCMuxInput object with type and channel info
+          runner.adc.onADCRead = (input) => {
+            // Only handle single-ended ADC reads (normal analogRead)
+            if (input.type === ADCMuxInputType.SingleEnded) {
+              const channel = (input as { type: ADCMuxInputType.SingleEnded; channel: number }).channel;
+              const partId = analogChannelMap.get(channel);
+              if (partId) {
+                // Get value from interactive component manager
+                const manager = getInteractiveComponentManager();
+                const value = manager.getValue(partId) ?? 512;
+                console.log(`[ADC] Channel ${channel} (${partId}) read: ${value}`);
+                // Complete the ADC read with the value
+                runner.adc.completeADCRead(value);
+                return;
+              }
+            }
+            // Default: complete with mid-range value
+            runner.adc.completeADCRead(512);
+          };
+        }
 
         // Listen for USART byte transmissions (Serial.print output)
         runner.usart.onByteTransmit = (byte: number) => {

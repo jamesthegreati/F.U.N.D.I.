@@ -1,0 +1,23 @@
+{
+  "id": "dht22-temperature",
+  "name": "DHT22 Temperature Sensor",
+  "description": "Read temperature and humidity from DHT22 sensor with serial output",
+  "difficulty": "intermediate",
+  "tags": ["dht22", "sensor", "temperature", "humidity", "serial"],
+  "estimatedTime": "15 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-dht22", "id": "dht1", "top": -150, "left": 150 }
+    ],
+    "connections": [
+      ["dht1:VCC", "uno:5V", "red", []],
+      ["dht1:GND", "uno:GND.1", "black", []],
+      ["dht1:SDA", "uno:2", "green", []]
+    ]
+  },
+  "code": "// DHT22 Temperature & Humidity Sensor\n// Read sensor data and display via Serial Monitor\n\n#include <DHT.h>\n\n#define DHT_PIN 2\n#define DHT_TYPE DHT22\n\nDHT dht(DHT_PIN, DHT_TYPE);\n\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println(\"DHT22 Temperature & Humidity Sensor\");\n  Serial.println(\"=====================================\");\n  \n  dht.begin();\n  delay(2000);  // Allow sensor to stabilize\n}\n\nvoid loop() {\n  // Read humidity and temperature\n  float humidity = dht.readHumidity();\n  float tempC = dht.readTemperature();\n  float tempF = dht.readTemperature(true);\n  \n  // Check for read errors\n  if (isnan(humidity) || isnan(tempC)) {\n    Serial.println(\"Error reading DHT sensor!\");\n    delay(2000);\n    return;\n  }\n  \n  // Calculate heat index\n  float heatIndexC = dht.computeHeatIndex(tempC, humidity, false);\n  float heatIndexF = dht.computeHeatIndex(tempF, humidity);\n  \n  // Print results\n  Serial.println(\"--- Sensor Reading ---\");\n  Serial.print(\"Humidity: \");\n  Serial.print(humidity);\n  Serial.println(\"%\");\n  \n  Serial.print(\"Temperature: \");\n  Serial.print(tempC);\n  Serial.print(\"°C / \");\n  Serial.print(tempF);\n  Serial.println(\"°F\");\n  \n  Serial.print(\"Heat Index: \");\n  Serial.print(heatIndexC);\n  Serial.print(\"°C / \");\n  Serial.print(heatIndexF);\n  Serial.println(\"°F\");\n  \n  Serial.println();\n  delay(2000);  // Wait 2 seconds between readings\n}"
+}

@@ -1,0 +1,24 @@
+{
+  "id": "blink-led",
+  "name": "Blink LED",
+  "description": "Classic Arduino starter project - blink the built-in LED on pin 13",
+  "difficulty": "beginner",
+  "tags": ["led", "digital-output", "starter"],
+  "estimatedTime": "5 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -100, "left": 150, "attrs": { "color": "red" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -60, "left": 150, "attrs": { "value": "220" } }
+    ],
+    "connections": [
+      ["uno:13", "r1:1", "green", ["h0"]],
+      ["r1:2", "led1:A", "green", ["v0"]],
+      ["led1:C", "uno:GND.1", "black", ["v20", "h-50"]]
+    ]
+  },
+  "code": "// Blink LED - Classic Arduino Starter\n// Turns on an LED for 1 second, then off for 1 second, repeatedly.\n\nconst int LED_PIN = 13;\n\nvoid setup() {\n  // Initialize the LED pin as output\n  pinMode(LED_PIN, OUTPUT);\n  Serial.begin(9600);\n  Serial.println(\"Blink LED started!\");\n}\n\nvoid loop() {\n  digitalWrite(LED_PIN, HIGH);  // Turn LED on\n  Serial.println(\"LED ON\");\n  delay(1000);                   // Wait 1 second\n  \n  digitalWrite(LED_PIN, LOW);   // Turn LED off\n  Serial.println(\"LED OFF\");\n  delay(1000);                   // Wait 1 second\n}"
+}

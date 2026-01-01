@@ -1,0 +1,29 @@
+{
+  "id": "ultrasonic-distance",
+  "name": "Ultrasonic Distance Sensor",
+  "description": "Measure distance using HC-SR04 ultrasonic sensor with LED indicator",
+  "difficulty": "intermediate",
+  "tags": ["ultrasonic", "hc-sr04", "sensor", "distance", "measurement"],
+  "estimatedTime": "15 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-hc-sr04", "id": "ultrasonic1", "top": -180, "left": 100 },
+      { "type": "wokwi-led", "id": "led1", "top": -120, "left": 250, "attrs": { "color": "red" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -80, "left": 250, "attrs": { "value": "220" } }
+    ],
+    "connections": [
+      ["ultrasonic1:VCC", "uno:5V", "red", []],
+      ["ultrasonic1:GND", "uno:GND.1", "black", []],
+      ["ultrasonic1:TRIG", "uno:10", "blue", []],
+      ["ultrasonic1:ECHO", "uno:11", "green", []],
+      ["uno:13", "r1:1", "red", []],
+      ["r1:2", "led1:A", "red", []],
+      ["led1:C", "uno:GND.2", "black", []]
+    ]
+  },
+  "code": "// Ultrasonic Distance Sensor (HC-SR04)\n// Measure distance and indicate when object is close\n\nconst int TRIG_PIN = 10;\nconst int ECHO_PIN = 11;\nconst int LED_PIN = 13;\n\n// Distance threshold for LED warning (in cm)\nconst int WARNING_DISTANCE = 20;\n\nvoid setup() {\n  pinMode(TRIG_PIN, OUTPUT);\n  pinMode(ECHO_PIN, INPUT);\n  pinMode(LED_PIN, OUTPUT);\n  \n  Serial.begin(9600);\n  Serial.println(\"HC-SR04 Ultrasonic Distance Sensor\");\n  Serial.println(\"==================================\");\n}\n\nfloat measureDistance() {\n  // Clear trigger pin\n  digitalWrite(TRIG_PIN, LOW);\n  delayMicroseconds(2);\n  \n  // Send 10µs pulse to trigger\n  digitalWrite(TRIG_PIN, HIGH);\n  delayMicroseconds(10);\n  digitalWrite(TRIG_PIN, LOW);\n  \n  // Read echo pulse duration\n  long duration = pulseIn(ECHO_PIN, HIGH);\n  \n  // Calculate distance (speed of sound = 343 m/s = 0.0343 cm/µs)\n  // Distance = duration * 0.0343 / 2 (divide by 2 for round trip)\n  float distance = duration * 0.0343 / 2.0;\n  \n  return distance;\n}\n\nvoid loop() {\n  float distance = measureDistance();\n  \n  // Print distance\n  Serial.print(\"Distance: \");\n  Serial.print(distance, 1);\n  Serial.print(\" cm\");\n  \n  // Check if object is close\n  if (distance < WARNING_DISTANCE && distance > 0) {\n    digitalWrite(LED_PIN, HIGH);\n    Serial.println(\" [!] CLOSE\");\n  } else {\n    digitalWrite(LED_PIN, LOW);\n    Serial.println();\n  }\n  \n  delay(200);  // Measurement interval\n}"
+}

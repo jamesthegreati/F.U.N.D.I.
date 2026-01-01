@@ -1,0 +1,22 @@
+{
+  "id": "buzzer-melody",
+  "name": "Buzzer Melody Player",
+  "description": "Play musical notes and melodies using a piezo buzzer",
+  "difficulty": "beginner",
+  "tags": ["buzzer", "music", "tone", "audio"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-buzzer", "id": "buzzer1", "top": -120, "left": 150 }
+    ],
+    "connections": [
+      ["buzzer1:1", "uno:8", "orange", []],
+      ["buzzer1:2", "uno:GND.1", "black", []]
+    ]
+  },
+  "code": "// Buzzer Melody Player\n// Play musical notes using tone() function\n\nconst int BUZZER_PIN = 8;\n\n// Musical note frequencies (Hz)\n#define NOTE_C4  262\n#define NOTE_D4  294\n#define NOTE_E4  330\n#define NOTE_F4  349\n#define NOTE_G4  392\n#define NOTE_A4  440\n#define NOTE_B4  494\n#define NOTE_C5  523\n#define NOTE_REST 0\n\n// \"Twinkle Twinkle Little Star\" melody\nint melody[] = {\n  NOTE_C4, NOTE_C4, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_A4, NOTE_G4,\n  NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4, NOTE_D4, NOTE_C4,\n  NOTE_G4, NOTE_G4, NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4,\n  NOTE_G4, NOTE_G4, NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4,\n  NOTE_C4, NOTE_C4, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_A4, NOTE_G4,\n  NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4, NOTE_D4, NOTE_C4\n};\n\n// Note durations: 4 = quarter note, 8 = eighth note, etc.\nint noteDurations[] = {\n  4, 4, 4, 4, 4, 4, 2,\n  4, 4, 4, 4, 4, 4, 2,\n  4, 4, 4, 4, 4, 4, 2,\n  4, 4, 4, 4, 4, 4, 2,\n  4, 4, 4, 4, 4, 4, 2,\n  4, 4, 4, 4, 4, 4, 2\n};\n\nint numNotes = sizeof(melody) / sizeof(melody[0]);\n\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println(\"Buzzer Melody Player\");\n  Serial.println(\"Playing: Twinkle Twinkle Little Star\");\n}\n\nvoid playMelody() {\n  for (int i = 0; i < numNotes; i++) {\n    // Calculate note duration\n    int noteDuration = 1000 / noteDurations[i];\n    \n    if (melody[i] != NOTE_REST) {\n      tone(BUZZER_PIN, melody[i], noteDuration);\n      Serial.print(\"Note: \");\n      Serial.print(melody[i]);\n      Serial.println(\" Hz\");\n    } else {\n      Serial.println(\"Rest\");\n    }\n    \n    // Pause between notes (30% of note duration)\n    int pauseBetweenNotes = noteDuration * 1.30;\n    delay(pauseBetweenNotes);\n    \n    // Stop tone\n    noTone(BUZZER_PIN);\n  }\n}\n\nvoid loop() {\n  Serial.println(\"\\n=== Starting melody ===\");\n  playMelody();\n  Serial.println(\"=== Melody complete ===\");\n  \n  delay(2000);  // Wait before playing again\n}"
+}

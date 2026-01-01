@@ -1,0 +1,23 @@
+{
+  "id": "servo-sweep",
+  "name": "Servo Motor Sweep",
+  "description": "Control a servo motor to sweep back and forth from 0 to 180 degrees",
+  "difficulty": "beginner",
+  "tags": ["servo", "motor", "pwm", "movement"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-servo", "id": "servo1", "top": -150, "left": 150 }
+    ],
+    "connections": [
+      ["servo1:V+", "uno:5V", "red", []],
+      ["servo1:GND", "uno:GND.1", "black", []],
+      ["servo1:PWM", "uno:9", "orange", []]
+    ]
+  },
+  "code": "// Servo Motor Sweep\n// Sweeps the servo back and forth from 0 to 180 degrees\n\n#include <Servo.h>\n\nServo myServo;\n\nconst int SERVO_PIN = 9;\nint angle = 0;\nint step = 1;\n\nvoid setup() {\n  myServo.attach(SERVO_PIN);\n  \n  Serial.begin(9600);\n  Serial.println(\"Servo Sweep Demo\");\n  Serial.println(\"Sweeping 0-180 degrees\");\n  \n  // Start at 0 degrees\n  myServo.write(0);\n  delay(500);\n}\n\nvoid loop() {\n  // Move servo to current angle\n  myServo.write(angle);\n  \n  // Print current angle\n  Serial.print(\"Angle: \");\n  Serial.print(angle);\n  Serial.println(\" degrees\");\n  \n  // Update angle for next iteration\n  angle += step;\n  \n  // Reverse direction at limits\n  if (angle >= 180) {\n    angle = 180;\n    step = -1;\n    Serial.println(\">> Reversing direction (going back)\");\n  } else if (angle <= 0) {\n    angle = 0;\n    step = 1;\n    Serial.println(\">> Reversing direction (going forward)\");\n  }\n  \n  delay(15);  // Small delay for smooth movement\n}"
+}

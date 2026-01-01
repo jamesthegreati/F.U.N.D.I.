@@ -1,0 +1,27 @@
+{
+  "id": "button-led",
+  "name": "Button & LED",
+  "description": "Read a pushbutton and control an LED - learn digital input/output",
+  "difficulty": "beginner",
+  "tags": ["button", "led", "digital-input", "digital-output"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -120, "left": 200, "attrs": { "color": "green" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -80, "left": 200, "attrs": { "value": "220" } },
+      { "type": "wokwi-pushbutton", "id": "btn1", "top": -120, "left": 100 }
+    ],
+    "connections": [
+      ["uno:12", "r1:1", "green", []],
+      ["r1:2", "led1:A", "green", []],
+      ["led1:C", "uno:GND.1", "black", []],
+      ["btn1:1.l", "uno:2", "blue", []],
+      ["btn1:2.l", "uno:GND.2", "black", []]
+    ]
+  },
+  "code": "// Button & LED - Digital Input/Output\n// Press the button to turn on the LED\n\nconst int BUTTON_PIN = 2;\nconst int LED_PIN = 12;\n\nvoid setup() {\n  pinMode(BUTTON_PIN, INPUT_PULLUP);  // Use internal pull-up resistor\n  pinMode(LED_PIN, OUTPUT);\n  \n  Serial.begin(9600);\n  Serial.println(\"Button & LED Demo\");\n  Serial.println(\"Press the button to toggle LED\");\n}\n\nvoid loop() {\n  // Read button state (LOW when pressed due to pull-up)\n  int buttonState = digitalRead(BUTTON_PIN);\n  \n  if (buttonState == LOW) {\n    // Button is pressed\n    digitalWrite(LED_PIN, HIGH);\n    Serial.println(\"Button PRESSED - LED ON\");\n  } else {\n    // Button is released\n    digitalWrite(LED_PIN, LOW);\n  }\n  \n  delay(50);  // Small debounce delay\n}"
+}

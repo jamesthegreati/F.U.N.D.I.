@@ -826,10 +826,14 @@ export const useAppStore = create<AppState>()(
 
         // Replace current circuit with AI-generated one
         // Increment version to trigger auto-fit in canvas
+        // Clear hex to stop any running simulation
         set((state) => ({
           circuitParts: finalParts,
           connections: newConnections,
           circuitGeneratedVersion: state.circuitGeneratedVersion + 1,
+          hex: null,
+          compiledBoard: null,
+          compilationError: null,
         }))
       },
 

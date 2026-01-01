@@ -1,0 +1,24 @@
+{
+  "id": "lcd-hello-world",
+  "name": "LCD Hello World",
+  "description": "Display text on a 16x2 LCD screen using I2C communication",
+  "difficulty": "intermediate",
+  "tags": ["lcd", "i2c", "display", "text"],
+  "estimatedTime": "15 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-lcd1602", "id": "lcd1", "top": -200, "left": 50, "attrs": { "pins": "i2c" } }
+    ],
+    "connections": [
+      ["lcd1:VCC", "uno:5V", "red", []],
+      ["lcd1:GND", "uno:GND.1", "black", []],
+      ["lcd1:SDA", "uno:A4", "green", []],
+      ["lcd1:SCL", "uno:A5", "blue", []]
+    ]
+  },
+  "code": "// LCD Hello World - I2C Display\n// Display text on 16x2 LCD using Wire library\n\n#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\n\n// LCD address is typically 0x27 or 0x3F\nLiquidCrystal_I2C lcd(0x27, 16, 2);\n\nvoid setup() {\n  // Initialize LCD\n  lcd.init();\n  lcd.backlight();\n  \n  Serial.begin(9600);\n  Serial.println(\"LCD Hello World Demo\");\n  \n  // Display welcome message\n  lcd.setCursor(0, 0);\n  lcd.print(\"Hello, FUNDI!\");\n  lcd.setCursor(0, 1);\n  lcd.print(\"LCD Working :)\");\n}\n\nint counter = 0;\n\nvoid loop() {\n  // Update counter every second\n  delay(1000);\n  counter++;\n  \n  // Display on second line\n  lcd.setCursor(0, 1);\n  lcd.print(\"Count: \");\n  lcd.print(counter);\n  lcd.print(\"     \");  // Clear remaining chars\n  \n  Serial.print(\"Counter: \");\n  Serial.println(counter);\n}"
+}

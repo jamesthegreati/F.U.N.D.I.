@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "blink-led",
+      "file": "blink-led.json"
+    },
+    {
+      "id": "traffic-light",
+      "file": "traffic-light.json"
+    },
+    {
+      "id": "button-led",
+      "file": "button-led.json"
+    },
+    {
+      "id": "potentiometer-led",
+      "file": "potentiometer-led.json"
+    },
+    {
+      "id": "lcd-hello-world",
+      "file": "lcd-hello-world.json"
+    },
+    {
+      "id": "dht22-temperature",
+      "file": "dht22-temperature.json"
+    },
+    {
+      "id": "servo-sweep",
+      "file": "servo-sweep.json"
+    },
+    {
+      "id": "ultrasonic-distance",
+      "file": "ultrasonic-distance.json"
+    },
+    {
+      "id": "buzzer-melody",
+      "file": "buzzer-melody.json"
+    },
+    {
+      "id": "keypad-password",
+      "file": "keypad-password.json"
+    }
+  ]
+}

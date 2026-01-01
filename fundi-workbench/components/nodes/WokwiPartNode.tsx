@@ -620,69 +620,47 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         }
     }, [data, nodeId, partType]);
 
-    // Handle potentiometer/slider drag interaction
+    // Handle potentiometer/slider value changes via native Wokwi element events
     useEffect(() => {
         const element = elementRef.current;
         if (!element) return;
 
         const onValueChange = data?.onValueChange;
-        if (!onValueChange) return;
+        if (!onValueChange) {
+            console.log('[WokwiPartNode] No onValueChange handler for:', nodeId, partType);
+            return;
+        }
 
         const isPotentiometer = partType.toLowerCase().includes('potentiometer') ||
             partType.toLowerCase().includes('slide-potentiometer');
 
         if (!isPotentiometer) return;
 
-        let isDragging = false;
-        let startY = 0;
-        let startValue = data?.interactiveValue ?? 512;
+        console.log('[WokwiPartNode] Setting up potentiometer listener for:', nodeId);
 
-        const handleMouseDown = (e: MouseEvent) => {
-            isDragging = true;
-            startY = e.clientY;
-            startValue = data?.interactiveValue ?? 512;
-            e.preventDefault();
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
+        // Listen for the native 'input' event from Wokwi potentiometer element
+        // The element's value property is 0-1 (or based on min/max attrs)
+        // We need to map it to 0-1023 for Arduino ADC
+        const handleInput = (e: Event) => {
+            const potElement = element as HTMLElement & { value?: number; min?: number; max?: number };
+            const min = potElement.min ?? 0;
+            const max = potElement.max ?? 1;
+            const rawValue = potElement.value ?? 0;
+            
+            // Map the element's value range to 0-1023 (Arduino ADC range)
+            const normalized = (rawValue - min) / (max - min);
+            const adcValue = Math.round(normalized * 1023);
+            
+            console.log('[WokwiPartNode] Potentiometer input:', { nodeId, rawValue, min, max, adcValue });
+            onValueChange(nodeId, adcValue);
         };
 
-        const handleMouseMove = (e: MouseEvent) => {
-            if (!isDragging) return;
-
-            // Calculate delta and new value
-            const deltaY = startY - e.clientY; // Inverted so dragging up increases value
-            const sensitivity = 5; // Pixels per value change
-            const deltaValue = Math.round(deltaY * sensitivity);
-            const newValue = Math.max(0, Math.min(1023, startValue + deltaValue));
-
-            onValueChange(nodeId, newValue);
-        };
-
-        const handleMouseUp = () => {
-            isDragging = false;
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-
-        // For rotary potentiometer - also handle wheel events
-        const handleWheel = (e: WheelEvent) => {
-            e.preventDefault();
-            const currentValue = data?.interactiveValue ?? 512;
-            const delta = e.deltaY > 0 ? -50 : 50;
-            const newValue = Math.max(0, Math.min(1023, currentValue + delta));
-            onValueChange(nodeId, newValue);
-        };
-
-        element.addEventListener('mousedown', handleMouseDown);
-        element.addEventListener('wheel', handleWheel, { passive: false });
+        element.addEventListener('input', handleInput);
 
         return () => {
-            element.removeEventListener('mousedown', handleMouseDown);
-            element.removeEventListener('wheel', handleWheel);
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
+            element.removeEventListener('input', handleInput);
         };
-    }, [data, nodeId, partType]);
+    }, [data?.onValueChange, nodeId, partType]);
 
     // Handle slide switch click-to-toggle
     useEffect(() => {
@@ -721,6 +699,15 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         );
     }
 
+    // Determine if this is an interactive component that needs higher z-index
+    const isInteractiveComponent = 
+        partType.toLowerCase().includes('pushbutton') ||
+        partType.toLowerCase().includes('button') ||
+        partType.toLowerCase().includes('potentiometer') ||
+        partType.toLowerCase().includes('switch') ||
+        partType.toLowerCase().includes('keypad') ||
+        partType.toLowerCase().includes('encoder');
+
     return (
         <div
             ref={containerRef}
@@ -731,6 +718,9 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             style={{
                 display: 'inline-block',
                 lineHeight: 0,
+                // Interactive components get higher z-index to be above wires
+                zIndex: isInteractiveComponent ? 10 : undefined,
+                position: 'relative',
             }}
             onClick={handleClick}
         >

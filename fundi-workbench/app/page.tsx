@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Settings,
   Share2,
+  Sparkles,
   Square,
   Trash2,
   X,
@@ -55,11 +56,13 @@ import StatusBadge from '@/components/StatusBadge'
 import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
 import { TerminalPanel } from '@/components/terminal'
+import FeaturedProjectsPanel from '@/components/FeaturedProjectsPanel'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
 import { useSimulation } from '@/hooks/useSimulation'
 import { useAppStore, type ProjectFile } from '@/store/useAppStore'
 import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
+import { getInteractiveComponentManager } from '@/utils/simulation/interactiveComponents'
 
 const nodeTypes = {
   arduino: ArduinoNode,
@@ -143,7 +146,7 @@ function UnifiedActionBar({
   onStop: () => void
 }) {
   return (
-    <div className="absolute bottom-6 left-1/2 z-50 -translate-x-1/2 animate-slide-up">
+    <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2 animate-slide-up">
       <div className="floating-bar flex items-center gap-2 px-3 py-2">
         {/* Primary Run Button */}
         <button
@@ -278,8 +281,67 @@ function SimulationCanvasInner({
 
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  
+  // Track button pressed states for simulation input
+  const [pressedButtons, setPressedButtons] = useState<Set<string>>(new Set())
+  
+  // Track interactive component values for display
+  const [interactiveValues, setInteractiveValues] = useState<Record<string, number>>({})
 
   const initializedRef = useRef(false)
+  
+  // Register interactive components and subscribe to value changes
+  useEffect(() => {
+    const manager = getInteractiveComponentManager()
+    
+    // Register all interactive components in the circuit
+    for (const part of circuitParts) {
+      if (manager.isInteractive(part.type)) {
+        manager.registerComponent(part.id, part.type)
+      }
+    }
+    
+    // Subscribe to value changes to update display
+    const unsubscribe = manager.subscribe((states) => {
+      const values: Record<string, number> = {}
+      for (const [partId, state] of states) {
+        values[partId] = state.value
+      }
+      setInteractiveValues(values)
+    })
+    
+    // Initialize values from current state
+    const currentStates = manager.getAllStates()
+    const initialValues: Record<string, number> = {}
+    for (const [partId, state] of currentStates) {
+      initialValues[partId] = state.value
+    }
+    setInteractiveValues(initialValues)
+    
+    return unsubscribe
+  }, [circuitParts])
+  
+  // Handler for interactive component value changes (potentiometers, etc.)
+  const handleValueChange = useCallback((partId: string, value: number) => {
+    const manager = getInteractiveComponentManager()
+    manager.setValue(partId, value)
+    console.log('[SimulationCanvas] Value change:', partId, value)
+  }, [])
+  
+  // Handlers for button press/release
+  const handleButtonPress = useCallback((partId: string) => {
+    setPressedButtons(prev => new Set(prev).add(partId))
+    console.log('[SimulationCanvas] Button pressed:', partId)
+  }, [])
+  
+  const handleButtonRelease = useCallback((partId: string) => {
+    setPressedButtons(prev => {
+      const next = new Set(prev)
+      next.delete(partId)
+      return next
+    })
+    console.log('[SimulationCanvas] Button released:', partId)
+  }, [])
 
   // Seed a default part once.
   useEffect(() => {
@@ -306,6 +368,9 @@ function SimulationCanvasInner({
   // Sync ReactFlow nodes with circuitParts from store
   useEffect(() => {
     if (!initializedRef.current) return
+    // Don't sync while user is dragging - this prevents the sync from
+    // resetting node positions during drag
+    if (isDraggingRef.current) return
 
     const newNodes: Node[] = circuitParts.map((part) => ({
       id: part.id,
@@ -316,19 +381,33 @@ function SimulationCanvasInner({
         partType: part.type.replace('wokwi-', ''),
         onDeletePart: removePart,
         attrs: part.attrs ?? {},
+        // Interactive component handlers
+        onValueChange: handleValueChange,
+        interactiveValue: interactiveValues[part.id],
+        onButtonPress: handleButtonPress,
+        onButtonRelease: handleButtonRelease,
       },
       selected: selectedPartIds.includes(part.id),
     }))
 
     const currentIds = new Set(nodes.map(n => n.id))
     const newIds = new Set(newNodes.map(n => n.id))
+    
+    // Check if parts have changed: different count or different IDs
     const idsChanged = newIds.size !== currentIds.size ||
-      [...newIds].some(id => !currentIds.has(id))
+      [...newIds].some(id => !currentIds.has(id)) ||
+      [...currentIds].some(id => !newIds.has(id))
 
-    if (newNodes.length > 0 && idsChanged) {
+    // Only sync when IDs change (parts added/removed)
+    // Don't sync based on position changes - let ReactFlow handle position updates
+    if (idsChanged) {
+      console.log('[SimulationCanvas] Syncing nodes due to ID change:', { 
+        oldCount: nodes.length, 
+        newCount: newNodes.length,
+      })
       setNodes(newNodes)
     }
-  }, [circuitParts, getCanvasRect, nodes, removePart, selectedPartIds, setNodes])
+  }, [circuitParts, getCanvasRect, handleButtonPress, handleButtonRelease, handleValueChange, interactiveValues, nodes, removePart, selectedPartIds, setNodes])
 
   // Update node data when handlers change
   useEffect(() => {
@@ -341,13 +420,17 @@ function SimulationCanvasInner({
               ...node.data,
               getCanvasRect,
               onDeletePart: removePart,
+              onValueChange: handleValueChange,
+              interactiveValue: interactiveValues[node.id],
+              onButtonPress: handleButtonPress,
+              onButtonRelease: handleButtonRelease,
             },
           }
         }
         return node
       })
     )
-  }, [getCanvasRect, removePart, setNodes])
+  }, [getCanvasRect, handleButtonPress, handleButtonRelease, handleValueChange, interactiveValues, removePart, setNodes])
 
   // Keep ReactFlow selection in sync with Zustand selection.
   useEffect(() => {
@@ -434,9 +517,11 @@ function SimulationCanvasInner({
   const dragStartWirePointsRef = useRef<Map<string, WirePoint[] | undefined>>(new Map())
   const dragWireModeRef = useRef<Map<string, 'both' | 'one'>>(new Map())
   const [wirePointOverrides, setWirePointOverrides] = useState<Map<string, WirePoint[] | undefined> | null>(null)
+  const isDraggingRef = useRef(false)
 
   const onNodeDragStart = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      isDraggingRef.current = true
       if (!selectedPartIds.includes(node.id)) {
         setSelectedPartIds([node.id])
       }
@@ -511,6 +596,7 @@ function SimulationCanvasInner({
     dragStartWirePointsRef.current = new Map()
     dragWireModeRef.current = new Map()
     setWirePointOverrides(null)
+    isDraggingRef.current = false
   }, [nodes, updatePartsPositions, updateWire, wirePointOverrides])
 
   // Drag-to-add handler
@@ -537,14 +623,20 @@ function SimulationCanvasInner({
           id,
           type: 'wokwi',
           position: flow,
-          data: { getCanvasRect, partType },
+          data: { 
+            getCanvasRect, 
+            partType,
+            onValueChange: handleValueChange,
+            onButtonPress: handleButtonPress,
+            onButtonRelease: handleButtonRelease,
+          },
           selected: true,
         },
       ])
 
       setSelectedPartIds([id])
     },
-    [addPart, canvasRef, getCanvasRect, setNodes, setSelectedPartIds, transform]
+    [addPart, canvasRef, getCanvasRect, handleButtonPress, handleButtonRelease, handleValueChange, setNodes, setSelectedPartIds, transform]
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -1013,6 +1105,7 @@ export default function Home() {
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
   const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false)
   const [showPublishModal, setShowPublishModal] = useState(false)
+  const [showFeaturedProjects, setShowFeaturedProjects] = useState(false)
 
   const files = useAppStore((s) => s.files)
   const circuitParts = useAppStore((s) => s.circuitParts)
@@ -1048,7 +1141,14 @@ export default function Home() {
     const states: Record<string, Record<string, boolean>> = {}
 
     const mcuPart = circuitParts.find((p) => p.type.includes('arduino') || p.type.includes('esp32') || p.type.includes('pi-pico'))
-    if (!mcuPart) return states
+    if (!mcuPart) {
+      console.log('[componentPinStates] No MCU part found in:', circuitParts.map(p => ({ id: p.id, type: p.type })))
+      return states
+    }
+
+    console.log('[componentPinStates] MCU:', mcuPart.id, 'type:', mcuPart.type)
+    console.log('[componentPinStates] Connections:', connections.length, connections)
+    console.log('[componentPinStates] Pin states from simulation:', pinStates)
 
     const keyOf = (partId: string, pinId: string) => `${partId}:${pinId}`
 
@@ -1062,6 +1162,33 @@ export default function Home() {
       adjacency.get(a)!.add(b)
       adjacency.get(b)!.add(a)
     }
+
+    console.log('[componentPinStates] Adjacency graph:', [...adjacency.entries()].map(([k, v]) => `${k} -> [${[...v].join(', ')}]`))
+
+    // For pass-through components (resistors, wires), treat all pins as electrically connected.
+    // This allows signal propagation through these components.
+    const passThroughTypes = ['resistor', 'wokwi-resistor']
+    for (const part of circuitParts) {
+      if (!passThroughTypes.some(t => part.type.includes(t))) continue
+      
+      // Find all pins of this part that are in the adjacency graph
+      const partPins: string[] = []
+      for (const key of adjacency.keys()) {
+        if (key.startsWith(`${part.id}:`)) {
+          partPins.push(key)
+        }
+      }
+      
+      // Connect all pins of this pass-through component to each other
+      for (let i = 0; i < partPins.length; i++) {
+        for (let j = i + 1; j < partPins.length; j++) {
+          adjacency.get(partPins[i])?.add(partPins[j])
+          adjacency.get(partPins[j])?.add(partPins[i])
+        }
+      }
+    }
+
+    console.log('[componentPinStates] Adjacency after pass-through:', [...adjacency.entries()].map(([k, v]) => `${k} -> [${[...v].join(', ')}]`))
 
     // Seed known net values from MCU pins + basic power/ground inference.
     const netValue = new Map<string, boolean>()
@@ -1135,6 +1262,7 @@ export default function Home() {
       states[partId][pinId] = v
     }
 
+    console.log('[componentPinStates] Final states:', states)
     return states
   }, [circuitParts, connections, pinStates])
 
@@ -1247,6 +1375,15 @@ export default function Home() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setShowFeaturedProjects(true)}
+            className="flex h-7 items-center gap-1.5 rounded-md bg-purple-500/10 px-3 text-xs font-medium text-purple-400 hover:bg-purple-500/20 transition-colors"
+            title="Load Featured Projects"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Featured</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowPublishModal(true)}
             className="flex h-7 items-center gap-1.5 rounded-md bg-ide-accent/10 px-3 text-xs font-medium text-ide-accent hover:bg-ide-accent/20 transition-colors"
             title="Publish to Gallery"
@@ -1327,6 +1464,12 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Featured Projects Panel */}
+      <FeaturedProjectsPanel
+        isOpen={showFeaturedProjects}
+        onClose={() => setShowFeaturedProjects(false)}
+      />
 
       {/* Main IDE Layout - Resizable Panels */}
       <div className="h-[calc(100vh-40px)]">

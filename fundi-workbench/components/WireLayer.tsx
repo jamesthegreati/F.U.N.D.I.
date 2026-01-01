@@ -216,7 +216,7 @@ function WireLayer({ pinPositions, containerRef }: WireLayerProps) {
                     height: '100%',
                     pointerEvents: 'none',
                     overflow: 'visible',
-                    zIndex: 10,
+                    zIndex: 5,
                 }}
                 viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
                 onClick={handleBackgroundClick}

@@ -493,7 +493,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           height: '100%',
           pointerEvents: 'none',
           overflow: 'visible',
-          zIndex: 15,
+          zIndex: 5,
         }}
         viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
       >
@@ -683,7 +683,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
 
         return (
           <div
-            className="absolute z-20 pointer-events-none"
+            className="absolute z-50 pointer-events-none"
             style={{
               left: midpoint.x,
               top: midpoint.y,

@@ -1,0 +1,34 @@
+{
+  "id": "traffic-light",
+  "name": "Traffic Light Controller",
+  "description": "Simulate a traffic light with red, yellow, and green LEDs cycling through states",
+  "difficulty": "beginner",
+  "tags": ["led", "digital-output", "timing", "state-machine"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led-red", "top": -150, "left": 150, "attrs": { "color": "red" } },
+      { "type": "wokwi-led", "id": "led-yellow", "top": -150, "left": 200, "attrs": { "color": "yellow" } },
+      { "type": "wokwi-led", "id": "led-green", "top": -150, "left": 250, "attrs": { "color": "green" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -100, "left": 150, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r2", "top": -100, "left": 200, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r3", "top": -100, "left": 250, "attrs": { "value": "220" } }
+    ],
+    "connections": [
+      ["uno:11", "r1:1", "red", []],
+      ["r1:2", "led-red:A", "red", []],
+      ["led-red:C", "uno:GND.1", "black", []],
+      ["uno:10", "r2:1", "orange", []],
+      ["r2:2", "led-yellow:A", "orange", []],
+      ["led-yellow:C", "uno:GND.2", "black", []],
+      ["uno:9", "r3:1", "green", []],
+      ["r3:2", "led-green:A", "green", []],
+      ["led-green:C", "uno:GND.3", "black", []]
+    ]
+  },
+  "code": "// Traffic Light Controller\n// Simulates a standard traffic light sequence\n\nconst int RED_PIN = 11;\nconst int YELLOW_PIN = 10;\nconst int GREEN_PIN = 9;\n\n// Timing constants (in milliseconds)\nconst int RED_TIME = 5000;\nconst int YELLOW_TIME = 2000;\nconst int GREEN_TIME = 5000;\n\nvoid setup() {\n  pinMode(RED_PIN, OUTPUT);\n  pinMode(YELLOW_PIN, OUTPUT);\n  pinMode(GREEN_PIN, OUTPUT);\n  \n  Serial.begin(9600);\n  Serial.println(\"Traffic Light Controller Started\");\n  \n  // Start with all off\n  allOff();\n}\n\nvoid allOff() {\n  digitalWrite(RED_PIN, LOW);\n  digitalWrite(YELLOW_PIN, LOW);\n  digitalWrite(GREEN_PIN, LOW);\n}\n\nvoid loop() {\n  // RED phase\n  Serial.println(\"STOP - Red Light\");\n  allOff();\n  digitalWrite(RED_PIN, HIGH);\n  delay(RED_TIME);\n  \n  // GREEN phase\n  Serial.println(\"GO - Green Light\");\n  allOff();\n  digitalWrite(GREEN_PIN, HIGH);\n  delay(GREEN_TIME);\n  \n  // YELLOW phase (caution)\n  Serial.println(\"CAUTION - Yellow Light\");\n  allOff();\n  digitalWrite(YELLOW_PIN, HIGH);\n  delay(YELLOW_TIME);\n}"
+}
