@@ -8,6 +8,7 @@ import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
 import type { WirePoint } from '@/types/wire';
 import { getAudioSimulation, pwmToFrequency } from '@/utils/simulation/audio';
 import { getLCD1602 } from '@/utils/simulation/lcd1602';
+import { getSSD1306 } from '@/utils/simulation/ssd1306';
 
 interface PinData {
     id: string;
@@ -490,11 +491,15 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         const element = elementRef.current;
         if (!element) return;
 
-        if (partType !== 'lcd1602') return;
+        // Match both 'lcd1602' and 'wokwi-lcd1602' variants
+        const partTypeLower = partType.toLowerCase();
+        if (!partTypeLower.includes('lcd1602') && !partTypeLower.includes('lcd2004')) return;
 
         const attrs = data?.attrs ?? {};
         const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x27);
         const lcdDevice = getLCD1602(addr);
+        
+        console.log('[LCD] Binding LCD element to device at address 0x' + addr.toString(16));
 
         const lcdEl = element as unknown as {
             text?: string;
@@ -510,6 +515,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             try {
                 // Wokwi lcd1602 element supports a simple text setter.
                 const text = state.display.map((row) => row.join('')).join('\n');
+                console.log('[LCD] State update:', { text: text.slice(0, 32), backlight: state.backlightOn, displayOn: state.displayOn });
                 lcdEl.text = text;
                 lcdEl.backlight = state.backlightOn;
                 lcdEl.cursor = state.cursorOn;
@@ -518,6 +524,64 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 lcdEl.cursorY = state.cursorRow;
                 if (typeof lcdEl.requestUpdate === 'function') {
                     lcdEl.requestUpdate();
+                }
+            } catch {
+                // Ignore UI binding errors
+            }
+        });
+
+        return () => {
+            unsubscribe?.();
+        };
+    }, [data?.attrs, partType]);
+
+    // Bind simulated SSD1306 OLED displays to their Wokwi visual elements
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        // Match SSD1306 / OLED variants
+        const partTypeLower = partType.toLowerCase();
+        if (!partTypeLower.includes('ssd1306') && !partTypeLower.includes('oled')) return;
+
+        const attrs = data?.attrs ?? {};
+        const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x3c);
+        const oledDevice = getSSD1306(addr);
+        
+        console.log('[OLED] Binding SSD1306 element to device at address 0x' + addr.toString(16));
+
+        // SSD1306 Wokwi element expects pixel data
+        const unsubscribe = oledDevice.subscribe((state) => {
+            try {
+                // The Wokwi ssd1306 element uses a Uint8Array buffer for pixels
+                // Format: each byte represents 8 vertical pixels in a column (page-based)
+                const oledEl = element as unknown as {
+                    imageData?: Uint8Array | number[];
+                    width?: number;
+                    height?: number;
+                    requestUpdate?: () => void;
+                };
+
+                // Convert boolean pixel array to page-based format
+                const pages = Math.ceil(state.height / 8);
+                const buffer = new Uint8Array(state.width * pages);
+                
+                for (let page = 0; page < pages; page++) {
+                    for (let x = 0; x < state.width; x++) {
+                        let byte = 0;
+                        for (let bit = 0; bit < 8; bit++) {
+                            const y = page * 8 + bit;
+                            if (y < state.height && state.pixels[y]?.[x]) {
+                                byte |= (1 << bit);
+                            }
+                        }
+                        buffer[page * state.width + x] = byte;
+                    }
+                }
+
+                oledEl.imageData = buffer;
+                if (typeof oledEl.requestUpdate === 'function') {
+                    oledEl.requestUpdate();
                 }
             } catch {
                 // Ignore UI binding errors

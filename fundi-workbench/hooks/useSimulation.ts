@@ -12,6 +12,7 @@ import {
   CPU,
   avrInstruction,
   portBConfig,
+  portCConfig,
   portDConfig,
   timer0Config,
   usart0Config,
@@ -98,6 +99,7 @@ function parseIntelHex(hex: string): Uint16Array {
 class AVRRunner {
   readonly cpu: CPU;
   readonly portB: AVRIOPort;
+  readonly portC: AVRIOPort;
   readonly portD: AVRIOPort;
   readonly clock: AVRClock;
   readonly timer0: AVRTimer;
@@ -108,6 +110,7 @@ class AVRRunner {
     const program = parseIntelHex(hexText);
     this.cpu = new CPU(program);
     this.portB = new AVRIOPort(this.cpu, portBConfig);
+    this.portC = new AVRIOPort(this.cpu, portCConfig);
     this.portD = new AVRIOPort(this.cpu, portDConfig);
 
     // Provide basic Arduino timing (millis/delay rely on timer0 on Uno).
@@ -195,9 +198,20 @@ function findConnectedMcuDigitalPin(
     if (idx > 0) {
       const partId = cur.slice(0, idx);
       const pinId = cur.slice(idx + 1);
-      if (partId === mcuId && /^\d+$/.test(pinId)) {
-        const n = Number.parseInt(pinId, 10);
-        return Number.isFinite(n) ? n : null;
+      if (partId === mcuId) {
+        // Match purely numeric pins (0, 1, 2, ..., 13)
+        if (/^\d+$/.test(pinId)) {
+          const n = Number.parseInt(pinId, 10);
+          return Number.isFinite(n) ? n : null;
+        }
+        // Match analog pins (A0-A5) - these are digital pins 14-19 on Arduino Uno
+        const analogMatch = pinId.match(/^A(\d)$/i);
+        if (analogMatch) {
+          const analogNum = Number.parseInt(analogMatch[1], 10);
+          if (analogNum >= 0 && analogNum <= 5) {
+            return 14 + analogNum;
+          }
+        }
       }
     }
 
@@ -214,8 +228,13 @@ function findConnectedMcuDigitalPin(
 }
 
 function getPortBitForArduinoDigitalPin(runner: AVRRunner, pin: number): { port: AVRIOPort; bit: number } | null {
+  // Arduino Uno pin mapping:
+  // D0-D7: PORTD bits 0-7
+  // D8-D13: PORTB bits 0-5
+  // A0-A5 (D14-D19): PORTC bits 0-5
   if (pin >= 0 && pin <= 7) return { port: runner.portD, bit: pin };
   if (pin >= 8 && pin <= 13) return { port: runner.portB, bit: pin - 8 };
+  if (pin >= 14 && pin <= 19) return { port: runner.portC, bit: pin - 14 };
   return null;
 }
 
@@ -280,7 +299,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     setSerialOutput((prev) => [...prev, line]);
   }, []);
 
-  const updatePortPins = useCallback((port: 'B' | 'D', value: number) => {
+  const updatePortPins = useCallback((port: 'B' | 'C' | 'D', value: number) => {
     setPinStates((prev) => {
       const next: PinStates = { ...prev };
       if (port === 'D') {
@@ -289,10 +308,16 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
           const pin = bit;
           next[pin] = (value & (1 << bit)) !== 0;
         }
-      } else {
+      } else if (port === 'B') {
         // PORTB bits 0-5 -> Digital 8-13
         for (let bit = 0; bit < 6; bit++) {
           const pin = 8 + bit;
+          next[pin] = (value & (1 << bit)) !== 0;
+        }
+      } else {
+        // PORTC bits 0-5 -> Analog A0-A5 (Digital 14-19)
+        for (let bit = 0; bit < 6; bit++) {
+          const pin = 14 + bit;
           next[pin] = (value & (1 << bit)) !== 0;
         }
       }
@@ -495,14 +520,39 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
               if (!typeLower.includes('dht')) continue;
 
               const dhtType: DHTType = typeLower.includes('dht11') ? 'dht11' : 'dht22';
-              const startKey = `${part.id}:SDA`;
-              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
-              if (pin == null) continue;
+              // Try multiple possible pin names that DHT sensors use
+              const possiblePinNames = ['SDA', 'DATA', 'OUT', 'SIGNAL', 'DQ'];
+              let foundPin: number | null = null;
+              let usedPinName: string | null = null;
+              
+              for (const pinName of possiblePinNames) {
+                const startKey = `${part.id}:${pinName}`;
+                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (pin != null) {
+                  foundPin = pin;
+                  usedPinName = pinName;
+                  break;
+                }
+              }
 
-              const portBit = getPortBitForArduinoDigitalPin(runner, pin);
-              if (!portBit) continue;
+              console.log(`[DHT] Searching for ${part.id} (${dhtType}):`, {
+                triedPins: possiblePinNames,
+                foundPin,
+                usedPinName,
+                adjacencyKeys: [...adjacency.keys()].filter(k => k.startsWith(part.id)),
+              });
+              
+              if (foundPin == null) continue;
+
+              const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
+              if (!portBit) {
+                console.warn(`[DHT] Pin ${foundPin} not supported for DHT simulation`);
+                continue;
+              }
 
               const partId = part.id;
+              console.log(`[DHT] Binding ${partId} to Arduino pin ${foundPin} (port ${portBit.port === runner.portD ? 'D' : 'B'}, bit ${portBit.bit})`);
+              
               dhtDevicesRef.current.push(
                 new DHTDevice({
                   type: dhtType,
@@ -531,8 +581,10 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         }
 
         const onPortB: GPIOListener = (value) => updatePortPins('B', value);
+        const onPortC: GPIOListener = (value) => updatePortPins('C', value);
         const onPortD: GPIOListener = (value) => updatePortPins('D', value);
         runner.portB.addListener(onPortB);
+        runner.portC.addListener(onPortC);
         runner.portD.addListener(onPortD);
 
         // Listen for USART byte transmissions (Serial.print output)
@@ -552,6 +604,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
         // Initialize state from current registers
         updatePortPins('B', runner.cpu.data[portBConfig.PORT]);
+        updatePortPins('C', runner.cpu.data[portCConfig.PORT]);
         updatePortPins('D', runner.cpu.data[portDConfig.PORT]);
 
         runnerRef.current = runner;

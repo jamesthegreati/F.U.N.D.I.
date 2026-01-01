@@ -12,12 +12,17 @@ export interface I2CDevice {
     address: number;
     /** Device name for logging/debugging */
     name: string;
-    /** Handle a write transaction */
+    /** Handle a write transaction (called on STOP or immediately if streamingWrite is true) */
     write?: (data: number[]) => void;
     /** Handle a read request - return the data to send back */
     read?: () => number[];
     /** Reset the device state */
     reset?: () => void;
+    /** 
+     * If true, write() is called immediately for each byte instead of buffering until STOP.
+     * Required for devices like LCD1602 (PCF8574 backpack) that need real-time byte processing.
+     */
+    streamingWrite?: boolean;
 }
 
 export type I2CTransactionType = 'start' | 'stop' | 'write' | 'read';
@@ -130,7 +135,15 @@ class I2CBus {
         }
 
         // Subsequent bytes are data
-        this.currentBuffer.push(byte);
+        const device = this.devices.get(this.currentAddress);
+        
+        // For devices that need streaming writes (like LCD1602), forward byte immediately
+        if (device?.streamingWrite && device.write && !this.isReading) {
+            device.write([byte]);
+        } else {
+            // Otherwise buffer for batch write on STOP
+            this.currentBuffer.push(byte);
+        }
 
         const tx: I2CTransaction = {
             type: 'write',

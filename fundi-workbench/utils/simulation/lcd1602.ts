@@ -58,6 +58,8 @@ export type LCD1602StateListener = (state: LCD1602State) => void;
 class LCD1602Device implements I2CDevice {
     readonly address: number;
     readonly name = 'LCD1602';
+    /** Enable streaming writes so each I2C byte is processed immediately */
+    readonly streamingWrite = true;
 
     // Internal state
     private rows: number = 2;
