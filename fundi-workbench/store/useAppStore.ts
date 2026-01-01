@@ -233,6 +233,16 @@ function toCircuitParts(nodes: unknown): CircuitPart[] {
       const data = isRecord(node.data) ? node.data : null
       const dataPartType = data && typeof data.partType === 'string' ? data.partType : null
 
+      // Preserve per-part attributes (e.g., LED color, resistor value)
+      const dataAttrsRaw = data && isRecord(data.attrs) ? data.attrs : null
+      const attrs: Record<string, string> = dataAttrsRaw
+        ? Object.fromEntries(
+          Object.entries(dataAttrsRaw)
+            .filter(([k, v]) => typeof k === 'string' && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'))
+            .map(([k, v]) => [k, String(v)])
+        )
+        : {}
+
       const type =
         (nodeType === 'wokwi' && dataPartType) ? dataPartType :
           (nodeType === 'arduino' ? 'arduino-uno' : nodeType)
@@ -247,7 +257,7 @@ function toCircuitParts(nodes: unknown): CircuitPart[] {
         type,
         position: { x, y },
         rotate: 0,
-        attrs: {},
+        attrs,
       } satisfies CircuitPart
     })
     .filter(isNotNull)

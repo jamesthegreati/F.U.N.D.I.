@@ -13,8 +13,18 @@
       --tw-rotate-z: initial;
       --tw-skew-x: initial;
       --tw-skew-y: initial;
+      --tw-scroll-snap-strictness: proximity;
       --tw-space-y-reverse: 0;
       --tw-border-style: solid;
+      --tw-gradient-position: initial;
+      --tw-gradient-from: #0000;
+      --tw-gradient-via: #0000;
+      --tw-gradient-to: #0000;
+      --tw-gradient-stops: initial;
+      --tw-gradient-via-stops: initial;
+      --tw-gradient-from-position: 0%;
+      --tw-gradient-via-position: 50%;
+      --tw-gradient-to-position: 100%;
       --tw-leading: initial;
       --tw-font-weight: initial;
       --tw-tracking: initial;
@@ -409,6 +419,10 @@
     position: relative;
   }
 
+  .static {
+    position: static;
+  }
+
   .sticky {
     position: sticky;
   }
@@ -479,6 +493,10 @@
 
   .left-1\/2 {
     left: 50%;
+  }
+
+  .z-10 {
+    z-index: 10;
   }
 
   .z-20 {
@@ -827,6 +845,10 @@
     min-width: calc(var(--spacing) * 0);
   }
 
+  .min-w-\[60px\] {
+    min-width: 60px;
+  }
+
   .min-w-\[240px\] {
     min-width: 240px;
   }
@@ -893,6 +915,18 @@
 
   .resize-none {
     resize: none;
+  }
+
+  .snap-x {
+    scroll-snap-type: x var(--tw-scroll-snap-strictness);
+  }
+
+  .snap-mandatory {
+    --tw-scroll-snap-strictness: mandatory;
+  }
+
+  .snap-start {
+    scroll-snap-align: start;
   }
 
   .appearance-none {
@@ -1015,6 +1049,10 @@
 
   .overflow-y-auto {
     overflow-y: auto;
+  }
+
+  .scroll-smooth {
+    scroll-behavior: smooth;
   }
 
   .rounded {
@@ -1202,6 +1240,21 @@
 
   .bg-transparent {
     background-color: #0000;
+  }
+
+  .bg-gradient-to-l {
+    --tw-gradient-position: to left in oklab;
+    background-image: linear-gradient(var(--tw-gradient-stops));
+  }
+
+  .bg-gradient-to-r {
+    --tw-gradient-position: to right in oklab;
+    background-image: linear-gradient(var(--tw-gradient-stops));
+  }
+
+  .to-transparent {
+    --tw-gradient-to: transparent;
+    --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
   }
 
   .fill-current {
@@ -1481,6 +1534,11 @@
 
   .opacity-75 {
     opacity: .75;
+  }
+
+  .shadow {
+    --tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, #0000001a), 0 1px 2px -1px var(--tw-shadow-color, #0000001a);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
 
   .shadow-2xl {
@@ -1846,6 +1904,22 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
+
+  .\[\&_svg\]\:h-auto svg {
+    height: auto;
+  }
+
+  .\[\&_svg\]\:max-h-full svg {
+    max-height: 100%;
+  }
+
+  .\[\&_svg\]\:w-auto svg {
+    width: auto;
+  }
+
+  .\[\&_svg\]\:max-w-full svg {
+    max-width: 100%;
+  }
 }
 
 :root {
@@ -2088,6 +2162,15 @@ body {
   background: var(--ide-border-focus);
 }
 
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 .react-flow__controls {
   border: 1px solid var(--ide-border);
   -webkit-backdrop-filter: blur(12px);
@@ -2232,6 +2315,12 @@ body {
   inherits: false
 }
 
+@property --tw-scroll-snap-strictness {
+  syntax: "*";
+  inherits: false;
+  initial-value: proximity;
+}
+
 @property --tw-space-y-reverse {
   syntax: "*";
   inherits: false;
@@ -2242,6 +2331,57 @@ body {
   syntax: "*";
   inherits: false;
   initial-value: solid;
+}
+
+@property --tw-gradient-position {
+  syntax: "*";
+  inherits: false
+}
+
+@property --tw-gradient-from {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #0000;
+}
+
+@property --tw-gradient-via {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #0000;
+}
+
+@property --tw-gradient-to {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #0000;
+}
+
+@property --tw-gradient-stops {
+  syntax: "*";
+  inherits: false
+}
+
+@property --tw-gradient-via-stops {
+  syntax: "*";
+  inherits: false
+}
+
+@property --tw-gradient-from-position {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+
+@property --tw-gradient-via-position {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
+
+@property --tw-gradient-to-position {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 100%;
 }
 
 @property --tw-leading {

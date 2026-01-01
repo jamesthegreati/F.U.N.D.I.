@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     )
 
     GEMINI_API_KEY: str | None = None
+    # Primary Gemini model to use for generation.
+    # Can be set in backend/.env as GEMINI_MODEL.
+    # Examples: "models/gemini-1.5-flash", "gemini-1.5-pro"
+    GEMINI_MODEL: str = "models/gemini-flash-lite-latest"
     ENVIRONMENT: str = "dev"  # dev | prod
 
     # Per spec: hardcode allowed origins

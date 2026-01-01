@@ -345,10 +345,15 @@ def generate_circuit(
     contents.append({"role": "user", "parts": parts})
 
 
-    # Prefer the model that is known to exist in your project (per user request),
-    # then fall back to other common Flash variants.
+    # Prefer a model configured via backend/.env (GEMINI_MODEL), then fall back.
     # Note: some API versions require the "models/" prefix.
-    models_to_try = [
+    configured = (settings.GEMINI_MODEL or "").strip()
+    configured_models: list[str] = []
+    if configured:
+        # Allow comma-separated list in case the user wants to provide multiple.
+        configured_models = [m.strip() for m in configured.split(",") if m.strip()]
+
+    fallback_models = [
         "models/gemini-flash-lite-latest",
         "gemini-flash-lite-latest",
         "models/gemini-2.0-flash-exp",
@@ -356,6 +361,14 @@ def generate_circuit(
         "models/gemini-1.5-flash",
         "gemini-1.5-flash",
     ]
+
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    models_to_try: list[str] = []
+    for name in configured_models + fallback_models:
+        if name and name not in seen:
+            seen.add(name)
+            models_to_try.append(name)
 
     last_error: Exception | None = None
     for model_name in models_to_try:

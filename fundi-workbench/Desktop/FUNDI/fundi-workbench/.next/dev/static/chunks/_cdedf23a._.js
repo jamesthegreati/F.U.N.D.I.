@@ -865,6 +865,7 @@ function getPartTypeFromData(data) {
     const getCanvasRect = data?.getCanvasRect;
     const onDeletePart = data?.onDeletePart;
     const simulationPinStates = data?.simulationPinStates;
+    const pwmValue = data?.pwmValue;
     const partType = propPartType ?? getPartTypeFromData(data) ?? 'arduino-uno';
     const [hoveredPin, setHoveredPin] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(null);
     const [pins, setPins] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
@@ -876,22 +877,35 @@ function getPartTypeFromData(data) {
     const containerRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
     const elementRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
     const partConfig = __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$wokwiParts$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["WOKWI_PARTS"][partType];
-    // Early return if partConfig is undefined (invalid part type)
-    if (!partConfig) {
-        console.warn(`[WokwiPartNode] Unknown part type: ${partType}`);
-        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-            className: "relative glass-panel border-alchemist rounded-md p-4 text-amber-500 text-sm",
-            children: [
-                "Unknown component: ",
-                partType
-            ]
-        }, void 0, true, {
-            fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-            lineNumber: 75,
-            columnNumber: 13
-        }, this);
-    }
-    const PartElement = partConfig.element ?? null;
+    const partElementTag = partConfig?.element;
+    const PartElement = partElementTag ?? null;
+    const isUnknownPart = !partConfig || !partElementTag || !PartElement;
+    const applyStaticAttrs = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
+        "WokwiPartNode.useCallback[applyStaticAttrs]": ()=>{
+            const element = elementRef.current;
+            if (!element) return;
+            const attrs = data?.attrs;
+            if (!attrs) return;
+            for (const [key, value] of Object.entries(attrs)){
+                // Avoid clobbering simulation-driven runtime properties.
+                if ((partType === 'led' || partType === 'wokwi-led') && (key === 'value' || key === 'brightness')) {
+                    continue;
+                }
+                try {
+                    element.setAttribute(key, String(value));
+                } catch  {
+                // Ignore invalid attributes
+                }
+            }
+            const maybeLit = element;
+            if (typeof maybeLit.requestUpdate === 'function') {
+                maybeLit.requestUpdate();
+            }
+        }
+    }["WokwiPartNode.useCallback[applyStaticAttrs]"], [
+        data?.attrs,
+        partType
+    ]);
     // Handle click to select/deselect component
     const handleClick = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
         "WokwiPartNode.useCallback[handleClick]": (e)=>{
@@ -1035,10 +1049,12 @@ function getPartTypeFromData(data) {
         "WokwiPartNode.useEffect": ()=>{
             const initElement = {
                 "WokwiPartNode.useEffect.initElement": async ()=>{
-                    await customElements.whenDefined(partConfig.element);
-                    const element = containerRef.current?.querySelector(partConfig.element);
+                    if (!partElementTag) return;
+                    await customElements.whenDefined(partElementTag);
+                    const element = containerRef.current?.querySelector(partElementTag);
                     if (!element) return;
                     elementRef.current = element;
+                    applyStaticAttrs();
                     requestAnimationFrame({
                         "WokwiPartNode.useEffect.initElement": ()=>{
                             calculatePins();
@@ -1060,8 +1076,17 @@ function getPartTypeFromData(data) {
             })["WokwiPartNode.useEffect"];
         }
     }["WokwiPartNode.useEffect"], [
+        applyStaticAttrs,
         calculatePins,
-        partConfig.element
+        partElementTag
+    ]);
+    // Apply static Wokwi element attributes from circuit state (colors, values, labels, etc.)
+    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
+        "WokwiPartNode.useEffect": ()=>{
+            applyStaticAttrs();
+        }
+    }["WokwiPartNode.useEffect"], [
+        applyStaticAttrs
     ]);
     // Update element properties based on simulation pin states
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
@@ -1072,7 +1097,8 @@ function getPartTypeFromData(data) {
             if (simulationPinStates && Object.keys(simulationPinStates).length > 0) {
                 console.log('[WokwiPartNode] Applying simulation states:', {
                     partType,
-                    simulationPinStates
+                    simulationPinStates,
+                    pwmValue
                 });
             }
             // For LED elements: if anode (A) is HIGH and cathode (C) is LOW or ground, turn ON
@@ -1084,22 +1110,30 @@ function getPartTypeFromData(data) {
                 // Apply gamma correction for realistic LED brightness
                 // Wokwi uses gamma=2.8 by default
                 const GAMMA = 2.8;
-                if (typeof anodeState === 'number') {
+                // Check for PWM value first (from componentPwmStates), then fall back to pin state
+                if (typeof pwmValue === 'number' && pwmValue > 0) {
+                    // PWM mode from componentPwmStates
+                    const normalized = pwmValue / 255;
+                    const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
+                    console.log('[LED] PWM brightness from pwmValue:', pwmValue, '-> gamma:', gammaCorrected.toFixed(2));
+                    ledEl.value = true;
+                    element.style.setProperty('--led-brightness', gammaCorrected.toString());
+                    element.style.opacity = (0.3 + gammaCorrected * 0.7).toString();
+                } else if (typeof anodeState === 'number') {
                     // PWM mode: anodeState is 0-255
                     const normalized = anodeState / 255;
                     const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
-                    console.log('[LED] PWM brightness:', anodeState, '-> normalized:', normalized.toFixed(2), '-> gamma:', gammaCorrected.toFixed(2));
+                    console.log('[LED] PWM brightness from pin:', anodeState, '-> gamma:', gammaCorrected.toFixed(2));
                     ledEl.value = anodeState > 0;
-                    // Set brightness via CSS custom property for visual effect
                     element.style.setProperty('--led-brightness', gammaCorrected.toString());
-                    element.style.filter = `brightness(${0.5 + gammaCorrected * 0.5})`;
+                    element.style.opacity = (0.3 + gammaCorrected * 0.7).toString();
                 } else {
                     // Boolean mode: simple on/off
                     const anodeHigh = anodeState === true;
                     console.log('[LED] Setting value:', anodeHigh, 'current:', ledEl.value);
                     ledEl.value = anodeHigh;
                     element.style.removeProperty('--led-brightness');
-                    element.style.filter = anodeHigh ? 'brightness(1)' : '';
+                    element.style.opacity = anodeHigh ? '1' : '0.3';
                 }
                 // Force Lit element to re-render
                 if (typeof ledEl.requestUpdate === 'function') {
@@ -1233,7 +1267,9 @@ function getPartTypeFromData(data) {
         }
     }["WokwiPartNode.useEffect"], [
         simulationPinStates,
-        partType
+        pwmValue,
+        partType,
+        nodeId
     ]);
     // Listen for button press/release events
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
@@ -1369,6 +1405,20 @@ function getPartTypeFromData(data) {
         nodeId,
         partType
     ]);
+    if (isUnknownPart) {
+        console.warn(`[WokwiPartNode] Unknown part type: ${partType}`);
+        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+            className: "relative glass-panel border-alchemist rounded-md p-4 text-amber-500 text-sm",
+            children: [
+                "Unknown component: ",
+                partType
+            ]
+        }, void 0, true, {
+            fileName: "[project]/components/nodes/WokwiPartNode.tsx",
+            lineNumber: 606,
+            columnNumber: 13
+        }, this);
+    }
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         ref: containerRef,
         className: `relative rounded-md transition-all duration-200 ${isSelected ? 'ring-2 ring-cyan-500/70 ring-offset-2 ring-offset-transparent shadow-lg shadow-cyan-500/20' : 'glass-panel border-alchemist hover:ring-1 hover:ring-amber-500/30'}`,
@@ -1386,12 +1436,12 @@ function getPartTypeFromData(data) {
                     className: "w-3.5 h-3.5"
                 }, void 0, false, {
                     fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                    lineNumber: 583,
+                    lineNumber: 632,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 578,
+                lineNumber: 627,
                 columnNumber: 17
             }, this),
             isSelected && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1401,12 +1451,12 @@ function getPartTypeFromData(data) {
                     children: partConfig?.name || partType
                 }, void 0, false, {
                     fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                    lineNumber: 590,
+                    lineNumber: 639,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 589,
+                lineNumber: 638,
                 columnNumber: 17
             }, this),
             PartElement ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(PartElement, {
@@ -1415,7 +1465,7 @@ function getPartTypeFromData(data) {
                 }
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 597,
+                lineNumber: 646,
                 columnNumber: 28
             }, this) : null,
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1460,13 +1510,13 @@ function getPartTypeFromData(data) {
                         "aria-label": `Pin ${pin.id}`
                     }, pin.id, false, {
                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                        lineNumber: 620,
+                        lineNumber: 669,
                         columnNumber: 25
                     }, this);
                 })
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 600,
+                lineNumber: 649,
                 columnNumber: 13
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("svg", {
@@ -1499,7 +1549,7 @@ function getPartTypeFromData(data) {
                                 }
                             }, void 0, false, {
                                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                lineNumber: 673,
+                                lineNumber: 722,
                                 columnNumber: 29
                             }, this),
                             isHovered && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("g", {
@@ -1515,7 +1565,7 @@ function getPartTypeFromData(data) {
                                         strokeWidth: 0.5
                                     }, void 0, false, {
                                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                        lineNumber: 688,
+                                        lineNumber: 737,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("text", {
@@ -1529,35 +1579,35 @@ function getPartTypeFromData(data) {
                                         children: pin.id
                                     }, void 0, false, {
                                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                        lineNumber: 698,
+                                        lineNumber: 747,
                                         columnNumber: 37
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                lineNumber: 687,
+                                lineNumber: 736,
                                 columnNumber: 33
                             }, this)
                         ]
                     }, pin.id, true, {
                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                        lineNumber: 671,
+                        lineNumber: 720,
                         columnNumber: 25
                     }, this);
                 })
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 654,
+                lineNumber: 703,
                 columnNumber: 13
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-        lineNumber: 564,
+        lineNumber: 613,
         columnNumber: 9
     }, this);
 }
-_s(WokwiPartNode, "c0x/rJhXJo6WVkBT21tMIfLZRRo=");
+_s(WokwiPartNode, "FT76xwAcSvYYdtu6s5GH/xaSQEM=");
 _c = WokwiPartNode;
 const __TURBOPACK__default__export__ = /*#__PURE__*/ _c1 = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["memo"])(WokwiPartNode, (prevProps, nextProps)=>{
     const prevStates = prevProps.data?.simulationPinStates;
@@ -1618,6 +1668,8 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$re
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$circuit$2d$board$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__CircuitBoard$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/circuit-board.js [app-client] (ecmascript) <export default as CircuitBoard>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$settings$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Settings$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/settings.js [app-client] (ecmascript) <export default as Settings>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$cog$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Cog$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/cog.js [app-client] (ecmascript) <export default as Cog>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$chevron$2d$left$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__ChevronLeft$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/chevron-left.js [app-client] (ecmascript) <export default as ChevronLeft>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$chevron$2d$right$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__ChevronRight$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/chevron-right.js [app-client] (ecmascript) <export default as ChevronRight>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$wokwiParts$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/lib/wokwiParts.ts [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$cn$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/cn.ts [app-client] (ecmascript)");
 ;
@@ -1630,12 +1682,45 @@ var _s = __turbopack_context__.k.signature(), _s1 = __turbopack_context__.k.sign
 ;
 const FUNDI_PART_MIME = 'application/x-fundi-part';
 /**
- * Renders an actual Wokwi element as a preview icon
- */ function WokwiElementPreview({ elementTag, fallbackIcon: FallbackIcon }) {
+ * Cache for extracted SVG content from Wokwi elements
+ */ const svgCache = new Map();
+/**
+ * Extract SVG content from a Wokwi custom element's shadow DOM
+ */ function extractSvgFromElement(element) {
+    // Try to get SVG from shadow root
+    const shadowRoot = element.shadowRoot;
+    if (shadowRoot) {
+        const svg = shadowRoot.querySelector('svg');
+        if (svg) {
+            return svg.outerHTML;
+        }
+    }
+    // Try direct child SVG
+    const directSvg = element.querySelector('svg');
+    if (directSvg) {
+        return directSvg.outerHTML;
+    }
+    return null;
+}
+/**
+ * Renders an actual Wokwi element as a preview icon with SVG extraction
+ */ function WokwiElementPreview({ elementTag, partId, fallbackIcon: FallbackIcon }) {
     _s();
     const containerRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
+    const [svgContent, setSvgContent] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(null);
+    const [usesFallback, setUsesFallback] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "WokwiElementPreview.useEffect": ()=>{
+            // Check cache first
+            if (svgCache.has(partId)) {
+                const cached = svgCache.get(partId);
+                if (cached) {
+                    setSvgContent(cached);
+                } else {
+                    setUsesFallback(true);
+                }
+                return;
+            }
             const container = containerRef.current;
             if (!container) return;
             // Clear any existing content
@@ -1643,20 +1728,74 @@ const FUNDI_PART_MIME = 'application/x-fundi-part';
             try {
                 // Create the wokwi element
                 const element = document.createElement(elementTag);
-                // Set some common attributes for better preview
+                // Set common attributes for better preview appearance
                 if (elementTag === 'wokwi-led') {
                     element.setAttribute('color', 'red');
+                    element.setAttribute('value', '1'); // Show lit state
                 } else if (elementTag === 'wokwi-pushbutton') {
                     element.setAttribute('color', 'red');
+                } else if (elementTag === 'wokwi-rgb-led') {
+                    element.setAttribute('r', '1');
+                    element.setAttribute('g', '0');
+                    element.setAttribute('b', '0');
+                } else if (elementTag === 'wokwi-neopixel') {
+                    element.setAttribute('r', '255');
+                    element.setAttribute('g', '100');
+                    element.setAttribute('b', '0');
                 }
                 container.appendChild(element);
+                // Wait for custom element to be defined and render
+                const tryExtractSvg = {
+                    "WokwiElementPreview.useEffect.tryExtractSvg": ()=>{
+                        const svg = extractSvgFromElement(element);
+                        if (svg) {
+                            svgCache.set(partId, svg);
+                            setSvgContent(svg);
+                        } else {
+                            // Mark as fallback needed if no SVG after delay
+                            svgCache.set(partId, null);
+                            setUsesFallback(true);
+                        }
+                    }
+                }["WokwiElementPreview.useEffect.tryExtractSvg"];
+                // Try immediately, then with delays for custom elements that render async
+                requestAnimationFrame({
+                    "WokwiElementPreview.useEffect": ()=>{
+                        if (!extractSvgFromElement(element)) {
+                            setTimeout(tryExtractSvg, 100);
+                        } else {
+                            tryExtractSvg();
+                        }
+                    }
+                }["WokwiElementPreview.useEffect"]);
             } catch (error) {
                 console.error(`Failed to create wokwi element: ${elementTag}`, error);
+                svgCache.set(partId, null);
+                setUsesFallback(true);
             }
         }
     }["WokwiElementPreview.useEffect"], [
-        elementTag
+        elementTag,
+        partId
     ]);
+    // If we have extracted SVG, render it directly
+    if (svgContent) {
+        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+            className: "relative h-10 w-10 flex items-center justify-center overflow-hidden [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto",
+            dangerouslySetInnerHTML: {
+                __html: svgContent
+            },
+            style: {
+                transform: 'scale(0.6)',
+                transformOrigin: 'center'
+            }
+        }, void 0, false, {
+            fileName: "[project]/components/ComponentLibrary.tsx",
+            lineNumber: 137,
+            columnNumber: 7
+        }, this);
+    }
+    // Render the actual element (for elements that don't expose SVG or while loading)
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         className: "relative h-10 w-10 flex items-center justify-center overflow-hidden",
         children: [
@@ -1669,24 +1808,24 @@ const FUNDI_PART_MIME = 'application/x-fundi-part';
                 }
             }, void 0, false, {
                 fileName: "[project]/components/ComponentLibrary.tsx",
-                lineNumber: 64,
+                lineNumber: 152,
                 columnNumber: 7
             }, this),
-            !containerRef.current?.hasChildNodes() && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(FallbackIcon, {
+            usesFallback && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(FallbackIcon, {
                 className: "absolute h-8 w-8 text-ide-text-muted transition-colors group-hover:text-ide-accent"
             }, void 0, false, {
                 fileName: "[project]/components/ComponentLibrary.tsx",
-                lineNumber: 74,
+                lineNumber: 162,
                 columnNumber: 9
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/components/ComponentLibrary.tsx",
-        lineNumber: 62,
+        lineNumber: 150,
         columnNumber: 5
     }, this);
 }
-_s(WokwiElementPreview, "8puyVO4ts1RhCfXUmci3vLI3Njw=");
+_s(WokwiElementPreview, "+BKC/qcy86zdcM93emfwCneoifY=");
 _c = WokwiElementPreview;
 function buildPartCatalog() {
     const base = {
@@ -1767,52 +1906,142 @@ function ComponentLibrary() {
         "ComponentLibrary.useMemo[categories]": ()=>buildPartCatalog()
     }["ComponentLibrary.useMemo[categories]"], []);
     const [active, setActive] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])('mcu');
+    const scrollContainerRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
+    const [canScrollLeft, setCanScrollLeft] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [canScrollRight, setCanScrollRight] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     const activeCategory = categories.find((c)=>c.key === active) ?? categories[0];
+    // Check scroll state
+    const updateScrollButtons = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
+        "ComponentLibrary.useCallback[updateScrollButtons]": ()=>{
+            const container = scrollContainerRef.current;
+            if (!container) return;
+            const { scrollLeft, scrollWidth, clientWidth } = container;
+            setCanScrollLeft(scrollLeft > 0);
+            setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
+        }
+    }["ComponentLibrary.useCallback[updateScrollButtons]"], []);
+    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
+        "ComponentLibrary.useEffect": ()=>{
+            updateScrollButtons();
+            const container = scrollContainerRef.current;
+            if (!container) return;
+            container.addEventListener('scroll', updateScrollButtons);
+            window.addEventListener('resize', updateScrollButtons);
+            return ({
+                "ComponentLibrary.useEffect": ()=>{
+                    container.removeEventListener('scroll', updateScrollButtons);
+                    window.removeEventListener('resize', updateScrollButtons);
+                }
+            })["ComponentLibrary.useEffect"];
+        }
+    }["ComponentLibrary.useEffect"], [
+        updateScrollButtons
+    ]);
+    const scroll = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
+        "ComponentLibrary.useCallback[scroll]": (direction)=>{
+            const container = scrollContainerRef.current;
+            if (!container) return;
+            const scrollAmount = 120;
+            container.scrollBy({
+                left: direction === 'left' ? -scrollAmount : scrollAmount,
+                behavior: 'smooth'
+            });
+        }
+    }["ComponentLibrary.useCallback[scroll]"], []);
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         className: "flex h-full flex-col overflow-hidden",
         children: [
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                 className: "shrink-0 border-b border-ide-border pb-3 mb-3",
                 children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                    className: "flex gap-1",
-                    children: categories.map((cat)=>{
-                        const isActive = cat.key === active;
-                        const Icon = cat.icon;
-                        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                    className: "relative flex items-center",
+                    children: [
+                        canScrollLeft && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
                             type: "button",
-                            onClick: ()=>setActive(cat.key),
-                            className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$cn$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["cn"])('flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all', isActive ? 'bg-ide-accent/20 text-ide-accent' : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'),
-                            title: cat.title,
-                            children: [
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(Icon, {
-                                    className: "h-3.5 w-3.5"
-                                }, void 0, false, {
-                                    fileName: "[project]/components/ComponentLibrary.tsx",
-                                    lineNumber: 140,
-                                    columnNumber: 17
-                                }, this),
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                    children: cat.title
-                                }, void 0, false, {
-                                    fileName: "[project]/components/ComponentLibrary.tsx",
-                                    lineNumber: 141,
-                                    columnNumber: 17
-                                }, this)
-                            ]
-                        }, cat.key, true, {
+                            onClick: ()=>scroll('left'),
+                            className: "absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-ide-panel-bg via-ide-panel-bg to-transparent",
+                            "aria-label": "Scroll left",
+                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$chevron$2d$left$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__ChevronLeft$3e$__["ChevronLeft"], {
+                                className: "h-4 w-4 text-ide-text-muted hover:text-ide-accent transition-colors"
+                            }, void 0, false, {
+                                fileName: "[project]/components/ComponentLibrary.tsx",
+                                lineNumber: 257,
+                                columnNumber: 15
+                            }, this)
+                        }, void 0, false, {
                             fileName: "[project]/components/ComponentLibrary.tsx",
-                            lineNumber: 128,
-                            columnNumber: 15
-                        }, this);
-                    })
-                }, void 0, false, {
+                            lineNumber: 251,
+                            columnNumber: 13
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                            ref: scrollContainerRef,
+                            className: "flex gap-1 overflow-x-auto scrollbar-hide scroll-smooth snap-x snap-mandatory px-1",
+                            style: {
+                                scrollbarWidth: 'none',
+                                msOverflowStyle: 'none'
+                            },
+                            children: categories.map((cat)=>{
+                                const isActive = cat.key === active;
+                                const Icon = cat.icon;
+                                return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                    type: "button",
+                                    onClick: ()=>setActive(cat.key),
+                                    className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$cn$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["cn"])('snap-start shrink-0 min-w-[60px] flex flex-col items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all', isActive ? 'bg-ide-accent/20 text-ide-accent border-b-2 border-ide-accent' : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'),
+                                    title: cat.title,
+                                    children: [
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(Icon, {
+                                            className: "h-4 w-4"
+                                        }, void 0, false, {
+                                            fileName: "[project]/components/ComponentLibrary.tsx",
+                                            lineNumber: 284,
+                                            columnNumber: 19
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                            className: "text-[10px] leading-tight",
+                                            children: cat.title
+                                        }, void 0, false, {
+                                            fileName: "[project]/components/ComponentLibrary.tsx",
+                                            lineNumber: 285,
+                                            columnNumber: 19
+                                        }, this)
+                                    ]
+                                }, cat.key, true, {
+                                    fileName: "[project]/components/ComponentLibrary.tsx",
+                                    lineNumber: 272,
+                                    columnNumber: 17
+                                }, this);
+                            })
+                        }, void 0, false, {
+                            fileName: "[project]/components/ComponentLibrary.tsx",
+                            lineNumber: 262,
+                            columnNumber: 11
+                        }, this),
+                        canScrollRight && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                            type: "button",
+                            onClick: ()=>scroll('right'),
+                            className: "absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-ide-panel-bg via-ide-panel-bg to-transparent",
+                            "aria-label": "Scroll right",
+                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$chevron$2d$right$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__ChevronRight$3e$__["ChevronRight"], {
+                                className: "h-4 w-4 text-ide-text-muted hover:text-ide-accent transition-colors"
+                            }, void 0, false, {
+                                fileName: "[project]/components/ComponentLibrary.tsx",
+                                lineNumber: 299,
+                                columnNumber: 15
+                            }, this)
+                        }, void 0, false, {
+                            fileName: "[project]/components/ComponentLibrary.tsx",
+                            lineNumber: 293,
+                            columnNumber: 13
+                        }, this)
+                    ]
+                }, void 0, true, {
                     fileName: "[project]/components/ComponentLibrary.tsx",
-                    lineNumber: 122,
+                    lineNumber: 248,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/ComponentLibrary.tsx",
-                lineNumber: 121,
+                lineNumber: 247,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1822,7 +2051,7 @@ function ComponentLibrary() {
                     children: "No components in this category yet."
                 }, void 0, false, {
                     fileName: "[project]/components/ComponentLibrary.tsx",
-                    lineNumber: 151,
+                    lineNumber: 308,
                     columnNumber: 11
                 }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                     className: "grid grid-cols-3 gap-1.5",
@@ -1851,10 +2080,11 @@ function ComponentLibrary() {
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(WokwiElementPreview, {
                                     elementTag: wokwiConfig.element,
+                                    partId: item.id,
                                     fallbackIcon: Icon
                                 }, void 0, false, {
                                     fileName: "[project]/components/ComponentLibrary.tsx",
-                                    lineNumber: 190,
+                                    lineNumber: 347,
                                     columnNumber: 19
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1864,39 +2094,39 @@ function ComponentLibrary() {
                                         children: item.name
                                     }, void 0, false, {
                                         fileName: "[project]/components/ComponentLibrary.tsx",
-                                        lineNumber: 194,
+                                        lineNumber: 351,
                                         columnNumber: 21
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/components/ComponentLibrary.tsx",
-                                    lineNumber: 193,
+                                    lineNumber: 350,
                                     columnNumber: 19
                                 }, this)
                             ]
                         }, item.id, true, {
                             fileName: "[project]/components/ComponentLibrary.tsx",
-                            lineNumber: 161,
+                            lineNumber: 318,
                             columnNumber: 17
                         }, this);
                     })
                 }, void 0, false, {
                     fileName: "[project]/components/ComponentLibrary.tsx",
-                    lineNumber: 155,
+                    lineNumber: 312,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/ComponentLibrary.tsx",
-                lineNumber: 149,
+                lineNumber: 306,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/components/ComponentLibrary.tsx",
-        lineNumber: 119,
+        lineNumber: 245,
         columnNumber: 5
     }, this);
 }
-_s1(ComponentLibrary, "tbKsSzL8kYZ0UHviM6whfieVZ5k=");
+_s1(ComponentLibrary, "cKNsuNXQyov8RritcdRc1AipDg8=");
 _c1 = ComponentLibrary;
 const __TURBOPACK__default__export__ = /*#__PURE__*/ _c2 = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["memo"])(ComponentLibrary);
 var _c, _c1, _c2;
@@ -2049,9 +2279,10 @@ const MCU_POSITION = {
     x: 0,
     y: 0
 };
-const HORIZONTAL_SPACING = 200; // Space between MCU and peripheral column
-const VERTICAL_SPACING = 120; // Space between components in same column
-const MAX_COMPONENTS_PER_COLUMN = 4;
+const COLUMN_WIDTH = 160; // Horizontal spacing between columns
+const VERTICAL_SPACING = 100; // Vertical spacing between components
+const MIN_VERTICAL_SPACING = 80; // Minimum spacing for densely packed columns
+const MAX_COMPONENTS_PER_COLUMN = 5;
 // Microcontroller part types
 const MCU_TYPES = new Set([
     'arduino-uno',
@@ -2063,8 +2294,31 @@ const MCU_TYPES = new Set([
     'esp32-devkit-v1',
     'wokwi-esp32-devkit-v1',
     'pi-pico',
-    'wokwi-pi-pico'
+    'wokwi-pi-pico',
+    'attiny85',
+    'wokwi-attiny85',
+    'franzininho',
+    'wokwi-franzininho',
+    'nano-rp2040-connect',
+    'wokwi-nano-rp2040-connect'
 ]);
+const CATEGORY_PATTERNS = {
+    mcu: /arduino|esp32|pi-pico|attiny|franzininho|rp2040/i,
+    power: /resistor|capacitor|vcc|gnd|power|breadboard/i,
+    output: /led|buzzer|relay|speaker|rgb|neopixel|servo|motor|stepper/i,
+    input: /button|pushbutton|switch|potentiometer|sensor|dht|hc-sr|pir|ldr|joystick|encoder|keypad|ir-receiver|ir-remote/i,
+    display: /lcd|oled|ssd1306|segment|ili9341|max7219|tm1637|matrix/i,
+    other: /.*/
+};
+// Column X positions for each category (relative to MCU)
+const CATEGORY_COLUMNS = {
+    mcu: 0,
+    power: 1,
+    output: 2,
+    input: 3,
+    display: 4,
+    other: 5
+};
 /**
  * Snap a coordinate to the grid
  */ function snapToGrid(value) {
@@ -2075,6 +2329,17 @@ const MCU_TYPES = new Set([
  */ function isMicrocontroller(partType) {
     const normalized = partType.toLowerCase().replace('wokwi-', '');
     return MCU_TYPES.has(partType) || MCU_TYPES.has(`wokwi-${normalized}`) || MCU_TYPES.has(normalized);
+}
+/**
+ * Categorize a component based on its type
+ */ function categorizeComponent(partType) {
+    const normalized = partType.toLowerCase();
+    if (CATEGORY_PATTERNS.mcu.test(normalized)) return 'mcu';
+    if (CATEGORY_PATTERNS.display.test(normalized)) return 'display';
+    if (CATEGORY_PATTERNS.input.test(normalized)) return 'input';
+    if (CATEGORY_PATTERNS.output.test(normalized)) return 'output';
+    if (CATEGORY_PATTERNS.power.test(normalized)) return 'power';
+    return 'other';
 }
 /**
  * Calculate connection count for each part to determine layout priority
@@ -2090,89 +2355,66 @@ const MCU_TYPES = new Set([
     return counts;
 }
 /**
- * Group parts by their connections to the MCU
- */ function groupPartsByConnection(parts, connections, mcuId) {
-    if (!mcuId) {
-        return {
-            direct: parts,
-            indirect: []
-        };
+ * Group parts by their layout category
+ */ function groupPartsByCategory(parts) {
+    const groups = new Map();
+    for (const category of Object.keys(CATEGORY_COLUMNS)){
+        groups.set(category, []);
     }
-    const directlyConnected = new Set();
-    for (const conn of connections){
-        if (conn.from.partId === mcuId) {
-            directlyConnected.add(conn.to.partId);
-        }
-        if (conn.to.partId === mcuId) {
-            directlyConnected.add(conn.from.partId);
-        }
-    }
-    const direct = [];
-    const indirect = [];
     for (const part of parts){
-        if (part.id === mcuId) continue;
-        if (directlyConnected.has(part.id)) {
-            direct.push(part);
-        } else {
-            indirect.push(part);
-        }
+        const category = categorizeComponent(part.type);
+        const group = groups.get(category) || [];
+        group.push(part);
+        groups.set(category, group);
     }
-    return {
-        direct,
-        indirect
-    };
+    return groups;
 }
 function calculateCircuitLayout(parts, connections) {
     if (parts.length === 0) return parts;
-    // Find the microcontroller
-    const mcu = parts.find((p)=>isMicrocontroller(p.type));
-    const mcuId = mcu?.id || null;
-    // Get connection counts for sorting
+    // Get connection counts for sorting within categories
     const connectionCounts = getConnectionCounts(parts, connections);
-    // Group parts by connection to MCU
-    const { direct, indirect } = groupPartsByConnection(parts, connections, mcuId);
-    // Sort by connection count (most connected first)
-    const sortByConnections = (a, b)=>(connectionCounts.get(b.id) || 0) - (connectionCounts.get(a.id) || 0);
-    direct.sort(sortByConnections);
-    indirect.sort(sortByConnections);
+    // Group parts by category
+    const categoryGroups = groupPartsByCategory(parts);
     // Calculate positions
     const positioned = [];
-    // Position MCU at center-left
-    if (mcu) {
+    // Position MCUs first at center-left
+    const mcus = categoryGroups.get('mcu') || [];
+    let mcuYOffset = 0;
+    for (const mcu of mcus){
         positioned.push({
             ...mcu,
             position: {
                 x: snapToGrid(MCU_POSITION.x),
-                y: snapToGrid(MCU_POSITION.y)
+                y: snapToGrid(MCU_POSITION.y + mcuYOffset)
             }
         });
+        mcuYOffset += VERTICAL_SPACING * 2; // MCUs are taller
     }
-    // Position directly connected parts in first column to the right of MCU
-    let columnIndex = 0;
-    let rowIndex = 0;
-    for (const part of direct){
-        const x = snapToGrid(MCU_POSITION.x + HORIZONTAL_SPACING * (columnIndex + 1));
-        const y = snapToGrid(MCU_POSITION.y - (direct.length - 1) * VERTICAL_SPACING / 2 + rowIndex * VERTICAL_SPACING);
-        positioned.push({
-            ...part,
-            position: {
-                x,
-                y
-            }
-        });
-        rowIndex++;
-        if (rowIndex >= MAX_COMPONENTS_PER_COLUMN) {
-            rowIndex = 0;
-            columnIndex++;
-        }
-    }
-    // Position indirectly connected parts in subsequent columns
-    if (indirect.length > 0) {
-        columnIndex++;
-        rowIndex = 0;
-        for (const part of indirect){
-            const x = snapToGrid(MCU_POSITION.x + HORIZONTAL_SPACING * (columnIndex + 1));
-            const y = snapToGrid(MCU_POSITION.y - (indirect.length - 1) * VERTICAL_SPACING / 2 + rowIndex * VERTICAL_SPACING);
+    // Position other categories in their designated columns
+    const categories = [
+        'power',
+        'output',
+        'input',
+        'display',
+        'other'
+    ];
+    for (const category of categories){
+        const partsInCategory = categoryGroups.get(category) || [];
+        if (partsInCategory.length === 0) continue;
+        // Sort by connection count (most connected first)
+        partsInCategory.sort((a, b)=>(connectionCounts.get(b.id) || 0) - (connectionCounts.get(a.id) || 0));
+        const columnIndex = CATEGORY_COLUMNS[category];
+        const baseX = MCU_POSITION.x + COLUMN_WIDTH * columnIndex;
+        // Center the column vertically around MCU
+        const totalHeight = (partsInCategory.length - 1) * VERTICAL_SPACING;
+        const startY = MCU_POSITION.y - totalHeight / 2;
+        let columnCount = 0;
+        let subColumnIndex = 0;
+        for(let i = 0; i < partsInCategory.length; i++){
+            const part = partsInCategory[i];
+            const rowInColumn = columnCount % MAX_COMPONENTS_PER_COLUMN;
+            const x = snapToGrid(baseX + subColumnIndex * COLUMN_WIDTH);
+            const y = snapToGrid(startY + rowInColumn * VERTICAL_SPACING);
             positioned.push({
                 ...part,
                 position: {
@@ -2180,10 +2422,9 @@ function calculateCircuitLayout(parts, connections) {
                     y
                 }
             });
-            rowIndex++;
-            if (rowIndex >= MAX_COMPONENTS_PER_COLUMN) {
-                rowIndex = 0;
-                columnIndex++;
+            columnCount++;
+            if (columnCount % MAX_COMPONENTS_PER_COLUMN === 0) {
+                subColumnIndex++;
             }
         }
     }
@@ -2303,6 +2544,12 @@ function toCircuitParts(nodes) {
         // Try to carry Wokwi partType from node data (for node.type === 'wokwi').
         const data = isRecord(node.data) ? node.data : null;
         const dataPartType = data && typeof data.partType === 'string' ? data.partType : null;
+        // Preserve per-part attributes (e.g., LED color, resistor value)
+        const dataAttrsRaw = data && isRecord(data.attrs) ? data.attrs : null;
+        const attrs = dataAttrsRaw ? Object.fromEntries(Object.entries(dataAttrsRaw).filter(([k, v])=>typeof k === 'string' && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')).map(([k, v])=>[
+                k,
+                String(v)
+            ])) : {};
         const type = nodeType === 'wokwi' && dataPartType ? dataPartType : nodeType === 'arduino' ? 'arduino-uno' : nodeType;
         const position = isRecord(node.position) ? node.position : {};
         const x = typeof position.x === 'number' ? position.x : 0;
@@ -2316,7 +2563,7 @@ function toCircuitParts(nodes) {
                 y
             },
             rotate: 0,
-            attrs: {}
+            attrs
         };
     }).filter(isNotNull);
 }
@@ -2386,6 +2633,8 @@ const useAppStore = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_mod
         compiledBoard: null,
         nextWireColorIndex: 0,
         selectedPartIds: [],
+        // Counter to trigger auto-fit after AI generates a circuit
+        circuitGeneratedVersion: 0,
         // Terminal/AI Chat state
         terminalHistory: [],
         isAiLoading: false,
@@ -2811,10 +3060,12 @@ const useAppStore = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_mod
             // This preserves AI's intended layout when coordinates exist
             const finalParts = hasAiPositions ? parts : (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$circuitLayout$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["calculateCircuitLayout"])(parts, newConnections);
             // Replace current circuit with AI-generated one
-            set({
-                circuitParts: finalParts,
-                connections: newConnections
-            });
+            // Increment version to trigger auto-fit in canvas
+            set((state)=>({
+                    circuitParts: finalParts,
+                    connections: newConnections,
+                    circuitGeneratedVersion: state.circuitGeneratedVersion + 1
+                }));
         },
         submitCommand: async (text, imageData)=>{
             const trimmed = text.trim();
@@ -8888,10 +9139,38 @@ class AVRRunner {
 function isAvrPart(partType) {
     return partType === 'wokwi-arduino-uno' || partType === 'wokwi-arduino-nano' || partType === 'wokwi-arduino-mega';
 }
+// Arduino Uno PWM pins and their timer/OCR register mappings
+const PWM_PIN_CONFIGS = {
+    3: {
+        timer: 'timer2',
+        ocrOffset: 0xB4
+    },
+    5: {
+        timer: 'timer0',
+        ocrOffset: 0x47
+    },
+    6: {
+        timer: 'timer0',
+        ocrOffset: 0x47
+    },
+    9: {
+        timer: 'timer1',
+        ocrOffset: 0x88
+    },
+    10: {
+        timer: 'timer1',
+        ocrOffset: 0x8A
+    },
+    11: {
+        timer: 'timer2',
+        ocrOffset: 0xB3
+    }
+};
 function useSimulation(hexData, partType) {
     _s();
     const [isRunning, setIsRunning] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     const [pinStates, setPinStates] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])({});
+    const [pwmStates, setPwmStates] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])({});
     const [serialOutput, setSerialOutput] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
     const runnerRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
     const rafRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
@@ -8945,6 +9224,37 @@ function useSimulation(hexData, partType) {
             }["useSimulation.useCallback[updatePortPins]"]);
         }
     }["useSimulation.useCallback[updatePortPins]"], []);
+    // Read PWM duty cycle values from timer OCR registers
+    const updatePwmStates = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
+        "useSimulation.useCallback[updatePwmStates]": (runner)=>{
+            setPwmStates({
+                "useSimulation.useCallback[updatePwmStates]": (prev)=>{
+                    const next = {
+                        ...prev
+                    };
+                    // Read OCR values for PWM pins
+                    // Pin 3: OC2B - OCR2B at 0xB4
+                    // Pin 5: OC0B - OCR0B at 0x48
+                    // Pin 6: OC0A - OCR0A at 0x47
+                    // Pin 9: OC1A - OCR1AL at 0x88
+                    // Pin 10: OC1B - OCR1BL at 0x8A
+                    // Pin 11: OC2A - OCR2A at 0xB3
+                    try {
+                        const data = runner.cpu.data;
+                        next[3] = data[0xB4] ?? 0; // OCR2B
+                        next[5] = data[0x48] ?? 0; // OCR0B
+                        next[6] = data[0x47] ?? 0; // OCR0A
+                        next[9] = data[0x88] ?? 0; // OCR1AL (low byte)
+                        next[10] = data[0x8A] ?? 0; // OCR1BL (low byte)
+                        next[11] = data[0xB3] ?? 0; // OCR2A
+                    } catch  {
+                    // Ignore errors reading CPU data
+                    }
+                    return next;
+                }
+            }["useSimulation.useCallback[updatePwmStates]"]);
+        }
+    }["useSimulation.useCallback[updatePwmStates]"], []);
     // Debug: Log pin state changes
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "useSimulation.useEffect": ()=>{
@@ -8985,12 +9295,15 @@ function useSimulation(hexData, partType) {
                         const delta = runner.cpu.cycles - before;
                         remaining -= delta > 0 ? delta : 1;
                     }
+                    // Update PWM states once per frame (not every instruction)
+                    updatePwmStates(runner);
                     rafRef.current = requestAnimationFrame(stepFrameRef.current);
                 }
             })["useSimulation.useEffect"];
         }
     }["useSimulation.useEffect"], [
-        cyclesPerFrame
+        cyclesPerFrame,
+        updatePwmStates
     ]);
     const stepFrame = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
         "useSimulation.useCallback[stepFrame]": ()=>{
@@ -9007,6 +9320,7 @@ function useSimulation(hexData, partType) {
             }
             runnerRef.current = null;
             setPinStates({});
+            setPwmStates({});
             setSerialOutput([]);
             serialBufferRef.current = '';
         }
@@ -9138,11 +9452,12 @@ function useSimulation(hexData, partType) {
         pause,
         isRunning,
         pinStates,
+        pwmStates,
         serialOutput,
         clearSerialOutput
     };
 }
-_s(useSimulation, "f8i9c7iT9frtaEmkSpCqhJ6I8Nk=");
+_s(useSimulation, "Wl0l8iJNX0Y4XapR7qTf5Wx9aHE=");
 if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
     __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
 }
@@ -9448,7 +9763,7 @@ _c = CanvasToolbar;
 _c1 = UnifiedActionBar;
 /* ============================================
    Simulation Canvas Inner (ReactFlow)
-   ============================================ */ function SimulationCanvasInner({ canvasRef, isRunning, componentPinStates }) {
+   ============================================ */ function SimulationCanvasInner({ canvasRef, isRunning, componentPinStates, componentPwmStates }) {
     _s();
     const addPart = (0, __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"])({
         "SimulationCanvasInner.useAppStore[addPart]": (s)=>s.addPart
@@ -9477,8 +9792,34 @@ _c1 = UnifiedActionBar;
     const circuitParts = (0, __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"])({
         "SimulationCanvasInner.useAppStore[circuitParts]": (s)=>s.circuitParts
     }["SimulationCanvasInner.useAppStore[circuitParts]"]);
+    const circuitGeneratedVersion = (0, __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"])({
+        "SimulationCanvasInner.useAppStore[circuitGeneratedVersion]": (s)=>s.circuitGeneratedVersion
+    }["SimulationCanvasInner.useAppStore[circuitGeneratedVersion]"]);
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$hooks$2f$useDiagramSync$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useDiagramSync"])();
     const { zoomIn, zoomOut, fitView, setViewport } = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$xyflow$2f$react$2f$dist$2f$esm$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$locals$3e$__["useReactFlow"])();
+    // Auto-fit view after AI generates a circuit
+    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
+        "SimulationCanvasInner.useEffect": ()=>{
+            if (circuitGeneratedVersion > 0 && circuitParts.length > 0) {
+                // Delay to allow nodes to render in ReactFlow
+                const timer = setTimeout({
+                    "SimulationCanvasInner.useEffect.timer": ()=>{
+                        fitView({
+                            padding: 0.2,
+                            duration: 500
+                        });
+                    }
+                }["SimulationCanvasInner.useEffect.timer"], 150);
+                return ({
+                    "SimulationCanvasInner.useEffect": ()=>clearTimeout(timer)
+                })["SimulationCanvasInner.useEffect"];
+            }
+        }
+    }["SimulationCanvasInner.useEffect"], [
+        circuitGeneratedVersion,
+        fitView,
+        circuitParts.length
+    ]);
     const getCanvasRect = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useCallback"])({
         "SimulationCanvasInner.useCallback[getCanvasRect]": ()=>{
             return canvasRef.current?.getBoundingClientRect() ?? null;
@@ -9538,7 +9879,8 @@ _c1 = UnifiedActionBar;
                         data: {
                             getCanvasRect,
                             partType: part.type.replace('wokwi-', ''),
-                            onDeletePart: removePart
+                            onDeletePart: removePart,
+                            attrs: part.attrs ?? {}
                         },
                         selected: selectedPartIds.includes(part.id)
                     })
@@ -9617,11 +9959,13 @@ _c1 = UnifiedActionBar;
                         "SimulationCanvasInner.useEffect": (node)=>{
                             if (node.type === 'wokwi') {
                                 const simStates = componentPinStates?.[node.id];
+                                const pwmValue = componentPwmStates?.[node.id];
                                 return {
                                     ...node,
                                     data: {
                                         ...node.data,
-                                        simulationPinStates: simStates
+                                        simulationPinStates: simStates,
+                                        pwmValue: pwmValue
                                     }
                                 };
                             }
@@ -9632,6 +9976,7 @@ _c1 = UnifiedActionBar;
         }
     }["SimulationCanvasInner.useEffect"], [
         componentPinStates,
+        componentPwmStates,
         setNodes
     ]);
     const [edges, setEdges, onEdgesChange] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$xyflow$2f$react$2f$dist$2f$esm$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$locals$3e$__["useEdgesState"])([]);
@@ -9899,14 +10244,14 @@ _c1 = UnifiedActionBar;
                 onResetView: handleResetView
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 554,
+                lineNumber: 571,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$SelectionOverlay$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
                 containerRef: canvasRef
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 561,
+                lineNumber: 578,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$xyflow$2f$react$2f$dist$2f$esm$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$locals$3e$__["ReactFlow"], {
@@ -9930,6 +10275,11 @@ _c1 = UnifiedActionBar;
                 onNodeDragStart: onNodeDragStart,
                 onNodeDrag: onNodeDrag,
                 onNodeDragStop: onNodeDragStop,
+                snapToGrid: true,
+                snapGrid: [
+                    20,
+                    20
+                ],
                 fitView: true,
                 className: "h-full w-full",
                 style: {
@@ -9956,14 +10306,14 @@ _c1 = UnifiedActionBar;
                         size: 1
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 594,
+                        lineNumber: 613,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$xyflow$2f$react$2f$dist$2f$esm$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$locals$3e$__["Controls"], {
                         className: "!left-4 !bottom-20"
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 595,
+                        lineNumber: 614,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$WiringLayer$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -9971,24 +10321,25 @@ _c1 = UnifiedActionBar;
                         wirePointOverrides: wirePointOverrides ?? undefined
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 597,
+                        lineNumber: 616,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 563,
+                lineNumber: 580,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 545,
+        lineNumber: 562,
         columnNumber: 5
     }, this);
 }
-_s(SimulationCanvasInner, "ynmq7FBi6D2Y99i0gkLM4M7A9/0=", false, function() {
+_s(SimulationCanvasInner, "lZkc8KWrAlbaBqQU0IAYJ7LhXRI=", false, function() {
     return [
+        __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
         __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
         __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
         __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
@@ -10006,22 +10357,23 @@ _s(SimulationCanvasInner, "ynmq7FBi6D2Y99i0gkLM4M7A9/0=", false, function() {
     ];
 });
 _c2 = SimulationCanvasInner;
-function SimulationCanvas({ isRunning, componentPinStates }) {
+function SimulationCanvas({ isRunning, componentPinStates, componentPwmStates }) {
     _s1();
     const canvasRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$xyflow$2f$react$2f$dist$2f$esm$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$locals$3e$__["ReactFlowProvider"], {
         children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(SimulationCanvasInner, {
             canvasRef: canvasRef,
             isRunning: isRunning,
-            componentPinStates: componentPinStates
+            componentPinStates: componentPinStates,
+            componentPwmStates: componentPwmStates
         }, void 0, false, {
             fileName: "[project]/app/page.tsx",
-            lineNumber: 616,
+            lineNumber: 637,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 615,
+        lineNumber: 636,
         columnNumber: 5
     }, this);
 }
@@ -10070,7 +10422,7 @@ _c3 = SimulationCanvas;
                                 className: "h-3.5 w-3.5 shrink-0"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 662,
+                                lineNumber: 684,
                                 columnNumber: 15
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -10078,7 +10430,7 @@ _c3 = SimulationCanvas;
                                 children: file.path
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 663,
+                                lineNumber: 685,
                                 columnNumber: 15
                             }, this),
                             file.includeInSimulation && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -10086,7 +10438,7 @@ _c3 = SimulationCanvas;
                                 title: "Included in simulation"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 665,
+                                lineNumber: 687,
                                 columnNumber: 17
                             }, this),
                             openFilePaths.length > 1 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -10100,24 +10452,24 @@ _c3 = SimulationCanvas;
                                     className: "h-3 w-3"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 676,
+                                    lineNumber: 698,
                                     columnNumber: 19
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 668,
+                                lineNumber: 690,
                                 columnNumber: 17
                             }, this)
                         ]
                     }, path, true, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 652,
+                        lineNumber: 674,
                         columnNumber: 13
                     }, this);
                 })
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 646,
+                lineNumber: 668,
                 columnNumber: 7
             }, this),
             compilationError && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10127,12 +10479,12 @@ _c3 = SimulationCanvas;
                     children: compilationError
                 }, void 0, false, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 687,
+                    lineNumber: 709,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 686,
+                lineNumber: 708,
                 columnNumber: 9
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10150,7 +10502,7 @@ _c3 = SimulationCanvas;
                     placeholder: "// Write your Arduino code here..."
                 }, void 0, false, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 696,
+                    lineNumber: 718,
                     columnNumber: 11
                 }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                     className: "flex h-full items-center justify-center text-ide-text-subtle",
@@ -10159,23 +10511,23 @@ _c3 = SimulationCanvas;
                         children: "No file selected"
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 714,
+                        lineNumber: 736,
                         columnNumber: 13
                     }, this)
                 }, void 0, false, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 713,
+                    lineNumber: 735,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 694,
+                lineNumber: 716,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 644,
+        lineNumber: 666,
         columnNumber: 5
     }, this);
 }
@@ -10254,7 +10606,7 @@ _c4 = CodeEditorPanel;
                         children: "PROJECT FILES"
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 765,
+                        lineNumber: 787,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -10266,18 +10618,18 @@ _c4 = CodeEditorPanel;
                             className: "h-3.5 w-3.5"
                         }, void 0, false, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 772,
+                            lineNumber: 794,
                             columnNumber: 11
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 766,
+                        lineNumber: 788,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 764,
+                lineNumber: 786,
                 columnNumber: 7
             }, this),
             showNewFileInput && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10298,12 +10650,12 @@ _c4 = CodeEditorPanel;
                     autoFocus: true
                 }, void 0, false, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 779,
+                    lineNumber: 801,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 778,
+                lineNumber: 800,
                 columnNumber: 9
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10330,7 +10682,7 @@ _c4 = CodeEditorPanel;
                                 onClick: (e)=>e.stopPropagation()
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 812,
+                                lineNumber: 834,
                                 columnNumber: 15
                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                 className: "flex items-center gap-2 min-w-0 flex-1",
@@ -10339,7 +10691,7 @@ _c4 = CodeEditorPanel;
                                         className: "h-3.5 w-3.5 shrink-0"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 830,
+                                        lineNumber: 852,
                                         columnNumber: 17
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -10347,7 +10699,7 @@ _c4 = CodeEditorPanel;
                                         children: file.path
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 831,
+                                        lineNumber: 853,
                                         columnNumber: 17
                                     }, this),
                                     file.isMain && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -10355,13 +10707,13 @@ _c4 = CodeEditorPanel;
                                         children: "main"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 833,
+                                        lineNumber: 855,
                                         columnNumber: 19
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 829,
+                                lineNumber: 851,
                                 columnNumber: 15
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10378,34 +10730,34 @@ _c4 = CodeEditorPanel;
                                         className: "h-3 w-3"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 854,
+                                        lineNumber: 876,
                                         columnNumber: 45
                                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$eye$2d$off$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__EyeOff$3e$__["EyeOff"], {
                                         className: "h-3 w-3"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 854,
+                                        lineNumber: 876,
                                         columnNumber: 75
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 840,
+                                    lineNumber: 862,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 839,
+                                lineNumber: 861,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, file.path, true, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 800,
+                        lineNumber: 822,
                         columnNumber: 11
                     }, this))
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 798,
+                lineNumber: 820,
                 columnNumber: 7
             }, this),
             contextMenu && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
@@ -10415,7 +10767,7 @@ _c4 = CodeEditorPanel;
                         onClick: ()=>setContextMenu(null)
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 864,
+                        lineNumber: 886,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10436,7 +10788,7 @@ _c4 = CodeEditorPanel;
                                 children: "Rename"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 872,
+                                lineNumber: 894,
                                 columnNumber: 13
                             }, this),
                             !contextMenu.file.isMain && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -10451,20 +10803,20 @@ _c4 = CodeEditorPanel;
                                         className: "h-3 w-3"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 892,
+                                        lineNumber: 914,
                                         columnNumber: 17
                                     }, this),
                                     "Delete"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 884,
+                                lineNumber: 906,
                                 columnNumber: 15
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 868,
+                        lineNumber: 890,
                         columnNumber: 11
                     }, this)
                 ]
@@ -10472,7 +10824,7 @@ _c4 = CodeEditorPanel;
         ]
     }, void 0, true, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 762,
+        lineNumber: 784,
         columnNumber: 5
     }, this);
 }
@@ -10520,26 +10872,26 @@ function LeftPanel() {
                                 className: "h-3.5 w-3.5"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 935,
+                                lineNumber: 957,
                                 columnNumber: 15
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                 children: tab.label
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 936,
+                                lineNumber: 958,
                                 columnNumber: 15
                             }, this)
                         ]
                     }, tab.key, true, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 924,
+                        lineNumber: 946,
                         columnNumber: 13
                     }, this);
                 })
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 919,
+                lineNumber: 941,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10549,29 +10901,29 @@ function LeftPanel() {
                         className: "h-full overflow-auto p-4",
                         children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$ComponentLibrary$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {}, void 0, false, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 946,
+                            lineNumber: 968,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 945,
+                        lineNumber: 967,
                         columnNumber: 11
                     }, this),
                     activeTab === 'files' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(FilesPanel, {}, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 950,
+                        lineNumber: 972,
                         columnNumber: 11
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 943,
+                lineNumber: 965,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 917,
+        lineNumber: 939,
         columnNumber: 5
     }, this);
 }
@@ -10586,12 +10938,12 @@ _c6 = LeftPanel;
             className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$cn$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["cn"])('absolute rounded-full bg-ide-border opacity-0 group-hover:opacity-100 transition-opacity', direction === 'horizontal' ? 'w-0.5 h-8' : 'h-0.5 w-8')
         }, void 0, false, {
             fileName: "[project]/app/page.tsx",
-            lineNumber: 977,
+            lineNumber: 999,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 968,
+        lineNumber: 990,
         columnNumber: 5
     }, this);
 }
@@ -10625,7 +10977,7 @@ function Home() {
     const compiledBoard = (0, __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"])({
         "Home.useAppStore[compiledBoard]": (s)=>s.compiledBoard
     }["Home.useAppStore[compiledBoard]"]);
-    const { run: simRun, stop: simStop, isRunning: simIsRunning, pinStates, serialOutput, clearSerialOutput } = (0, __TURBOPACK__imported__module__$5b$project$5d2f$hooks$2f$useSimulation$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useSimulation"])(hex, compiledBoard ?? '');
+    const { run: simRun, stop: simStop, isRunning: simIsRunning, pinStates, pwmStates, serialOutput, clearSerialOutput } = (0, __TURBOPACK__imported__module__$5b$project$5d2f$hooks$2f$useSimulation$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useSimulation"])(hex, compiledBoard ?? '');
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "Home.useEffect": ()=>{
             if (!hex || !compiledBoard) return;
@@ -10751,6 +11103,51 @@ function Home() {
         connections,
         pinStates
     ]);
+    // Compute PWM values for components based on connections to PWM pins
+    const componentPwmStates = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useMemo"])({
+        "Home.useMemo[componentPwmStates]": ()=>{
+            const states = {};
+            const mcuPart = circuitParts.find({
+                "Home.useMemo[componentPwmStates].mcuPart": (p)=>p.type.includes('arduino') || p.type.includes('esp32') || p.type.includes('pi-pico')
+            }["Home.useMemo[componentPwmStates].mcuPart"]);
+            if (!mcuPart) return states;
+            // Find components connected to PWM pins and map their PWM values
+            for (const conn of connections){
+                let mcuEndpoint = null;
+                let componentEndpoint = null;
+                if (conn.from.partId === mcuPart.id) {
+                    mcuEndpoint = conn.from;
+                    componentEndpoint = conn.to;
+                } else if (conn.to.partId === mcuPart.id) {
+                    mcuEndpoint = conn.to;
+                    componentEndpoint = conn.from;
+                }
+                if (!mcuEndpoint || !componentEndpoint) continue;
+                // Check if MCU pin is a PWM pin (3, 5, 6, 9, 10, 11 for Arduino Uno)
+                const pinNum = parseInt(mcuEndpoint.pinId, 10);
+                if (isNaN(pinNum)) continue;
+                const pwmPins = [
+                    3,
+                    5,
+                    6,
+                    9,
+                    10,
+                    11
+                ];
+                if (pwmPins.includes(pinNum)) {
+                    const pwmValue = pwmStates[pinNum];
+                    if (typeof pwmValue === 'number' && pwmValue > 0) {
+                        states[componentEndpoint.partId] = pwmValue;
+                    }
+                }
+            }
+            return states;
+        }
+    }["Home.useMemo[componentPwmStates]"], [
+        circuitParts,
+        connections,
+        pwmStates
+    ]);
     // Debug: Log componentPinStates changes
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "Home.useEffect": ()=>{
@@ -10800,18 +11197,18 @@ function Home() {
                                     className: "h-4 w-4"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1150,
+                                    lineNumber: 1211,
                                     columnNumber: 15
                                 }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$panel$2d$left$2d$close$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__PanelLeftClose$3e$__["PanelLeftClose"], {
                                     className: "h-4 w-4"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1152,
+                                    lineNumber: 1213,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1143,
+                                lineNumber: 1204,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -10825,12 +11222,12 @@ function Home() {
                                             children: "F"
                                         }, void 0, false, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 1158,
+                                            lineNumber: 1219,
                                             columnNumber: 15
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1157,
+                                        lineNumber: 1218,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10840,7 +11237,7 @@ function Home() {
                                                 children: "FUNDI"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/page.tsx",
-                                                lineNumber: 1161,
+                                                lineNumber: 1222,
                                                 columnNumber: 15
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -10848,26 +11245,26 @@ function Home() {
                                                 children: "IoT Workbench"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/page.tsx",
-                                                lineNumber: 1164,
+                                                lineNumber: 1225,
                                                 columnNumber: 15
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1160,
+                                        lineNumber: 1221,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1156,
+                                lineNumber: 1217,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                 className: "h-5 w-px bg-ide-border"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1170,
+                                lineNumber: 1231,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -10879,7 +11276,7 @@ function Home() {
                                         className: "h-3.5 w-3.5"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1177,
+                                        lineNumber: 1238,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -10887,19 +11284,19 @@ function Home() {
                                         children: "Workspace"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1178,
+                                        lineNumber: 1239,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1172,
+                                lineNumber: 1233,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 1141,
+                        lineNumber: 1202,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$StatusBadge$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -10907,7 +11304,7 @@ function Home() {
                         isConnected: true
                     }, void 0, false, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 1183,
+                        lineNumber: 1244,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10923,7 +11320,7 @@ function Home() {
                                         className: "h-3.5 w-3.5"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1193,
+                                        lineNumber: 1254,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -10931,13 +11328,13 @@ function Home() {
                                         children: "Publish"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1194,
+                                        lineNumber: 1255,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1187,
+                                lineNumber: 1248,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -10948,24 +11345,24 @@ function Home() {
                                     className: "h-4 w-4"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1201,
+                                    lineNumber: 1262,
                                     columnNumber: 13
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1196,
+                                lineNumber: 1257,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/page.tsx",
-                        lineNumber: 1186,
+                        lineNumber: 1247,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 1139,
+                lineNumber: 1200,
                 columnNumber: 7
             }, this),
             showPublishModal && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -10981,7 +11378,7 @@ function Home() {
                                     children: "Publish Project"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1211,
+                                    lineNumber: 1272,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -10992,18 +11389,18 @@ function Home() {
                                         className: "h-4 w-4"
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1217,
+                                        lineNumber: 1278,
                                         columnNumber: 17
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1212,
+                                    lineNumber: 1273,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 1210,
+                            lineNumber: 1271,
                             columnNumber: 13
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11022,7 +11419,7 @@ function Home() {
                                             className: "h-5 w-5 text-ide-accent"
                                         }, void 0, false, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 1230,
+                                            lineNumber: 1291,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11032,7 +11429,7 @@ function Home() {
                                                     children: "Publish to GitHub"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1232,
+                                                    lineNumber: 1293,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11040,19 +11437,19 @@ function Home() {
                                                     children: "Create a new repository or gist"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1233,
+                                                    lineNumber: 1294,
                                                     columnNumber: 19
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 1231,
+                                            lineNumber: 1292,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1221,
+                                    lineNumber: 1282,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -11077,7 +11474,7 @@ function Home() {
                                             className: "h-5 w-5 text-ide-accent"
                                         }, void 0, false, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 1252,
+                                            lineNumber: 1313,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11087,7 +11484,7 @@ function Home() {
                                                     children: "Download Project"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1254,
+                                                    lineNumber: 1315,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11095,25 +11492,25 @@ function Home() {
                                                     children: "Export as JSON file"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1255,
+                                                    lineNumber: 1316,
                                                     columnNumber: 19
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 1253,
+                                            lineNumber: 1314,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1238,
+                                    lineNumber: 1299,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 1220,
+                            lineNumber: 1281,
                             columnNumber: 13
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11123,23 +11520,23 @@ function Home() {
                                 children: "ℹ️ GitHub integration requires authentication. Coming soon!"
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1262,
+                                lineNumber: 1323,
                                 columnNumber: 15
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 1261,
+                            lineNumber: 1322,
                             columnNumber: 13
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 1209,
+                    lineNumber: 1270,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 1208,
+                lineNumber: 1269,
                 columnNumber: 9
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11157,19 +11554,19 @@ function Home() {
                                     className: "bg-ide-panel-bg",
                                     children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(LeftPanel, {}, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1282,
+                                        lineNumber: 1343,
                                         columnNumber: 17
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1276,
+                                    lineNumber: 1337,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(ResizeHandle, {
                                     direction: "horizontal"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.tsx",
-                                    lineNumber: 1284,
+                                    lineNumber: 1345,
                                     columnNumber: 15
                                 }, this)
                             ]
@@ -11189,10 +11586,11 @@ function Home() {
                                             children: [
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(SimulationCanvas, {
                                                     isRunning: simIsRunning,
-                                                    componentPinStates: componentPinStates
+                                                    componentPinStates: componentPinStates,
+                                                    componentPwmStates: componentPwmStates
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1294,
+                                                    lineNumber: 1355,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(UnifiedActionBar, {
@@ -11204,7 +11602,7 @@ function Home() {
                                                     onStop: simStop
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1300,
+                                                    lineNumber: 1362,
                                                     columnNumber: 19
                                                 }, this),
                                                 bottomPanelCollapsed && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -11217,31 +11615,31 @@ function Home() {
                                                             className: "h-3.5 w-3.5"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/page.tsx",
-                                                            lineNumber: 1317,
+                                                            lineNumber: 1379,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                             children: "Show Editor"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/page.tsx",
-                                                            lineNumber: 1318,
+                                                            lineNumber: 1380,
                                                             columnNumber: 23
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1311,
+                                                    lineNumber: 1373,
                                                     columnNumber: 21
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/page.tsx",
-                                            lineNumber: 1293,
+                                            lineNumber: 1354,
                                             columnNumber: 17
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/app/page.tsx",
-                                        lineNumber: 1292,
+                                        lineNumber: 1353,
                                         columnNumber: 15
                                     }, this),
                                     !bottomPanelCollapsed && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
@@ -11250,7 +11648,7 @@ function Home() {
                                                 direction: "vertical"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/page.tsx",
-                                                lineNumber: 1326,
+                                                lineNumber: 1388,
                                                 columnNumber: 19
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2d$resizable$2d$panels$2f$dist$2f$react$2d$resizable$2d$panels$2e$browser$2e$development$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Panel"], {
@@ -11267,7 +11665,7 @@ function Home() {
                                                                     children: "Code Editor"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/page.tsx",
-                                                                    lineNumber: 1333,
+                                                                    lineNumber: 1395,
                                                                     columnNumber: 25
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -11279,18 +11677,18 @@ function Home() {
                                                                         className: "h-3.5 w-3.5"
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/app/page.tsx",
-                                                                        lineNumber: 1340,
+                                                                        lineNumber: 1402,
                                                                         columnNumber: 27
                                                                     }, this)
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/page.tsx",
-                                                                    lineNumber: 1334,
+                                                                    lineNumber: 1396,
                                                                     columnNumber: 25
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/page.tsx",
-                                                            lineNumber: 1332,
+                                                            lineNumber: 1394,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -11299,23 +11697,23 @@ function Home() {
                                                                 compilationError: compilationError
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/page.tsx",
-                                                                lineNumber: 1344,
+                                                                lineNumber: 1406,
                                                                 columnNumber: 25
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/page.tsx",
-                                                            lineNumber: 1343,
+                                                            lineNumber: 1405,
                                                             columnNumber: 23
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/page.tsx",
-                                                    lineNumber: 1330,
+                                                    lineNumber: 1392,
                                                     columnNumber: 21
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/page.tsx",
-                                                lineNumber: 1329,
+                                                lineNumber: 1391,
                                                 columnNumber: 19
                                             }, this)
                                         ]
@@ -11323,19 +11721,19 @@ function Home() {
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1290,
+                                lineNumber: 1351,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 1289,
+                            lineNumber: 1350,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(ResizeHandle, {
                             direction: "horizontal"
                         }, void 0, false, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 1355,
+                            lineNumber: 1417,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2d$resizable$2d$panels$2f$dist$2f$react$2d$resizable$2d$panels$2e$browser$2e$development$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Panel"], {
@@ -11348,33 +11746,33 @@ function Home() {
                                 isSimulationRunning: simIsRunning
                             }, void 0, false, {
                                 fileName: "[project]/app/page.tsx",
-                                lineNumber: 1359,
+                                lineNumber: 1421,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/page.tsx",
-                            lineNumber: 1358,
+                            lineNumber: 1420,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/page.tsx",
-                    lineNumber: 1272,
+                    lineNumber: 1333,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 1271,
+                lineNumber: 1332,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/app/page.tsx",
-        lineNumber: 1137,
+        lineNumber: 1198,
         columnNumber: 5
     }, this);
 }
-_s5(Home, "r51F68Z+ch8CkgCHVK7RUYg1wn4=", false, function() {
+_s5(Home, "ar0lt2nTJCSXIF6vSZhQtj9yNkY=", false, function() {
     return [
         __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
         __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],

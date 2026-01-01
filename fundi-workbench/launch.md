@@ -50,6 +50,7 @@ Make sure you have a `.env` file in `backend/` with:
 
 ```
 GEMINI_API_KEY=your_api_key_here
+GEMINI_MODEL=models/gemini-flash-lite-latest
 ENVIRONMENT=dev
 ```
 

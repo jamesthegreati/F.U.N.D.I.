@@ -315,6 +315,7 @@ function SimulationCanvasInner({
         getCanvasRect,
         partType: part.type.replace('wokwi-', ''),
         onDeletePart: removePart,
+        attrs: part.attrs ?? {},
       },
       selected: selectedPartIds.includes(part.id),
     }))

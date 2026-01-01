@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
         print("⚠️  AI features will not work until a valid API key is configured.", file=sys.stderr)
     else:
         print("✅ Gemini API key configured", file=sys.stderr)
+        print(f"🤖 Gemini model: {settings.GEMINI_MODEL}", file=sys.stderr)
     
     # Validate Arduino CLI availability
     arduino_cli_path = shutil.which("arduino-cli")

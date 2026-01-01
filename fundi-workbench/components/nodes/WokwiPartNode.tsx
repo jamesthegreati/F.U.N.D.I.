@@ -29,6 +29,9 @@ interface WokwiPartNodeData {
     pwmValue?: number;
     /** Part type for this component */
     partType?: WokwiPartType;
+
+    /** Element attributes for Wokwi custom elements (e.g., { color: 'green' }, { value: '220' }) */
+    attrs?: Record<string, string>;
     /** Button interaction handlers */
     onButtonPress?: (partId: string) => void;
     onButtonRelease?: (partId: string) => void;
@@ -72,18 +75,35 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const elementRef = useRef<HTMLElement | null>(null);
 
     const partConfig = WOKWI_PARTS[partType];
+    const partElementTag = partConfig?.element;
+    const PartElement = (partElementTag ?? null) as ElementType | null;
+    const isUnknownPart = !partConfig || !partElementTag || !PartElement;
 
-    // Early return if partConfig is undefined (invalid part type)
-    if (!partConfig) {
-        console.warn(`[WokwiPartNode] Unknown part type: ${partType}`);
-        return (
-            <div className="relative glass-panel border-alchemist rounded-md p-4 text-amber-500 text-sm">
-                Unknown component: {partType}
-            </div>
-        );
-    }
+    const applyStaticAttrs = useCallback(() => {
+        const element = elementRef.current;
+        if (!element) return;
 
-    const PartElement = (partConfig.element ?? null) as ElementType | null;
+        const attrs = data?.attrs;
+        if (!attrs) return;
+
+        for (const [key, value] of Object.entries(attrs)) {
+            // Avoid clobbering simulation-driven runtime properties.
+            if ((partType === 'led' || partType === 'wokwi-led') && (key === 'value' || key === 'brightness')) {
+                continue;
+            }
+
+            try {
+                element.setAttribute(key, String(value));
+            } catch {
+                // Ignore invalid attributes
+            }
+        }
+
+        const maybeLit = element as unknown as { requestUpdate?: () => void };
+        if (typeof maybeLit.requestUpdate === 'function') {
+            maybeLit.requestUpdate();
+        }
+    }, [data?.attrs, partType]);
 
     // Handle click to select/deselect component
     const handleClick = useCallback(
@@ -232,12 +252,14 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
 
     useEffect(() => {
         const initElement = async () => {
-            await customElements.whenDefined(partConfig.element);
+            if (!partElementTag) return;
+            await customElements.whenDefined(partElementTag);
 
-            const element = containerRef.current?.querySelector(partConfig.element);
+            const element = containerRef.current?.querySelector(partElementTag);
             if (!element) return;
 
             elementRef.current = element as HTMLElement;
+            applyStaticAttrs();
 
             requestAnimationFrame(() => {
                 calculatePins();
@@ -257,7 +279,12 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             observer.disconnect();
             window.removeEventListener('resize', calculatePins);
         };
-    }, [calculatePins, partConfig.element]);
+    }, [applyStaticAttrs, calculatePins, partElementTag]);
+
+    // Apply static Wokwi element attributes from circuit state (colors, values, labels, etc.)
+    useEffect(() => {
+        applyStaticAttrs();
+    }, [applyStaticAttrs]);
 
     // Update element properties based on simulation pin states
     useEffect(() => {
@@ -572,6 +599,15 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             element.removeEventListener('click', handleClick);
         };
     }, [data, nodeId, partType]);
+
+    if (isUnknownPart) {
+        console.warn(`[WokwiPartNode] Unknown part type: ${partType}`);
+        return (
+            <div className="relative glass-panel border-alchemist rounded-md p-4 text-amber-500 text-sm">
+                Unknown component: {partType}
+            </div>
+        );
+    }
 
     return (
         <div

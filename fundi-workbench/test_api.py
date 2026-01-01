@@ -12,6 +12,7 @@ Usage:
 import json
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 try:
@@ -24,6 +25,9 @@ except ImportError:
 
 
 BASE_URL = "http://localhost:8000"
+
+# Example projects (used by prompt manager + useful for compile smoke tests)
+EXAMPLES_DIR = Path(__file__).resolve().parent / "backend" / "app" / "prompts" / "examples"
 
 # Test data
 SAMPLE_CODE = """
@@ -155,6 +159,82 @@ def test_compile_endpoint_empty_code() -> tuple[bool, dict[str, Any]]:
         }
     except Exception as e:
         return False, {"error": str(e)}
+
+
+def _detect_board_from_example(example: dict[str, Any]) -> str:
+    """Best-effort pick a compile board from an example JSON."""
+    circuit_parts = example.get("circuit_parts")
+    if isinstance(circuit_parts, list):
+        part_types: list[str] = []
+        for part in circuit_parts:
+            if isinstance(part, dict):
+                t = part.get("type")
+                if isinstance(t, str) and t:
+                    part_types.append(t)
+
+        for t in part_types:
+            tl = t.lower()
+            if "arduino" in tl or "esp32" in tl:
+                return t
+
+    return "wokwi-arduino-uno"
+
+
+def test_compile_example_projects() -> tuple[bool, dict[str, Any]]:
+    """Compile all bundled example sketches through the compile endpoint."""
+    if not EXAMPLES_DIR.exists():
+        return False, {"error": f"Examples dir not found: {EXAMPLES_DIR}"}
+
+    results: list[dict[str, Any]] = []
+    ok = True
+
+    for path in sorted(EXAMPLES_DIR.glob("*.json")):
+        try:
+            example = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            ok = False
+            results.append({"example": path.name, "success": False, "error": f"Invalid JSON: {e}"})
+            continue
+
+        code = example.get("code")
+        if not isinstance(code, str) or not code.strip():
+            ok = False
+            results.append({"example": path.name, "success": False, "error": "Missing/empty code"})
+            continue
+
+        board = _detect_board_from_example(example)
+        payload = {"code": code, "board": board}
+
+        try:
+            response = httpx.post(
+                f"{BASE_URL}/api/v1/compile",
+                json=payload,
+                timeout=240.0,
+            )
+            data = response.json()
+        except Exception as e:
+            ok = False
+            results.append({"example": path.name, "success": False, "error": str(e)})
+            continue
+
+        success = response.status_code == 200 and data.get("success") is True and data.get("hex") is not None
+        if not success:
+            ok = False
+
+        results.append(
+            {
+                "example": path.name,
+                "board": board,
+                "status_code": response.status_code,
+                "success": bool(data.get("success")),
+                "has_hex": data.get("hex") is not None,
+                "error": data.get("error"),
+            }
+        )
+
+    passed = sum(1 for r in results if r.get("success") is True and r.get("has_hex") is True)
+    total = len(results)
+    return ok, {"total": total, "passed": passed, "results": results}
 
 
 def test_generate_endpoint() -> tuple[bool, dict[str, Any]]:
@@ -319,6 +399,16 @@ def main() -> int:
     success, data = test_compile_endpoint_empty_code()
     print_result("Compile - Empty Code (expect 422)", success, f"Status: {data.get('status_code')}")
     results.append(("Compile - Empty Code", success))
+
+    success, data = test_compile_example_projects()
+    details = f"Passed: {data.get('passed')}/{data.get('total')}"
+    if not success:
+        # Print first failing example (if any) for quick debugging
+        failing = next((r for r in data.get("results", []) if not r.get("success")), None)
+        if isinstance(failing, dict):
+            details += f"; First failure: {failing.get('example')} ({failing.get('error')})"
+    print_result("Compile - Example Projects", success, details)
+    results.append(("Compile - Example Projects", success))
     
     # Generate Endpoint Tests
     print_header("Generate Endpoint Tests")
