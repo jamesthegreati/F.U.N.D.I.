@@ -498,8 +498,6 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         const attrs = data?.attrs ?? {};
         const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x27);
         const lcdDevice = getLCD1602(addr);
-        
-        console.log('[LCD] Binding LCD element to device at address 0x' + addr.toString(16));
 
         const lcdEl = element as unknown as {
             text?: string;
@@ -515,7 +513,6 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             try {
                 // Wokwi lcd1602 element supports a simple text setter.
                 const text = state.display.map((row) => row.join('')).join('\n');
-                console.log('[LCD] State update:', { text: text.slice(0, 32), backlight: state.backlightOn, displayOn: state.displayOn });
                 lcdEl.text = text;
                 lcdEl.backlight = state.backlightOn;
                 lcdEl.cursor = state.cursorOn;
@@ -547,8 +544,6 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         const attrs = data?.attrs ?? {};
         const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x3c);
         const oledDevice = getSSD1306(addr);
-        
-        console.log('[OLED] Binding SSD1306 element to device at address 0x' + addr.toString(16));
 
         // SSD1306 Wokwi element expects pixel data
         const unsubscribe = oledDevice.subscribe((state) => {

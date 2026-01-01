@@ -535,14 +535,16 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
                 }
               }
 
-              console.log(`[DHT] Searching for ${part.id} (${dhtType}):`, {
-                triedPins: possiblePinNames,
-                foundPin,
-                usedPinName,
-                adjacencyKeys: [...adjacency.keys()].filter(k => k.startsWith(part.id)),
-              });
-              
-              if (foundPin == null) continue;
+              if (foundPin == null) {
+                // Only log detailed debug info in development mode
+                if (process.env.NODE_ENV === 'development') {
+                  console.log(`[DHT] No connection found for ${part.id} (${dhtType}):`, {
+                    triedPins: possiblePinNames,
+                    adjacencyKeys: [...adjacency.keys()].filter(k => k.startsWith(part.id)),
+                  });
+                }
+                continue;
+              }
 
               const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
               if (!portBit) {
@@ -551,7 +553,9 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
               }
 
               const partId = part.id;
-              console.log(`[DHT] Binding ${partId} to Arduino pin ${foundPin} (port ${portBit.port === runner.portD ? 'D' : 'B'}, bit ${portBit.bit})`);
+              const portName = portBit.port === runner.portD ? 'D' : 
+                               portBit.port === runner.portB ? 'B' : 'C';
+              console.log(`[DHT] Binding ${partId} to port${portName}${portBit.bit} (Arduino pin ${foundPin})`);
               
               dhtDevicesRef.current.push(
                 new DHTDevice({
