@@ -725,16 +725,103 @@ export const useAppStore = create<AppState>()(
       },
 
       applyGeneratedCircuit: (parts, newConnections) => {
+        // Sensor default attrs - ensure sensors work in simulation
+        const sensorDefaults: Record<string, Record<string, string>> = {
+          'wokwi-dht22': { temperature: '25', humidity: '50' },
+          'wokwi-dht11': { temperature: '25', humidity: '50' },
+          'wokwi-hc-sr04': { distance: '100' },
+          'wokwi-potentiometer': { value: '50' },
+          'wokwi-slide-potentiometer': { value: '50' },
+          'wokwi-ntc-temperature-sensor': { temperature: '25' },
+          'wokwi-pir-motion-sensor': { motion: '0' },
+          'wokwi-photoresistor-sensor': { lux: '500' },
+          'wokwi-ds18b20': { temperature: '25' },
+          'wokwi-gas-sensor': { gasLevel: '200' },
+          'wokwi-tilt-sensor': { tilted: '0' },
+        }
+
+        // Output device default attrs - ensure visual feedback in simulation
+        const outputDefaults: Record<string, Record<string, string>> = {
+          'wokwi-led': { color: 'red' },
+          'wokwi-rgb-led': { common: 'cathode' },
+          'wokwi-servo': { horn: 'single' },
+          // LCD pin mode is inferred from connections (i2c vs full)
+          'wokwi-7segment': { color: 'red', common: 'cathode' },
+          'wokwi-neopixel': { pixels: '8' },
+          'wokwi-neopixel-ring': { pixels: '16' },
+          'wokwi-buzzer': { volume: '1' },
+          'wokwi-ssd1306': { i2cAddress: '0x3C' },
+        }
+
+        const inferLcdPinsMode = (partId: string): 'full' | 'i2c' | null => {
+          const pins = new Set<string>();
+          for (const c of newConnections) {
+            if (c.from.partId === partId) pins.add(String(c.from.pinId));
+            if (c.to.partId === partId) pins.add(String(c.to.pinId));
+          }
+
+          // Parallel/"full" pins
+          const fullPins = new Set([
+            'RS',
+            'E',
+            'RW',
+            'V0',
+            'VSS',
+            'VDD',
+            'A',
+            'K',
+            'D0',
+            'D1',
+            'D2',
+            'D3',
+            'D4',
+            'D5',
+            'D6',
+            'D7',
+          ]);
+
+          for (const p of pins) {
+            if (fullPins.has(p)) return 'full';
+          }
+
+          // I2C pins
+          if (pins.has('SDA') || pins.has('SCL')) return 'i2c';
+          return null;
+        }
+
+        // Merge all component defaults
+        const allDefaults = { ...sensorDefaults, ...outputDefaults }
+
+        // Apply defaults to parts that may be missing attrs
+        const partsWithDefaults = parts.map(part => {
+          const defaults = allDefaults[part.type.toLowerCase()] || allDefaults[part.type]
+          if (defaults) {
+            let attrs = { ...defaults, ...(part.attrs || {}) }
+
+            // Ensure LCD1602/LCD2004 pin mode matches the generated wiring.
+            // If we force the wrong mode (e.g. i2c) the canvas can't attach wires to RS/E/D4..D7, etc.
+            const typeLower = String(part.type).toLowerCase()
+            if ((typeLower === 'wokwi-lcd1602' || typeLower === 'wokwi-lcd2004') && (part.attrs == null || (part.attrs as any).pins == null)) {
+              const inferred = inferLcdPinsMode(part.id)
+              // Default to I2C only when we have no signal either way.
+              attrs = { ...attrs, pins: inferred ?? 'i2c' }
+            }
+
+            return { ...part, attrs }
+          }
+          return part
+        })
+
         // Check if AI provided meaningful positions (non-zero coordinates)
-        const hasAiPositions = parts.some(p =>
+        const hasAiPositions = partsWithDefaults.some(p =>
           p.position && (p.position.x !== 0 || p.position.y !== 0)
         )
 
         // Only apply layout algorithm if AI didn't provide positions
         // This preserves AI's intended layout when coordinates exist
         const finalParts = hasAiPositions
-          ? parts
-          : calculateCircuitLayout(parts, newConnections)
+          ? partsWithDefaults
+          : calculateCircuitLayout(partsWithDefaults, newConnections)
 
         // Replace current circuit with AI-generated one
         // Increment version to trigger auto-fit in canvas

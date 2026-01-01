@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AVRIOPort,
+  AVRTWI,
+  twiConfig,
+  type TWIEventHandler,
   AVRClock,
   AVRTimer,
   AVRUSART,
@@ -14,6 +17,12 @@ import {
   usart0Config,
   type GPIOListener,
 } from 'avr8js';
+
+import { useAppStore } from '@/store/useAppStore';
+import { getI2CBus } from '@/utils/simulation/i2c';
+import { getLCD1602 } from '@/utils/simulation/lcd1602';
+import { getSSD1306 } from '@/utils/simulation/ssd1306';
+import { DHTDevice, type DHTType } from '@/utils/simulation/dht';
 
 type PinStates = Record<number, boolean>;
 
@@ -93,6 +102,7 @@ class AVRRunner {
   readonly clock: AVRClock;
   readonly timer0: AVRTimer;
   readonly usart: AVRUSART;
+  readonly twi: AVRTWI;
 
   constructor(hexText: string) {
     const program = parseIntelHex(hexText);
@@ -106,7 +116,107 @@ class AVRRunner {
 
     // USART for Serial communication
     this.usart = new AVRUSART(this.cpu, usart0Config, 16_000_000);
+
+    // TWI (I2C) for Wire library support
+    this.twi = new AVRTWI(this.cpu, twiConfig, 16_000_000);
+
+    // Bridge avr8js TWI transactions to our simulated I2C bus.
+    this.twi.eventHandler = new I2CBusTwiEventHandler(this.twi);
   }
+}
+
+class I2CBusTwiEventHandler implements TWIEventHandler {
+  constructor(private readonly twi: AVRTWI) {}
+
+  start(): void {
+    getI2CBus().start();
+    this.twi.completeStart();
+  }
+
+  stop(): void {
+    getI2CBus().stop();
+    this.twi.completeStop();
+  }
+
+  connectToSlave(addr: number, write: boolean): void {
+    // In I2C, R/W bit: 0=write, 1=read
+    const addressByte = ((addr & 0x7f) << 1) | (write ? 0 : 1);
+    const ack = getI2CBus().writeByte(addressByte);
+    this.twi.completeConnect(ack);
+  }
+
+  writeByte(value: number): void {
+    const ack = getI2CBus().writeByte(value & 0xff);
+    this.twi.completeWrite(ack);
+  }
+
+  readByte(ack: boolean): void {
+    const value = getI2CBus().readByte(ack);
+    this.twi.completeRead(value & 0xff);
+  }
+}
+
+type CircuitPart = { id: string; type: string; attrs?: Record<string, unknown> };
+type CircuitConnection = { from: { partId: string; pinId: string }; to: { partId: string; pinId: string } };
+
+function parseI2CAddress(attr: unknown, fallback: number): number {
+  if (typeof attr === 'number' && Number.isFinite(attr)) return attr;
+  if (typeof attr !== 'string') return fallback;
+  const t = attr.trim();
+  // supports "0x27" and "39"
+  const parsed = t.startsWith('0x') ? Number.parseInt(t.slice(2), 16) : Number.parseInt(t, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function buildAdjacency(connections: CircuitConnection[]): Map<string, Set<string>> {
+  const adjacency = new Map<string, Set<string>>();
+  const keyOf = (partId: string, pinId: string) => `${partId}:${pinId}`;
+  for (const conn of connections) {
+    const a = keyOf(conn.from.partId, conn.from.pinId);
+    const b = keyOf(conn.to.partId, conn.to.pinId);
+    if (!adjacency.has(a)) adjacency.set(a, new Set());
+    if (!adjacency.has(b)) adjacency.set(b, new Set());
+    adjacency.get(a)!.add(b);
+    adjacency.get(b)!.add(a);
+  }
+  return adjacency;
+}
+
+function findConnectedMcuDigitalPin(
+  adjacency: Map<string, Set<string>>,
+  startKey: string,
+  mcuId: string
+): number | null {
+  const queue: string[] = [startKey];
+  const seen = new Set<string>(queue);
+  while (queue.length) {
+    const cur = queue.shift()!;
+    const idx = cur.indexOf(':');
+    if (idx > 0) {
+      const partId = cur.slice(0, idx);
+      const pinId = cur.slice(idx + 1);
+      if (partId === mcuId && /^\d+$/.test(pinId)) {
+        const n = Number.parseInt(pinId, 10);
+        return Number.isFinite(n) ? n : null;
+      }
+    }
+
+    const neighbors = adjacency.get(cur);
+    if (!neighbors) continue;
+    for (const n of neighbors) {
+      if (!seen.has(n)) {
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+  }
+  return null;
+}
+
+function getPortBitForArduinoDigitalPin(runner: AVRRunner, pin: number): { port: AVRIOPort; bit: number } | null {
+  if (pin >= 0 && pin <= 7) return { port: runner.portD, bit: pin };
+  if (pin >= 8 && pin <= 13) return { port: runner.portB, bit: pin - 8 };
+  return null;
 }
 
 // PWM state for analog output (0-255 duty cycle)
@@ -142,6 +252,9 @@ const PWM_PIN_CONFIGS: Record<number, { timer: string; ocrOffset: number }> = {
 };
 
 export function useSimulation(hexData: string | null | undefined, partType: string): UseSimulationControls {
+  const circuitParts = useAppStore((s) => s.circuitParts) as unknown as CircuitPart[];
+  const connections = useAppStore((s) => s.connections) as unknown as CircuitConnection[];
+
   const [isRunning, setIsRunning] = useState(false);
   const [pinStates, setPinStates] = useState<PinStates>({});
   const [pwmStates, setPwmStates] = useState<PwmStates>({});
@@ -152,6 +265,8 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const runningRef = useRef(false);
   const serialBufferRef = useRef<string>('');
   const stepFrameRef = useRef<() => void>(() => { });
+
+  const dhtDevicesRef = useRef<DHTDevice[]>([]);
 
   const cyclesPerFrame = useMemo(() => Math.floor(16_000_000 / 60), []);
 
@@ -232,6 +347,11 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         const before = runner.cpu.cycles;
         avrInstruction(runner.cpu);
 
+        // Tick protocol-level input devices that depend on tight timing.
+        for (const dht of dhtDevicesRef.current) {
+          dht.tick(runner.cpu.cycles);
+        }
+
         // Process timers/USART clock events and interrupts.
         // Without ticking, Arduino time functions (millis/delay) and Serial output won't work.
         const cpuAny = runner.cpu as unknown as {
@@ -276,6 +396,15 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     }
 
     runnerRef.current = null;
+    dhtDevicesRef.current = [];
+    // Reset I2C devices/bus state between runs.
+    try {
+      const bus = getI2CBus();
+      bus.resetAll();
+      bus.clearLog();
+    } catch {
+      // Ignore reset errors
+    }
     setPinStates({});
     setPwmStates({});
     setSerialOutput([]);
@@ -333,6 +462,74 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         const hexText = decodedText;
         const runner = new AVRRunner(hexText);
 
+        // Initialize simulated peripherals for the current circuit.
+        try {
+          const bus = getI2CBus();
+          bus.resetAll();
+          bus.clearLog();
+
+          // Instantiate I2C output devices so they can receive Wire traffic.
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            const attrs = part.attrs ?? {};
+
+            if (typeLower.includes('lcd1602')) {
+              const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x27);
+              getLCD1602(addr);
+            }
+
+            if (typeLower.includes('ssd1306') || typeLower.includes('oled')) {
+              const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x3c);
+              getSSD1306(addr);
+            }
+          }
+
+          // Instantiate DHT input devices and bind them to the MCU pin they are wired to.
+          dhtDevicesRef.current = [];
+          const mcuPart = circuitParts.find((p) => p.type === partType);
+          if (mcuPart) {
+            const adjacency = buildAdjacency(connections);
+
+            for (const part of circuitParts) {
+              const typeLower = part.type.toLowerCase();
+              if (!typeLower.includes('dht')) continue;
+
+              const dhtType: DHTType = typeLower.includes('dht11') ? 'dht11' : 'dht22';
+              const startKey = `${part.id}:SDA`;
+              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+              if (pin == null) continue;
+
+              const portBit = getPortBitForArduinoDigitalPin(runner, pin);
+              if (!portBit) continue;
+
+              const partId = part.id;
+              dhtDevicesRef.current.push(
+                new DHTDevice({
+                  type: dhtType,
+                  port: portBit.port,
+                  bit: portBit.bit,
+                  cpuFrequencyHz: 16_000_000,
+                  readValues: () => {
+                    const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                    const pNow = state.circuitParts.find((p) => p.id === partId);
+                    const attrs = pNow?.attrs ?? {};
+                    const tRaw = (attrs as any).temperature;
+                    const hRaw = (attrs as any).humidity;
+                    const t = typeof tRaw === 'number' ? tRaw : Number.parseFloat(String(tRaw ?? '25'));
+                    const h = typeof hRaw === 'number' ? hRaw : Number.parseFloat(String(hRaw ?? '50'));
+                    return {
+                      temperatureC: Number.isFinite(t) ? t : 25,
+                      humidity: Number.isFinite(h) ? h : 50,
+                    };
+                  },
+                })
+              );
+            }
+          }
+        } catch (e) {
+          console.warn('[Simulation] Peripheral initialization failed:', e);
+        }
+
         const onPortB: GPIOListener = (value) => updatePortPins('B', value);
         const onPortD: GPIOListener = (value) => updatePortPins('D', value);
         runner.portB.addListener(onPortB);
@@ -372,7 +569,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     runningRef.current = true;
     setIsRunning(true);
     rafRef.current = requestAnimationFrame(stepFrame);
-  }, [appendSerialLine, hexData, partType, stepFrame, updatePortPins]);
+  }, [appendSerialLine, circuitParts, connections, hexData, partType, stepFrame, updatePortPins]);
 
   useEffect(() => {
     // Reset simulation when program/target changes.

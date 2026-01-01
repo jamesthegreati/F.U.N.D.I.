@@ -42,11 +42,13 @@ _HEADER_TO_LIBRARY: dict[str, str] = {
     # Weather station example
     "DHT.h": "DHT sensor library",
     "LiquidCrystal.h": "LiquidCrystal",
+    "LiquidCrystal_I2C.h": "LiquidCrystal I2C",
     # Common dependency for many Adafruit libraries (sometimes shows up separately)
     "Adafruit_Sensor.h": "Adafruit Unified Sensor",
 }
 
 _LIB_INSTALL_LOCK = threading.Lock()
+_LIB_INDEX_READY = False
 
 
 class CompilerService:
@@ -393,6 +395,18 @@ class CompilerService:
             candidates.append(mapped)
 
         header_stem = header.rsplit(".", 1)[0] if header else ""
+
+        # Heuristic: many Arduino libraries use spaces in their Library Manager names
+        # while headers use underscores.
+        if header_stem:
+            spaced = header_stem.replace("_", " ").strip()
+            if spaced and spaced not in candidates:
+                candidates.append(spaced)
+
+        # Ensure the Arduino Library Manager index is available, otherwise lib search
+        # may return empty/non-JSON results.
+        self._ensure_lib_index(arduino_cli)
+
         # Query Arduino's library index for libraries that provide this include.
         # Use omit-releases-details for smaller payloads.
         try:
@@ -439,10 +453,33 @@ class CompilerService:
             # If search fails, fall back to naive stem install attempt.
             pass
 
-        if header_stem and header_stem not in candidates:
-            candidates.append(header_stem)
+        if header_stem:
+            if header_stem not in candidates:
+                candidates.append(header_stem)
 
         return candidates[:8]
+
+    def _ensure_lib_index(self, arduino_cli: str) -> None:
+        global _LIB_INDEX_READY  # noqa: PLW0603
+        if _LIB_INDEX_READY:
+            return
+
+        # Serialize index updates as they write to shared directories.
+        with _LIB_INSTALL_LOCK:
+            if _LIB_INDEX_READY:
+                return
+            try:
+                subprocess.run(
+                    [arduino_cli, "lib", "update-index", "--no-color"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=60,
+                )
+            except Exception:
+                # Best-effort: even if this fails, later searches/installs may still work.
+                pass
+            _LIB_INDEX_READY = True
 
     def _install_library(self, arduino_cli: str, library: str) -> bool:
         # Serialize installs to avoid concurrent arduino-cli writes to the library directory.

@@ -832,6 +832,435 @@ if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelper
     __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
 }
 }),
+"[project]/utils/simulation/i2c.ts [app-client] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "getI2CBus",
+    ()=>getI2CBus
+]);
+'use client';
+/**
+ * I2C Bus Manager - manages I2C peripherals and transactions
+ */ class I2CBus {
+    devices = new Map();
+    currentAddress = null;
+    currentBuffer = [];
+    transactionLog = [];
+    isReading = false;
+    listeners = new Set();
+    /**
+     * Register an I2C device at a specific address
+     */ registerDevice(device) {
+        if (this.devices.has(device.address)) {
+            console.warn(`[I2C] Overwriting device at address 0x${device.address.toString(16)}`);
+        }
+        this.devices.set(device.address, device);
+        console.log(`[I2C] Registered device '${device.name}' at 0x${device.address.toString(16)}`);
+    }
+    /**
+     * Unregister a device
+     */ unregisterDevice(address) {
+        this.devices.delete(address);
+    }
+    /**
+     * Get a registered device by address
+     */ getDevice(address) {
+        return this.devices.get(address);
+    }
+    /**
+     * Get all registered devices
+     */ getAllDevices() {
+        return Array.from(this.devices.values());
+    }
+    /**
+     * Start condition - begin a new transaction
+     */ start() {
+        const tx = {
+            type: 'start',
+            timestamp: Date.now()
+        };
+        this.transactionLog.push(tx);
+        this.notifyListeners(tx);
+        this.currentBuffer = [];
+        this.currentAddress = null;
+        this.isReading = false;
+    }
+    /**
+     * Stop condition - end current transaction
+     */ stop() {
+        // If we were writing, flush buffer to device
+        if (this.currentAddress !== null && !this.isReading && this.currentBuffer.length > 0) {
+            const device = this.devices.get(this.currentAddress);
+            if (device?.write) {
+                device.write([
+                    ...this.currentBuffer
+                ]);
+            }
+        }
+        const tx = {
+            type: 'stop',
+            timestamp: Date.now()
+        };
+        this.transactionLog.push(tx);
+        this.notifyListeners(tx);
+        this.currentAddress = null;
+        this.currentBuffer = [];
+        this.isReading = false;
+    }
+    /**
+     * Write a byte to the bus (address or data)
+     * Returns true for ACK, false for NACK
+     */ writeByte(byte) {
+        // First byte after start is address + R/W bit
+        if (this.currentAddress === null) {
+            const address = byte >> 1; // 7-bit address
+            this.isReading = (byte & 1) === 1; // R/W bit
+            this.currentAddress = address;
+            const tx = {
+                type: 'write',
+                address,
+                data: [
+                    byte
+                ],
+                timestamp: Date.now()
+            };
+            this.transactionLog.push(tx);
+            this.notifyListeners(tx);
+            // ACK if device exists at this address
+            return this.devices.has(address);
+        }
+        // Subsequent bytes are data
+        this.currentBuffer.push(byte);
+        const tx = {
+            type: 'write',
+            address: this.currentAddress,
+            data: [
+                byte
+            ],
+            timestamp: Date.now()
+        };
+        this.transactionLog.push(tx);
+        this.notifyListeners(tx);
+        // ACK data
+        return true;
+    }
+    /**
+     * Read a byte from the bus
+     */ readByte(ack = true) {
+        if (this.currentAddress === null) {
+            return 0xFF; // No device addressed
+        }
+        const device = this.devices.get(this.currentAddress);
+        if (!device?.read) {
+            return 0xFF; // Device doesn't support reading
+        }
+        // Get data from device
+        const data = device.read();
+        const byte = data.length > 0 ? data[0] : 0xFF;
+        const tx = {
+            type: 'read',
+            address: this.currentAddress,
+            data: [
+                byte
+            ],
+            timestamp: Date.now()
+        };
+        this.transactionLog.push(tx);
+        this.notifyListeners(tx);
+        return byte;
+    }
+    /**
+     * Get transaction log (for debugging/logic analyzer)
+     */ getTransactionLog(limit = 100) {
+        return this.transactionLog.slice(-limit);
+    }
+    /**
+     * Clear transaction log
+     */ clearLog() {
+        this.transactionLog = [];
+    }
+    /**
+     * Reset all devices
+     */ resetAll() {
+        for (const device of this.devices.values()){
+            device.reset?.();
+        }
+        this.currentAddress = null;
+        this.currentBuffer = [];
+        this.isReading = false;
+    }
+    /**
+     * Subscribe to transactions
+     */ subscribe(listener) {
+        this.listeners.add(listener);
+        return ()=>this.listeners.delete(listener);
+    }
+    notifyListeners(tx) {
+        for (const listener of this.listeners){
+            listener(tx);
+        }
+    }
+}
+// Singleton I2C bus instance
+let i2cBusInstance = null;
+function getI2CBus() {
+    if (!i2cBusInstance) {
+        i2cBusInstance = new I2CBus();
+    }
+    return i2cBusInstance;
+}
+if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
+    __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
+}
+}),
+"[project]/utils/simulation/lcd1602.ts [app-client] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "getLCD1602",
+    ()=>getLCD1602
+]);
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/i2c.ts [app-client] (ecmascript)");
+'use client';
+;
+/**
+ * LCD 1602 HD44780 Emulator (I2C mode via PCF8574 backpack)
+ * 
+ * Emulates a 16x2 character LCD with I2C interface.
+ * Common I2C addresses: 0x27 (PCF8574) or 0x3F (PCF8574A)
+ */ // LCD command definitions
+const LCD_CLEARDISPLAY = 0x01;
+const LCD_RETURNHOME = 0x02;
+const LCD_ENTRYMODESET = 0x04;
+const LCD_DISPLAYCONTROL = 0x08;
+const LCD_CURSORSHIFT = 0x10;
+const LCD_FUNCTIONSET = 0x20;
+const LCD_SETCGRAMADDR = 0x40;
+const LCD_SETDDRAMADDR = 0x80;
+// Display control flags
+const LCD_DISPLAYON = 0x04;
+const LCD_CURSORON = 0x02;
+const LCD_BLINKON = 0x01;
+// PCF8574 bit mapping to LCD pins (typical wiring)
+const PCF8574_RS = 0x01; // Register Select
+const PCF8574_RW = 0x02; // Read/Write (usually tied low)
+const PCF8574_EN = 0x04; // Enable
+const PCF8574_BL = 0x08; // Backlight
+/**
+ * LCD 1602 I2C Device Implementation
+ */ class LCD1602Device {
+    address;
+    name = 'LCD1602';
+    // Internal state
+    rows = 2;
+    cols = 16;
+    ddram = [];
+    cursorRow = 0;
+    cursorCol = 0;
+    displayOn = false;
+    cursorOn = false;
+    blinkOn = false;
+    backlightOn = true;
+    cgram = [];
+    cgramAddr = 0;
+    writingCgram = false;
+    // I2C/nibble mode handling
+    lastByte = 0;
+    nibbleBuffer = null;
+    regSelect = false;
+    // State listeners
+    listeners = new Set();
+    constructor(address = 0x27){
+        this.address = address;
+        this.reset();
+    }
+    reset() {
+        // Initialize DDRAM with spaces
+        this.ddram = [];
+        for(let r = 0; r < this.rows; r++){
+            this.ddram.push(new Array(this.cols).fill(0x20)); // Space character
+        }
+        // Initialize CGRAM (8 custom chars, 8 bytes each)
+        this.cgram = [];
+        for(let i = 0; i < 8; i++){
+            this.cgram.push(new Array(8).fill(0));
+        }
+        this.cursorRow = 0;
+        this.cursorCol = 0;
+        this.displayOn = false;
+        this.cursorOn = false;
+        this.blinkOn = false;
+        this.backlightOn = true;
+        this.nibbleBuffer = null;
+        this.writingCgram = false;
+        this.cgramAddr = 0;
+        this.notifyListeners();
+    }
+    write(data) {
+        for (const byte of data){
+            this.processByte(byte);
+        }
+    }
+    read() {
+        // LCD busy flag and address counter (not typically used in write-only implementations)
+        return [
+            0x00
+        ];
+    }
+    processByte(byte) {
+        // Extract control signals from PCF8574 byte
+        const rs = (byte & PCF8574_RS) !== 0;
+        const en = (byte & PCF8574_EN) !== 0;
+        const bl = (byte & PCF8574_BL) !== 0;
+        const nibble = byte >> 4 & 0x0F;
+        // Update backlight
+        if (this.backlightOn !== bl) {
+            this.backlightOn = bl;
+        }
+        // Only process on falling edge of Enable (EN low after being high)
+        if (this.lastByte & PCF8574_EN && !en) {
+            if (this.nibbleBuffer === null) {
+                // First nibble (high nibble)
+                this.nibbleBuffer = nibble << 4;
+                this.regSelect = rs;
+            } else {
+                // Second nibble (low nibble) - complete the byte
+                const fullByte = this.nibbleBuffer | nibble;
+                this.nibbleBuffer = null;
+                if (this.regSelect) {
+                    this.writeData(fullByte);
+                } else {
+                    this.writeCommand(fullByte);
+                }
+            }
+        }
+        this.lastByte = byte;
+    }
+    writeCommand(cmd) {
+        if (cmd & LCD_SETDDRAMADDR) {
+            // Set DDRAM address (cursor position)
+            this.writingCgram = false;
+            const addr = cmd & 0x7F;
+            if (addr >= 0x40) {
+                this.cursorRow = 1;
+                this.cursorCol = Math.min(addr - 0x40, this.cols - 1);
+            } else {
+                this.cursorRow = 0;
+                this.cursorCol = Math.min(addr, this.cols - 1);
+            }
+        } else if (cmd & LCD_SETCGRAMADDR) {
+            // Set CGRAM address (custom character)
+            this.writingCgram = true;
+            this.cgramAddr = cmd & 0x3F;
+        } else if (cmd & LCD_DISPLAYCONTROL) {
+            // Display control
+            this.displayOn = (cmd & LCD_DISPLAYON) !== 0;
+            this.cursorOn = (cmd & LCD_CURSORON) !== 0;
+            this.blinkOn = (cmd & LCD_BLINKON) !== 0;
+        } else if (cmd === LCD_CLEARDISPLAY) {
+            // Clear display
+            for(let r = 0; r < this.rows; r++){
+                for(let c = 0; c < this.cols; c++){
+                    this.ddram[r][c] = 0x20; // Space
+                }
+            }
+            this.cursorRow = 0;
+            this.cursorCol = 0;
+        } else if (cmd === LCD_RETURNHOME) {
+            // Return home
+            this.cursorRow = 0;
+            this.cursorCol = 0;
+        }
+        // Other commands (entry mode, function set, etc.) we mostly ignore for display purposes
+        this.notifyListeners();
+    }
+    writeData(data) {
+        if (this.writingCgram) {
+            // Writing to CGRAM
+            const charIndex = Math.floor(this.cgramAddr / 8);
+            const lineIndex = this.cgramAddr % 8;
+            if (charIndex < 8 && lineIndex < 8) {
+                this.cgram[charIndex][lineIndex] = data & 0x1F; // 5 bits per line
+            }
+            this.cgramAddr = this.cgramAddr + 1 & 0x3F;
+        } else {
+            // Writing to DDRAM (display)
+            if (this.cursorRow < this.rows && this.cursorCol < this.cols) {
+                this.ddram[this.cursorRow][this.cursorCol] = data;
+                this.cursorCol++;
+                if (this.cursorCol >= this.cols) {
+                    // Wrap to next line or stay at end
+                    if (this.cursorRow < this.rows - 1) {
+                        this.cursorRow++;
+                        this.cursorCol = 0;
+                    } else {
+                        this.cursorCol = this.cols - 1;
+                    }
+                }
+            }
+        }
+        this.notifyListeners();
+    }
+    /**
+     * Get current display state
+     */ getState() {
+        // Convert character codes to strings
+        const display = this.ddram.map((row)=>row.map((code)=>{
+                if (code < 8) {
+                    // Custom character - return placeholder
+                    return String.fromCharCode(0x2588); // Block character
+                } else if (code >= 0x20 && code <= 0x7E) {
+                    // Standard ASCII
+                    return String.fromCharCode(code);
+                } else {
+                    // Non-printable or extended
+                    return '?';
+                }
+            }));
+        return {
+            display,
+            cursorRow: this.cursorRow,
+            cursorCol: this.cursorCol,
+            displayOn: this.displayOn,
+            cursorOn: this.cursorOn,
+            blinkOn: this.blinkOn,
+            backlightOn: this.backlightOn,
+            cgram: this.cgram.map((char)=>[
+                    ...char
+                ])
+        };
+    }
+    /**
+     * Subscribe to state changes
+     */ subscribe(listener) {
+        this.listeners.add(listener);
+        // Immediately notify with current state
+        listener(this.getState());
+        return ()=>this.listeners.delete(listener);
+    }
+    notifyListeners() {
+        const state = this.getState();
+        for (const listener of this.listeners){
+            listener(state);
+        }
+    }
+}
+// LCD device instance cache
+const lcdDevices = new Map();
+function getLCD1602(address = 0x27) {
+    let device = lcdDevices.get(address);
+    if (!device) {
+        device = new LCD1602Device(address);
+        lcdDevices.set(address, device);
+        (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])().registerDevice(device);
+    }
+    return device;
+}
+if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
+    __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
+}
+}),
 "[project]/components/nodes/WokwiPartNode.tsx [app-client] (ecmascript)", ((__turbopack_context__) => {
 "use strict";
 
@@ -845,6 +1274,7 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$trash$2d$2$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Trash2$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/trash-2.js [app-client] (ecmascript) <export default as Trash2>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$wokwiParts$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/lib/wokwiParts.ts [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$audio$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/audio.ts [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$lcd1602$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/lcd1602.ts [app-client] (ecmascript)");
 ;
 var _s = __turbopack_context__.k.signature();
 'use client';
@@ -853,9 +1283,17 @@ var _s = __turbopack_context__.k.signature();
 ;
 ;
 ;
+;
 function getPartTypeFromData(data) {
     const maybe = data?.partType;
     return typeof maybe === 'string' ? maybe : null;
+}
+function parseI2CAddress(attr, fallback) {
+    if (typeof attr === 'number' && Number.isFinite(attr)) return attr;
+    if (typeof attr !== 'string') return fallback;
+    const t = attr.trim();
+    const parsed = t.startsWith('0x') ? Number.parseInt(t.slice(2), 16) : Number.parseInt(t, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
 }
 /**
  * Generic Wokwi Part Node - renders any Wokwi element with pin overlays
@@ -1271,6 +1709,47 @@ function getPartTypeFromData(data) {
         partType,
         nodeId
     ]);
+    // Bind simulated LCD devices to their Wokwi visual elements (text/cursor/backlight).
+    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
+        "WokwiPartNode.useEffect": ()=>{
+            const element = elementRef.current;
+            if (!element) return;
+            if (partType !== 'lcd1602') return;
+            const attrs = data?.attrs ?? {};
+            const addr = parseI2CAddress(attrs.i2cAddress ?? attrs.address, 0x27);
+            const lcdDevice = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$lcd1602$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getLCD1602"])(addr);
+            const lcdEl = element;
+            const unsubscribe = lcdDevice.subscribe({
+                "WokwiPartNode.useEffect.unsubscribe": (state)=>{
+                    try {
+                        // Wokwi lcd1602 element supports a simple text setter.
+                        const text = state.display.map({
+                            "WokwiPartNode.useEffect.unsubscribe.text": (row)=>row.join('')
+                        }["WokwiPartNode.useEffect.unsubscribe.text"]).join('\n');
+                        lcdEl.text = text;
+                        lcdEl.backlight = state.backlightOn;
+                        lcdEl.cursor = state.cursorOn;
+                        lcdEl.blink = state.blinkOn;
+                        lcdEl.cursorX = state.cursorCol;
+                        lcdEl.cursorY = state.cursorRow;
+                        if (typeof lcdEl.requestUpdate === 'function') {
+                            lcdEl.requestUpdate();
+                        }
+                    } catch  {
+                    // Ignore UI binding errors
+                    }
+                }
+            }["WokwiPartNode.useEffect.unsubscribe"]);
+            return ({
+                "WokwiPartNode.useEffect": ()=>{
+                    unsubscribe?.();
+                }
+            })["WokwiPartNode.useEffect"];
+        }
+    }["WokwiPartNode.useEffect"], [
+        data?.attrs,
+        partType
+    ]);
     // Listen for button press/release events
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "WokwiPartNode.useEffect": ()=>{
@@ -1415,7 +1894,7 @@ function getPartTypeFromData(data) {
             ]
         }, void 0, true, {
             fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-            lineNumber: 606,
+            lineNumber: 659,
             columnNumber: 13
         }, this);
     }
@@ -1436,12 +1915,12 @@ function getPartTypeFromData(data) {
                     className: "w-3.5 h-3.5"
                 }, void 0, false, {
                     fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                    lineNumber: 632,
+                    lineNumber: 685,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 627,
+                lineNumber: 680,
                 columnNumber: 17
             }, this),
             isSelected && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1451,12 +1930,12 @@ function getPartTypeFromData(data) {
                     children: partConfig?.name || partType
                 }, void 0, false, {
                     fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                    lineNumber: 639,
+                    lineNumber: 692,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 638,
+                lineNumber: 691,
                 columnNumber: 17
             }, this),
             PartElement ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(PartElement, {
@@ -1465,7 +1944,7 @@ function getPartTypeFromData(data) {
                 }
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 646,
+                lineNumber: 699,
                 columnNumber: 28
             }, this) : null,
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1510,13 +1989,13 @@ function getPartTypeFromData(data) {
                         "aria-label": `Pin ${pin.id}`
                     }, pin.id, false, {
                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                        lineNumber: 669,
+                        lineNumber: 722,
                         columnNumber: 25
                     }, this);
                 })
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 649,
+                lineNumber: 702,
                 columnNumber: 13
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("svg", {
@@ -1549,7 +2028,7 @@ function getPartTypeFromData(data) {
                                 }
                             }, void 0, false, {
                                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                lineNumber: 722,
+                                lineNumber: 775,
                                 columnNumber: 29
                             }, this),
                             isHovered && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("g", {
@@ -1565,7 +2044,7 @@ function getPartTypeFromData(data) {
                                         strokeWidth: 0.5
                                     }, void 0, false, {
                                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                        lineNumber: 737,
+                                        lineNumber: 790,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("text", {
@@ -1579,35 +2058,35 @@ function getPartTypeFromData(data) {
                                         children: pin.id
                                     }, void 0, false, {
                                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                        lineNumber: 747,
+                                        lineNumber: 800,
                                         columnNumber: 37
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                                lineNumber: 736,
+                                lineNumber: 789,
                                 columnNumber: 33
                             }, this)
                         ]
                     }, pin.id, true, {
                         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                        lineNumber: 720,
+                        lineNumber: 773,
                         columnNumber: 25
                     }, this);
                 })
             }, void 0, false, {
                 fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-                lineNumber: 703,
+                lineNumber: 756,
                 columnNumber: 13
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/components/nodes/WokwiPartNode.tsx",
-        lineNumber: 613,
+        lineNumber: 666,
         columnNumber: 9
     }, this);
 }
-_s(WokwiPartNode, "FT76xwAcSvYYdtu6s5GH/xaSQEM=");
+_s(WokwiPartNode, "yCadcMHjwxxNvbSgEUHklMqgQk8=");
 _c = WokwiPartNode;
 const __TURBOPACK__default__export__ = /*#__PURE__*/ _c1 = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["memo"])(WokwiPartNode, (prevProps, nextProps)=>{
     const prevStates = prevProps.data?.simulationPinStates;
@@ -3103,12 +3582,7 @@ const useAppStore = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_mod
                 'wokwi-servo': {
                     horn: 'single'
                 },
-                'wokwi-lcd1602': {
-                    pins: 'i2c'
-                },
-                'wokwi-lcd2004': {
-                    pins: 'i2c'
-                },
+                // LCD pin mode is inferred from connections (i2c vs full)
                 'wokwi-7segment': {
                     color: 'red',
                     common: 'cathode'
@@ -3126,6 +3600,38 @@ const useAppStore = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_mod
                     i2cAddress: '0x3C'
                 }
             };
+            const inferLcdPinsMode = (partId)=>{
+                const pins = new Set();
+                for (const c of newConnections){
+                    if (c.from.partId === partId) pins.add(String(c.from.pinId));
+                    if (c.to.partId === partId) pins.add(String(c.to.pinId));
+                }
+                // Parallel/"full" pins
+                const fullPins = new Set([
+                    'RS',
+                    'E',
+                    'RW',
+                    'V0',
+                    'VSS',
+                    'VDD',
+                    'A',
+                    'K',
+                    'D0',
+                    'D1',
+                    'D2',
+                    'D3',
+                    'D4',
+                    'D5',
+                    'D6',
+                    'D7'
+                ]);
+                for (const p of pins){
+                    if (fullPins.has(p)) return 'full';
+                }
+                // I2C pins
+                if (pins.has('SDA') || pins.has('SCL')) return 'i2c';
+                return null;
+            };
             // Merge all component defaults
             const allDefaults = {
                 ...sensorDefaults,
@@ -3135,12 +3641,24 @@ const useAppStore = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_mod
             const partsWithDefaults = parts.map((part)=>{
                 const defaults = allDefaults[part.type.toLowerCase()] || allDefaults[part.type];
                 if (defaults) {
+                    let attrs = {
+                        ...defaults,
+                        ...part.attrs || {}
+                    };
+                    // Ensure LCD1602/LCD2004 pin mode matches the generated wiring.
+                    // If we force the wrong mode (e.g. i2c) the canvas can't attach wires to RS/E/D4..D7, etc.
+                    const typeLower = String(part.type).toLowerCase();
+                    if ((typeLower === 'wokwi-lcd1602' || typeLower === 'wokwi-lcd2004') && (part.attrs == null || part.attrs.pins == null)) {
+                        const inferred = inferLcdPinsMode(part.id);
+                        // Default to I2C only when we have no signal either way.
+                        attrs = {
+                            ...attrs,
+                            pins: inferred ?? 'i2c'
+                        };
+                    }
                     return {
                         ...part,
-                        attrs: {
-                            ...defaults,
-                            ...part.attrs || {}
-                        }
+                        attrs
                     };
                 }
                 return part;
@@ -9129,6 +9647,514 @@ if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelper
     __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
 }
 }),
+"[project]/utils/simulation/ssd1306.ts [app-client] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "getSSD1306",
+    ()=>getSSD1306
+]);
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/i2c.ts [app-client] (ecmascript)");
+'use client';
+;
+/**
+ * SSD1306 OLED Display Emulator (128x64 or 128x32)
+ * 
+ * Emulates an SSD1306 OLED display over I2C.
+ * Common I2C address: 0x3C or 0x3D
+ */ // SSD1306 Commands
+const SSD1306_DISPLAYOFF = 0xAE;
+const SSD1306_DISPLAYON = 0xAF;
+const SSD1306_SETCONTRAST = 0x81;
+const SSD1306_DISPLAYALLON_RESUME = 0xA4;
+const SSD1306_DISPLAYALLON = 0xA5;
+const SSD1306_NORMALDISPLAY = 0xA6;
+const SSD1306_INVERTDISPLAY = 0xA7;
+const SSD1306_SETMULTIPLEX = 0xA8;
+const SSD1306_SETLOWCOLUMN = 0x00;
+const SSD1306_SETHIGHCOLUMN = 0x10;
+const SSD1306_MEMORYMODE = 0x20;
+const SSD1306_COLUMNADDR = 0x21;
+const SSD1306_PAGEADDR = 0x22;
+const SSD1306_SETSTARTLINE = 0x40;
+const SSD1306_SETDISPLAYOFFSET = 0xD3;
+const SSD1306_SETCOMPINS = 0xDA;
+const SSD1306_SETVCOMDETECT = 0xDB;
+const SSD1306_SETDISPLAYCLOCKDIV = 0xD5;
+const SSD1306_SETPRECHARGE = 0xD9;
+const SSD1306_SEGREMAP = 0xA0;
+const SSD1306_COMSCANINC = 0xC0;
+const SSD1306_COMSCANDEC = 0xC8;
+const SSD1306_CHARGEPUMP = 0x8D;
+const SSD1306_DEACTIVATE_SCROLL = 0x2E;
+// Data/Command control byte
+const CONTROL_COMMAND = 0x00;
+const CONTROL_DATA = 0x40;
+const CONTROL_CONTINUE = 0x80;
+/**
+ * SSD1306 OLED I2C Device Implementation
+ */ class SSD1306Device {
+    address;
+    name = 'SSD1306';
+    width;
+    height;
+    // Display RAM - organized as pages (8 vertical pixels per page)
+    gddram = [];
+    displayOn = false;
+    inverted = false;
+    contrast = 0x7F;
+    // Column/Page addressing
+    colStart = 0;
+    colEnd = 127;
+    pageStart = 0;
+    pageEnd = 7;
+    currentCol = 0;
+    currentPage = 0;
+    memoryMode = 0;
+    // Command parsing state
+    pendingCommand = null;
+    pendingArgs = [];
+    expectedArgs = 0;
+    controlByte = 0;
+    // State listeners
+    listeners = new Set();
+    updateTimer = null;
+    constructor(address = 0x3C, width = 128, height = 64){
+        this.address = address;
+        this.width = width;
+        this.height = height;
+        this.reset();
+    }
+    reset() {
+        const pages = this.height / 8;
+        this.gddram = [];
+        for(let p = 0; p < pages; p++){
+            this.gddram.push(new Array(this.width).fill(0));
+        }
+        this.displayOn = false;
+        this.inverted = false;
+        this.contrast = 0x7F;
+        this.colStart = 0;
+        this.colEnd = this.width - 1;
+        this.pageStart = 0;
+        this.pageEnd = pages - 1;
+        this.currentCol = 0;
+        this.currentPage = 0;
+        this.memoryMode = 0;
+        this.pendingCommand = null;
+        this.pendingArgs = [];
+        this.expectedArgs = 0;
+        this.scheduleUpdate();
+    }
+    write(data) {
+        if (data.length === 0) return;
+        let i = 0;
+        while(i < data.length){
+            // First byte is control byte
+            const control = data[i++];
+            this.controlByte = control;
+            // Is this a data stream or command stream?
+            const isData = (control & CONTROL_DATA) !== 0;
+            const isContinue = (control & CONTROL_CONTINUE) !== 0;
+            if (isData) {
+                // All remaining bytes in this chunk are data
+                while(i < data.length && (data[i] & CONTROL_CONTINUE) === 0){
+                    this.writeDataByte(data[i++]);
+                }
+            } else {
+                // Command byte follows
+                if (i < data.length) {
+                    this.processCommand(data[i++]);
+                }
+            }
+        }
+        this.scheduleUpdate();
+    }
+    read() {
+        // SSD1306 read returns status byte
+        return [
+            this.displayOn ? 0x00 : 0x40
+        ];
+    }
+    processCommand(cmd) {
+        // If we're expecting command arguments
+        if (this.expectedArgs > 0) {
+            this.pendingArgs.push(cmd);
+            this.expectedArgs--;
+            if (this.expectedArgs === 0) {
+                this.executeCommand(this.pendingCommand, this.pendingArgs);
+                this.pendingCommand = null;
+                this.pendingArgs = [];
+            }
+            return;
+        }
+        // Parse command
+        if (cmd === SSD1306_DISPLAYOFF) {
+            this.displayOn = false;
+        } else if (cmd === SSD1306_DISPLAYON) {
+            this.displayOn = true;
+        } else if (cmd === SSD1306_NORMALDISPLAY) {
+            this.inverted = false;
+        } else if (cmd === SSD1306_INVERTDISPLAY) {
+            this.inverted = true;
+        } else if (cmd === SSD1306_DEACTIVATE_SCROLL) {
+        // Scrolling not implemented
+        } else if ((cmd & 0xF0) === SSD1306_SETLOWCOLUMN) {
+            this.currentCol = this.currentCol & 0xF0 | cmd & 0x0F;
+        } else if ((cmd & 0xF0) === SSD1306_SETHIGHCOLUMN) {
+            this.currentCol = this.currentCol & 0x0F | (cmd & 0x0F) << 4;
+        } else if ((cmd & 0xF8) === 0xB0) {
+            // Set page start address for page addressing mode
+            this.currentPage = cmd & 0x07;
+        } else if ((cmd & 0xC0) === SSD1306_SETSTARTLINE) {
+        // Set display start line - ignored for simple emulation
+        } else if (cmd === SSD1306_SETCONTRAST) {
+            this.pendingCommand = cmd;
+            this.expectedArgs = 1;
+        } else if (cmd === SSD1306_MEMORYMODE) {
+            this.pendingCommand = cmd;
+            this.expectedArgs = 1;
+        } else if (cmd === SSD1306_COLUMNADDR) {
+            this.pendingCommand = cmd;
+            this.expectedArgs = 2;
+        } else if (cmd === SSD1306_PAGEADDR) {
+            this.pendingCommand = cmd;
+            this.expectedArgs = 2;
+        } else if (cmd === SSD1306_SETMULTIPLEX || cmd === SSD1306_SETDISPLAYOFFSET || cmd === SSD1306_SETCOMPINS || cmd === SSD1306_SETVCOMDETECT || cmd === SSD1306_SETDISPLAYCLOCKDIV || cmd === SSD1306_SETPRECHARGE || cmd === SSD1306_CHARGEPUMP) {
+            // Commands with 1 arg
+            this.pendingCommand = cmd;
+            this.expectedArgs = 1;
+        }
+    // SEGREMAP, COMSCANINC, COMSCANDEC are single-byte commands - ignored
+    }
+    executeCommand(cmd, args) {
+        if (cmd === SSD1306_SETCONTRAST) {
+            this.contrast = args[0];
+        } else if (cmd === SSD1306_MEMORYMODE) {
+            this.memoryMode = args[0] & 0x03;
+        } else if (cmd === SSD1306_COLUMNADDR) {
+            this.colStart = args[0];
+            this.colEnd = args[1];
+            this.currentCol = this.colStart;
+        } else if (cmd === SSD1306_PAGEADDR) {
+            this.pageStart = args[0];
+            this.pageEnd = args[1];
+            this.currentPage = this.pageStart;
+        }
+    // Other commands are configuration - mostly ignored
+    }
+    writeDataByte(data) {
+        // Write a byte to GDDRAM at current position
+        if (this.currentPage < this.gddram.length && this.currentCol < this.width) {
+            this.gddram[this.currentPage][this.currentCol] = data;
+        }
+        // Advance position based on memory mode
+        if (this.memoryMode === 0) {
+            // Horizontal addressing mode
+            this.currentCol++;
+            if (this.currentCol > this.colEnd) {
+                this.currentCol = this.colStart;
+                this.currentPage++;
+                if (this.currentPage > this.pageEnd) {
+                    this.currentPage = this.pageStart;
+                }
+            }
+        } else if (this.memoryMode === 1) {
+            // Vertical addressing mode
+            this.currentPage++;
+            if (this.currentPage > this.pageEnd) {
+                this.currentPage = this.pageStart;
+                this.currentCol++;
+                if (this.currentCol > this.colEnd) {
+                    this.currentCol = this.colStart;
+                }
+            }
+        } else {
+            // Page addressing mode
+            this.currentCol++;
+            if (this.currentCol >= this.width) {
+                this.currentCol = 0;
+            }
+        }
+    }
+    /**
+     * Get current display state as pixel array
+     */ getState() {
+        // Convert page-based GDDRAM to pixel array
+        const pixels = [];
+        for(let y = 0; y < this.height; y++){
+            const row = [];
+            const page = Math.floor(y / 8);
+            const bit = y % 8;
+            for(let x = 0; x < this.width; x++){
+                const pixelOn = (this.gddram[page][x] & 1 << bit) !== 0;
+                row.push(this.inverted ? !pixelOn : pixelOn);
+            }
+            pixels.push(row);
+        }
+        return {
+            pixels,
+            width: this.width,
+            height: this.height,
+            displayOn: this.displayOn,
+            inverted: this.inverted,
+            contrast: this.contrast
+        };
+    }
+    /**
+     * Subscribe to state changes
+     */ subscribe(listener) {
+        this.listeners.add(listener);
+        listener(this.getState());
+        return ()=>this.listeners.delete(listener);
+    }
+    scheduleUpdate() {
+        // Debounce updates to avoid excessive renders
+        if (this.updateTimer) {
+            clearTimeout(this.updateTimer);
+        }
+        this.updateTimer = setTimeout(()=>{
+            this.notifyListeners();
+            this.updateTimer = null;
+        }, 16); // ~60fps max
+    }
+    notifyListeners() {
+        const state = this.getState();
+        for (const listener of this.listeners){
+            listener(state);
+        }
+    }
+}
+// Device instance cache
+const oledDevices = new Map();
+function getSSD1306(address = 0x3C, width = 128, height = 64) {
+    let device = oledDevices.get(address);
+    if (!device) {
+        device = new SSD1306Device(address, width, height);
+        oledDevices.set(address, device);
+        (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])().registerDevice(device);
+    }
+    return device;
+}
+if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
+    __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
+}
+}),
+"[project]/utils/simulation/cycleScheduler.ts [app-client] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "CycleScheduler",
+    ()=>CycleScheduler
+]);
+'use client';
+class CycleScheduler {
+    events = [];
+    clear() {
+        this.events = [];
+    }
+    get size() {
+        return this.events.length;
+    }
+    schedule(cycle, callback) {
+        if (!Number.isFinite(cycle)) return;
+        const evt = {
+            cycle: Math.max(0, Math.floor(cycle)),
+            callback
+        };
+        // Insert sorted by cycle (small N).
+        const idx = this.events.findIndex((e)=>e.cycle > evt.cycle);
+        if (idx === -1) {
+            this.events.push(evt);
+        } else {
+            this.events.splice(idx, 0, evt);
+        }
+    }
+    runDue(nowCycle) {
+        if (this.events.length === 0) return;
+        const now = Math.floor(nowCycle);
+        let i = 0;
+        while(i < this.events.length && this.events[i].cycle <= now){
+            const evt = this.events[i];
+            try {
+                evt.callback();
+            } catch  {
+            // Swallow callback errors to avoid wedging the simulation loop.
+            }
+            i++;
+        }
+        if (i > 0) {
+            this.events.splice(0, i);
+        }
+    }
+}
+if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
+    __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
+}
+}),
+"[project]/utils/simulation/dht.ts [app-client] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "DHTDevice",
+    ()=>DHTDevice
+]);
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$locals$3e$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/index.js [app-client] (ecmascript) <locals>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$gpio$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/peripherals/gpio.js [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$cycleScheduler$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/cycleScheduler.ts [app-client] (ecmascript)");
+'use client';
+;
+;
+function clampNumber(n, min, max) {
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+}
+function usToCycles(cpuFrequencyHz, us) {
+    return Math.round(cpuFrequencyHz / 1_000_000 * us);
+}
+function msToCycles(cpuFrequencyHz, ms) {
+    return Math.round(cpuFrequencyHz / 1_000 * ms);
+}
+function toDHT22Bytes(reading) {
+    const humidity = clampNumber(reading.humidity, 0, 100);
+    const tempC = clampNumber(reading.temperatureC, -40, 80);
+    const h10 = Math.round(humidity * 10);
+    let t10 = Math.round(tempC * 10);
+    // DHT22 encodes sign in the MSB of temperature high byte.
+    let tSign = 0;
+    if (t10 < 0) {
+        tSign = 0x8000;
+        t10 = Math.abs(t10);
+    }
+    const h = h10 & 0xffff;
+    const t = t10 & 0x7fff | tSign;
+    const b0 = h >> 8 & 0xff;
+    const b1 = h & 0xff;
+    const b2 = t >> 8 & 0xff;
+    const b3 = t & 0xff;
+    const b4 = b0 + b1 + b2 + b3 & 0xff;
+    return [
+        b0,
+        b1,
+        b2,
+        b3,
+        b4
+    ];
+}
+function toDHT11Bytes(reading) {
+    const humidity = clampNumber(reading.humidity, 0, 100);
+    const tempC = clampNumber(reading.temperatureC, 0, 50);
+    const b0 = Math.round(humidity) & 0xff;
+    const b1 = 0;
+    const b2 = Math.round(tempC) & 0xff;
+    const b3 = 0;
+    const b4 = b0 + b1 + b2 + b3 & 0xff;
+    return [
+        b0,
+        b1,
+        b2,
+        b3,
+        b4
+    ];
+}
+function bytesToBitsMsbFirst(bytes) {
+    const bits = [];
+    for (const b of bytes){
+        for(let i = 7; i >= 0; i--){
+            bits.push(b >> i & 1);
+        }
+    }
+    return bits;
+}
+class DHTDevice {
+    type;
+    port;
+    bit;
+    cpuFrequencyHz;
+    readValues;
+    scheduler = new __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$cycleScheduler$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["CycleScheduler"]();
+    hostLowStartCycle = null;
+    armed = false;
+    constructor(binding){
+        this.type = binding.type;
+        this.port = binding.port;
+        this.bit = binding.bit;
+        this.cpuFrequencyHz = binding.cpuFrequencyHz;
+        this.readValues = binding.readValues;
+        // Default: released/high.
+        this.port.setPin(this.bit, true);
+    }
+    reset() {
+        this.scheduler.clear();
+        this.hostLowStartCycle = null;
+        this.armed = false;
+        this.port.setPin(this.bit, true);
+    }
+    /** Call frequently (e.g. once per instruction) with current cpu.cycles. */ tick(cpuCycles) {
+        this.scheduler.runDue(cpuCycles);
+        // If we're mid-response, don't re-arm.
+        if (this.scheduler.size > 0) return;
+        const pinState = this.port.pinState(this.bit);
+        const hostDrivingLow = pinState === __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$gpio$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["PinState"].Low;
+        const hostReleasedToInput = pinState === __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$gpio$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["PinState"].Input || pinState === __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$gpio$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["PinState"].InputPullUp;
+        if (hostDrivingLow) {
+            if (this.hostLowStartCycle === null) {
+                this.hostLowStartCycle = cpuCycles;
+                this.armed = false;
+            }
+            return;
+        }
+        // Host is not driving low.
+        if (this.hostLowStartCycle !== null) {
+            const lowDurationCycles = cpuCycles - this.hostLowStartCycle;
+            const minLow = this.type === 'dht11' ? msToCycles(this.cpuFrequencyHz, 18) : msToCycles(this.cpuFrequencyHz, 1);
+            if (lowDurationCycles >= minLow) {
+                this.armed = true;
+            }
+            this.hostLowStartCycle = null;
+        }
+        if (this.armed && hostReleasedToInput) {
+            this.armed = false;
+            this.scheduleResponse(cpuCycles);
+        }
+        // Keep line high when idle.
+        if (!hostDrivingLow && hostReleasedToInput && this.scheduler.size === 0) {
+            this.port.setPin(this.bit, true);
+        }
+    }
+    scheduleResponse(nowCycles) {
+        const delayUs = 40; // typical 20-40us
+        const lowUs = 80;
+        const highUs = 80;
+        const lowBitUs = 50;
+        const high0Us = 28;
+        const high1Us = 70;
+        const start = nowCycles + usToCycles(this.cpuFrequencyHz, delayUs);
+        const reading = this.readValues();
+        const bytes = this.type === 'dht11' ? toDHT11Bytes(reading) : toDHT22Bytes(reading);
+        const bits = bytesToBitsMsbFirst(bytes);
+        let t = start;
+        // Sensor response: low 80us, high 80us
+        this.scheduler.schedule(t, ()=>this.port.setPin(this.bit, false));
+        t += usToCycles(this.cpuFrequencyHz, lowUs);
+        this.scheduler.schedule(t, ()=>this.port.setPin(this.bit, true));
+        t += usToCycles(this.cpuFrequencyHz, highUs);
+        // Data bits: each bit starts with 50us low then high for 0/1 duration
+        for(let i = 0; i < bits.length; i++){
+            const bit = bits[i];
+            this.scheduler.schedule(t, ()=>this.port.setPin(this.bit, false));
+            t += usToCycles(this.cpuFrequencyHz, lowBitUs);
+            this.scheduler.schedule(t, ()=>this.port.setPin(this.bit, true));
+            t += usToCycles(this.cpuFrequencyHz, bit ? high1Us : high0Us);
+        }
+        // Release high.
+        this.scheduler.schedule(t, ()=>this.port.setPin(this.bit, true));
+    }
+}
+if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
+    __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
+}
+}),
 "[project]/hooks/useSimulation.ts [app-client] (ecmascript)", ((__turbopack_context__) => {
 "use strict";
 
@@ -9139,13 +10165,24 @@ __turbopack_context__.s([
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/dist/compiled/react/index.js [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$locals$3e$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/index.js [app-client] (ecmascript) <locals>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$gpio$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/peripherals/gpio.js [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$twi$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/peripherals/twi.js [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$clock$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/peripherals/clock.js [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$timer$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/peripherals/timer.js [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$usart$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/peripherals/usart.js [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$cpu$2f$cpu$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/cpu/cpu.js [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$cpu$2f$instruction$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/avr8js/dist/esm/cpu/instruction.js [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/store/useAppStore.ts [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/i2c.ts [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$lcd1602$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/lcd1602.ts [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$ssd1306$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/ssd1306.ts [app-client] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$dht$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/utils/simulation/dht.ts [app-client] (ecmascript)");
 var _s = __turbopack_context__.k.signature();
 'use client';
+;
+;
+;
+;
+;
 ;
 ;
 function decodeBase64ToBytes(base64) {
@@ -9215,6 +10252,7 @@ class AVRRunner {
     clock;
     timer0;
     usart;
+    twi;
     constructor(hexText){
         const program = parseIntelHex(hexText);
         this.cpu = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$cpu$2f$cpu$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["CPU"](program);
@@ -9225,7 +10263,98 @@ class AVRRunner {
         this.timer0 = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$timer$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AVRTimer"](this.cpu, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$timer$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["timer0Config"]);
         // USART for Serial communication
         this.usart = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$usart$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AVRUSART"](this.cpu, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$usart$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["usart0Config"], 16_000_000);
+        // TWI (I2C) for Wire library support
+        this.twi = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$twi$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AVRTWI"](this.cpu, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$peripherals$2f$twi$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["twiConfig"], 16_000_000);
+        // Bridge avr8js TWI transactions to our simulated I2C bus.
+        this.twi.eventHandler = new I2CBusTwiEventHandler(this.twi);
     }
+}
+class I2CBusTwiEventHandler {
+    twi;
+    constructor(twi){
+        this.twi = twi;
+    }
+    start() {
+        (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])().start();
+        this.twi.completeStart();
+    }
+    stop() {
+        (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])().stop();
+        this.twi.completeStop();
+    }
+    connectToSlave(addr, write) {
+        // In I2C, R/W bit: 0=write, 1=read
+        const addressByte = (addr & 0x7f) << 1 | (write ? 0 : 1);
+        const ack = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])().writeByte(addressByte);
+        this.twi.completeConnect(ack);
+    }
+    writeByte(value) {
+        const ack = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])().writeByte(value & 0xff);
+        this.twi.completeWrite(ack);
+    }
+    readByte(ack) {
+        const value = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])().readByte(ack);
+        this.twi.completeRead(value & 0xff);
+    }
+}
+function parseI2CAddress(attr, fallback) {
+    if (typeof attr === 'number' && Number.isFinite(attr)) return attr;
+    if (typeof attr !== 'string') return fallback;
+    const t = attr.trim();
+    // supports "0x27" and "39"
+    const parsed = t.startsWith('0x') ? Number.parseInt(t.slice(2), 16) : Number.parseInt(t, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+function buildAdjacency(connections) {
+    const adjacency = new Map();
+    const keyOf = (partId, pinId)=>`${partId}:${pinId}`;
+    for (const conn of connections){
+        const a = keyOf(conn.from.partId, conn.from.pinId);
+        const b = keyOf(conn.to.partId, conn.to.pinId);
+        if (!adjacency.has(a)) adjacency.set(a, new Set());
+        if (!adjacency.has(b)) adjacency.set(b, new Set());
+        adjacency.get(a).add(b);
+        adjacency.get(b).add(a);
+    }
+    return adjacency;
+}
+function findConnectedMcuDigitalPin(adjacency, startKey, mcuId) {
+    const queue = [
+        startKey
+    ];
+    const seen = new Set(queue);
+    while(queue.length){
+        const cur = queue.shift();
+        const idx = cur.indexOf(':');
+        if (idx > 0) {
+            const partId = cur.slice(0, idx);
+            const pinId = cur.slice(idx + 1);
+            if (partId === mcuId && /^\d+$/.test(pinId)) {
+                const n = Number.parseInt(pinId, 10);
+                return Number.isFinite(n) ? n : null;
+            }
+        }
+        const neighbors = adjacency.get(cur);
+        if (!neighbors) continue;
+        for (const n of neighbors){
+            if (!seen.has(n)) {
+                seen.add(n);
+                queue.push(n);
+            }
+        }
+    }
+    return null;
+}
+function getPortBitForArduinoDigitalPin(runner, pin) {
+    if (pin >= 0 && pin <= 7) return {
+        port: runner.portD,
+        bit: pin
+    };
+    if (pin >= 8 && pin <= 13) return {
+        port: runner.portB,
+        bit: pin - 8
+    };
+    return null;
 }
 function isAvrPart(partType) {
     return partType === 'wokwi-arduino-uno' || partType === 'wokwi-arduino-nano' || partType === 'wokwi-arduino-mega';
@@ -9259,6 +10388,12 @@ const PWM_PIN_CONFIGS = {
 };
 function useSimulation(hexData, partType) {
     _s();
+    const circuitParts = (0, __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"])({
+        "useSimulation.useAppStore[circuitParts]": (s)=>s.circuitParts
+    }["useSimulation.useAppStore[circuitParts]"]);
+    const connections = (0, __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"])({
+        "useSimulation.useAppStore[connections]": (s)=>s.connections
+    }["useSimulation.useAppStore[connections]"]);
     const [isRunning, setIsRunning] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     const [pinStates, setPinStates] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])({});
     const [pwmStates, setPwmStates] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])({});
@@ -9270,6 +10405,7 @@ function useSimulation(hexData, partType) {
     const stepFrameRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])({
         "useSimulation.useRef[stepFrameRef]": ()=>{}
     }["useSimulation.useRef[stepFrameRef]"]);
+    const dhtDevicesRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])([]);
     const cyclesPerFrame = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useMemo"])({
         "useSimulation.useMemo[cyclesPerFrame]": ()=>Math.floor(16_000_000 / 60)
     }["useSimulation.useMemo[cyclesPerFrame]"], []);
@@ -9372,6 +10508,10 @@ function useSimulation(hexData, partType) {
                     while(remaining > 0){
                         const before = runner.cpu.cycles;
                         (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$avr8js$2f$dist$2f$esm$2f$cpu$2f$instruction$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["avrInstruction"])(runner.cpu);
+                        // Tick protocol-level input devices that depend on tight timing.
+                        for (const dht of dhtDevicesRef.current){
+                            dht.tick(runner.cpu.cycles);
+                        }
                         // Process timers/USART clock events and interrupts.
                         // Without ticking, Arduino time functions (millis/delay) and Serial output won't work.
                         const cpuAny = runner.cpu;
@@ -9410,6 +10550,15 @@ function useSimulation(hexData, partType) {
                 rafRef.current = null;
             }
             runnerRef.current = null;
+            dhtDevicesRef.current = [];
+            // Reset I2C devices/bus state between runs.
+            try {
+                const bus = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])();
+                bus.resetAll();
+                bus.clearLog();
+            } catch  {
+            // Ignore reset errors
+            }
             setPinStates({});
             setPwmStates({});
             setSerialOutput([]);
@@ -9463,6 +10612,69 @@ function useSimulation(hexData, partType) {
                     }
                     const hexText = decodedText;
                     const runner = new AVRRunner(hexText);
+                    // Initialize simulated peripherals for the current circuit.
+                    try {
+                        const bus = (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$i2c$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getI2CBus"])();
+                        bus.resetAll();
+                        bus.clearLog();
+                        // Instantiate I2C output devices so they can receive Wire traffic.
+                        for (const part of circuitParts){
+                            const typeLower = part.type.toLowerCase();
+                            const attrs = part.attrs ?? {};
+                            if (typeLower.includes('lcd1602')) {
+                                const addr = parseI2CAddress(attrs.i2cAddress ?? attrs.address, 0x27);
+                                (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$lcd1602$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getLCD1602"])(addr);
+                            }
+                            if (typeLower.includes('ssd1306') || typeLower.includes('oled')) {
+                                const addr = parseI2CAddress(attrs.i2cAddress ?? attrs.address, 0x3c);
+                                (0, __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$ssd1306$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getSSD1306"])(addr);
+                            }
+                        }
+                        // Instantiate DHT input devices and bind them to the MCU pin they are wired to.
+                        dhtDevicesRef.current = [];
+                        const mcuPart = circuitParts.find({
+                            "useSimulation.useCallback[run].mcuPart": (p)=>p.type === partType
+                        }["useSimulation.useCallback[run].mcuPart"]);
+                        if (mcuPart) {
+                            const adjacency = buildAdjacency(connections);
+                            for (const part of circuitParts){
+                                const typeLower = part.type.toLowerCase();
+                                if (!typeLower.includes('dht')) continue;
+                                const dhtType = typeLower.includes('dht11') ? 'dht11' : 'dht22';
+                                const startKey = `${part.id}:SDA`;
+                                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                                if (pin == null) continue;
+                                const portBit = getPortBitForArduinoDigitalPin(runner, pin);
+                                if (!portBit) continue;
+                                const partId = part.id;
+                                dhtDevicesRef.current.push(new __TURBOPACK__imported__module__$5b$project$5d2f$utils$2f$simulation$2f$dht$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["DHTDevice"]({
+                                    type: dhtType,
+                                    port: portBit.port,
+                                    bit: portBit.bit,
+                                    cpuFrequencyHz: 16_000_000,
+                                    readValues: {
+                                        "useSimulation.useCallback[run]": ()=>{
+                                            const state = __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"].getState();
+                                            const pNow = state.circuitParts.find({
+                                                "useSimulation.useCallback[run].pNow": (p)=>p.id === partId
+                                            }["useSimulation.useCallback[run].pNow"]);
+                                            const attrs = pNow?.attrs ?? {};
+                                            const tRaw = attrs.temperature;
+                                            const hRaw = attrs.humidity;
+                                            const t = typeof tRaw === 'number' ? tRaw : Number.parseFloat(String(tRaw ?? '25'));
+                                            const h = typeof hRaw === 'number' ? hRaw : Number.parseFloat(String(hRaw ?? '50'));
+                                            return {
+                                                temperatureC: Number.isFinite(t) ? t : 25,
+                                                humidity: Number.isFinite(h) ? h : 50
+                                            };
+                                        }
+                                    }["useSimulation.useCallback[run]"]
+                                }));
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[Simulation] Peripheral initialization failed:', e);
+                    }
                     const onPortB = {
                         "useSimulation.useCallback[run].onPortB": (value)=>updatePortPins('B', value)
                     }["useSimulation.useCallback[run].onPortB"];
@@ -9511,6 +10723,8 @@ function useSimulation(hexData, partType) {
         }
     }["useSimulation.useCallback[run]"], [
         appendSerialLine,
+        circuitParts,
+        connections,
         hexData,
         partType,
         stepFrame,
@@ -9548,7 +10762,12 @@ function useSimulation(hexData, partType) {
         clearSerialOutput
     };
 }
-_s(useSimulation, "Wl0l8iJNX0Y4XapR7qTf5Wx9aHE=");
+_s(useSimulation, "fpWokK74KksFfXBzV6dvGJkBQtA=", false, function() {
+    return [
+        __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"],
+        __TURBOPACK__imported__module__$5b$project$5d2f$store$2f$useAppStore$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"]
+    ];
+});
 if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
     __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
 }
@@ -11893,4 +13112,4 @@ if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelper
 }),
 ]);
 
-//# sourceMappingURL=_cdedf23a._.js.map
+//# sourceMappingURL=_275f3f5c._.js.map

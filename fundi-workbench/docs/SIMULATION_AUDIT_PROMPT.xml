@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coding-agent-prompt>
+  <metadata>
+    <title>FUNDI Simulation Engine - Comprehensive Audit &amp; Fix</title>
+    <created>2026-01-01</created>
+    <repository>jamesthegreati/F.U.N.D.I.</repository>
+    <branch>main</branch>
+  </metadata>
+
+  <mission>
+    <summary>
+      Systematically audit and fix the FUNDI circuit simulation engine to ensure 
+      all Wokwi-compatible components work correctly. The goal is to achieve 
+      feature parity with Wokwi.com for common IoT projects.
+    </summary>
+    <success-criteria>
+      <criterion>Weather station (DHT22 + LCD1602 I2C) displays live sensor readings</criterion>
+      <criterion>All input devices (buttons, potentiometers, sensors) produce correct values</criterion>
+      <criterion>All output devices (LEDs, LCDs, OLEDs, buzzers) render correctly</criterion>
+      <criterion>I2C communication works end-to-end (TWI peripheral → I2C bus → device)</criterion>
+      <criterion>Complex multi-component projects simulate without errors</criterion>
+    </success-criteria>
+  </mission>
+
+  <phase id="1" name="Research &amp; Baseline">
+    <description>
+      Understand how Wokwi implements component simulation by studying their 
+      documentation and open-source elements library.
+    </description>
+    
+    <tasks>
+      <task id="1.1">
+        <name>Study Wokwi Elements Library</name>
+        <action>Fetch and analyze the @wokwi/elements source code</action>
+        <urls>
+          <url purpose="elements-source">https://github.com/wokwi/wokwi-elements</url>
+          <url purpose="lcd1602-element">https://github.com/wokwi/wokwi-elements/blob/main/src/lcd1602-element.ts</url>
+          <url purpose="led-element">https://github.com/wokwi/wokwi-elements/blob/main/src/led-element.ts</url>
+        </urls>
+        <deliverable>Document the API for setting element state (properties, methods)</deliverable>
+      </task>
+
+      <task id="1.2">
+        <name>Study Wokwi Docs</name>
+        <action>Fetch component documentation for pin mappings and behavior</action>
+        <urls>
+          <url purpose="lcd1602-docs">https://docs.wokwi.com/parts/wokwi-lcd1602</url>
+          <url purpose="dht22-docs">https://docs.wokwi.com/parts/wokwi-dht22</url>
+          <url purpose="i2c-docs">https://docs.wokwi.com/guides/i2c</url>
+          <url purpose="parts-list">https://docs.wokwi.com/parts/</url>
+        </urls>
+        <deliverable>Pin mapping reference for all supported components</deliverable>
+      </task>
+
+      <task id="1.3">
+        <name>Export Featured Wokwi Projects</name>
+        <action>Identify 5-10 featured projects on Wokwi that cover diverse components</action>
+        <project-categories>
+          <category>LED blink (basic GPIO)</category>
+          <category>Button + LED (digital input)</category>
+          <category>Potentiometer + Serial (analog input)</category>
+          <category>LCD1602 parallel mode</category>
+          <category>LCD1602 I2C mode</category>
+          <category>DHT22 temperature sensor</category>
+          <category>OLED SSD1306 display</category>
+          <category>Servo motor control</category>
+          <category>NeoPixel LED strip</category>
+          <category>Keypad 4x4</category>
+        </project-categories>
+        <deliverable>JSON circuit definitions for each test project</deliverable>
+      </task>
+    </tasks>
+  </phase>
+
+  <phase id="2" name="Systematic Testing">
+    <description>
+      Create a test matrix and run each project through FUNDI simulation, 
+      documenting what works and what fails.
+    </description>
+    
+    <test-matrix>
+      <component-category name="Digital Output">
+        <component type="wokwi-led">
+          <test>LED turns on when pin HIGH</test>
+          <test>LED turns off when pin LOW</test>
+          <test>LED color attribute works</test>
+        </component>
+        <component type="wokwi-rgb-led">
+          <test>Individual R/G/B channels work</test>
+          <test>PWM brightness control</test>
+        </component>
+      </component-category>
+
+      <component-category name="Digital Input">
+        <component type="wokwi-pushbutton">
+          <test>digitalRead returns HIGH when pressed</test>
+          <test>digitalRead returns LOW when released</test>
+          <test>Pull-up/pull-down configuration</test>
+        </component>
+        <component type="wokwi-slide-switch">
+          <test>State toggles on click</test>
+          <test>digitalRead reflects state</test>
+        </component>
+      </component-category>
+
+      <component-category name="Analog Input">
+        <component type="wokwi-potentiometer">
+          <test>analogRead returns 0-1023 based on position</test>
+          <test>Slider interaction updates value</test>
+        </component>
+        <component type="wokwi-photoresistor-sensor">
+          <test>analogRead varies with light level attr</test>
+        </component>
+      </component-category>
+
+      <component-category name="Sensors">
+        <component type="wokwi-dht22">
+          <test>DHT library reads temperature attribute</test>
+          <test>DHT library reads humidity attribute</test>
+          <test>No "failed to read" errors</test>
+        </component>
+        <component type="wokwi-hc-sr04">
+          <test>Ultrasonic distance measurement works</test>
+        </component>
+        <component type="wokwi-pir-motion-sensor">
+          <test>Motion trigger produces HIGH signal</test>
+        </component>
+      </component-category>
+
+      <component-category name="Displays">
+        <component type="wokwi-lcd1602">
+          <test mode="parallel">Text appears with LiquidCrystal library</test>
+          <test mode="i2c">Text appears with LiquidCrystal_I2C library</test>
+          <test>Backlight on/off works</test>
+          <test>Cursor positioning works</test>
+          <test>Custom characters work</test>
+        </component>
+        <component type="wokwi-ssd1306">
+          <test>Adafruit SSD1306 library draws pixels</test>
+          <test>Text rendering works</test>
+        </component>
+        <component type="wokwi-max7219-matrix">
+          <test>LED matrix displays patterns</test>
+        </component>
+      </component-category>
+
+      <component-category name="Communication">
+        <component type="i2c-bus">
+          <test>TWI peripheral generates correct signals</test>
+          <test>I2C devices receive addresses</test>
+          <test>Data transfers complete</test>
+        </component>
+        <component type="serial">
+          <test>Serial.print appears in terminal</test>
+          <test>Serial.read receives terminal input</test>
+        </component>
+      </component-category>
+    </test-matrix>
+  </phase>
+
+  <phase id="3" name="Issue Documentation">
+    <description>
+      For each failing test, document the issue in a structured format.
+    </description>
+    
+    <issue-template>
+      <![CDATA[
+## Issue: [Component] - [Brief Description]
+
+### Severity
+- [ ] Critical (blocks simulation)
+- [ ] Major (component non-functional)
+- [ ] Minor (cosmetic or edge case)
+
+### Steps to Reproduce
+1. Create circuit with [component]
+2. Wire [pin] to [Arduino pin]
+3. Upload code that does [action]
+4. Expected: [what should happen]
+5. Actual: [what happens]
+
+### Technical Analysis
+- **Relevant files**: [list files]
+- **Root cause**: [explanation]
+- **Proposed fix**: [approach]
+
+### Code Locations
+- Simulation hook: `hooks/useSimulation.ts`
+- Component node: `components/nodes/WokwiPartNode.tsx`
+- Part definitions: `lib/wokwiParts.ts`
+- I2C emulation: `utils/simulation/i2c.ts`
+- DHT emulation: `utils/simulation/dht.ts`
+      ]]>
+    </issue-template>
+  </phase>
+
+  <phase id="4" name="Iterative Fixes">
+    <description>
+      Fix each issue, test, and verify before moving to the next.
+    </description>
+    
+    <fix-protocol>
+      <step order="1">Identify the minimal code change needed</step>
+      <step order="2">Implement the fix</step>
+      <step order="3">Run `npm run build` to verify no TypeScript errors</step>
+      <step order="4">Test the specific component in isolation</step>
+      <step order="5">Test the component in a multi-component project</step>
+      <step order="6">Document the fix in commit message</step>
+    </fix-protocol>
+  </phase>
+
+  <known-issues>
+    <issue id="1" severity="critical">
+      <title>LCD1602 I2C Mode Shows Blank Display</title>
+      <description>
+        Despite I2C device registration (console shows "[I2C] Registered device 'LCD1602' at 0x27"),
+        the LCD element remains blank. Text written via LiquidCrystal_I2C library does not appear.
+      </description>
+      <investigation-areas>
+        <area>TWI peripheral event handler in useSimulation.ts</area>
+        <area>I2C bus transaction flow in utils/simulation/i2c.ts</area>
+        <area>LCD state subscription in WokwiPartNode.tsx</area>
+        <area>LCD1602 element API (text, backlight properties)</area>
+      </investigation-areas>
+      <hypothesis>
+        TWI write transactions may not be reaching the I2C bus, or the LCD device 
+        is not processing the PCF8574 commands correctly to update its internal state.
+      </hypothesis>
+    </issue>
+
+    <issue id="2" severity="major">
+      <title>DHT22 Sensor Returns NaN</title>
+      <description>
+        DHT library's readTemperature() and readHumidity() return NaN despite 
+        DHTDevice being created and bound to the correct GPIO pin.
+      </description>
+      <investigation-areas>
+        <area>DHT protocol timing in utils/simulation/dht.ts</area>
+        <area>GPIO pin state monitoring during DHT read sequence</area>
+        <area>Cycle scheduler accuracy for microsecond-level timing</area>
+      </investigation-areas>
+    </issue>
+  </known-issues>
+
+  <codebase-map>
+    <category name="Simulation Core">
+      <file path="hooks/useSimulation.ts" purpose="Main AVR simulation loop, peripheral setup"/>
+      <file path="utils/simulation/index.ts" purpose="Simulation module exports"/>
+      <file path="utils/simulation/i2c.ts" purpose="I2C bus emulation"/>
+      <file path="utils/simulation/dht.ts" purpose="DHT11/DHT22 protocol emulation"/>
+      <file path="utils/simulation/cycleScheduler.ts" purpose="Cycle-accurate callback scheduling"/>
+      <file path="utils/simulation/lcd1602.ts" purpose="LCD1602 device state management"/>
+      <file path="utils/simulation/ssd1306.ts" purpose="SSD1306 OLED emulation"/>
+    </category>
+
+    <category name="Component Rendering">
+      <file path="components/nodes/WokwiPartNode.tsx" purpose="Wokwi element rendering and state binding"/>
+      <file path="components/nodes/ArduinoNode.tsx" purpose="Arduino board rendering"/>
+      <file path="components/nodes/pin-maps.ts" purpose="Pin name to number mappings"/>
+      <file path="lib/wokwiParts.ts" purpose="Part type definitions and metadata"/>
+    </category>
+
+    <category name="State Management">
+      <file path="store/useAppStore.ts" purpose="Zustand store for circuit state"/>
+      <file path="store/WiringContext.tsx" purpose="Wiring mode context"/>
+    </category>
+
+    <category name="Backend">
+      <file path="backend/app/services/compiler.py" purpose="Arduino compilation with arduino-cli"/>
+      <file path="backend/app/services/ai_generator.py" purpose="AI circuit generation"/>
+      <file path="backend/app/prompts/examples/weather_station.json" purpose="Example circuit for AI"/>
+    </category>
+  </codebase-map>
+
+  <deliverables>
+    <deliverable id="1">
+      <name>Test Report</name>
+      <description>Markdown file documenting test results for each component</description>
+      <path>docs/SIMULATION_TEST_REPORT.md</path>
+    </deliverable>
+
+    <deliverable id="2">
+      <name>Fixed Simulation</name>
+      <description>Working simulation engine with all critical issues resolved</description>
+      <verification>Weather station project runs without errors and displays sensor data</verification>
+    </deliverable>
+
+    <deliverable id="3">
+      <name>Architecture Documentation</name>
+      <description>Updated docs explaining the simulation data flow</description>
+      <path>docs/SIMULATION_ARCHITECTURE.md</path>
+    </deliverable>
+  </deliverables>
+
+  <priority-order>
+    <priority rank="1">LCD1602 I2C display (most common output device)</priority>
+    <priority rank="2">DHT22 sensor (validates input device flow)</priority>
+    <priority rank="3">Basic GPIO (LED, button) - likely already working</priority>
+    <priority rank="4">Analog input (potentiometer)</priority>
+    <priority rank="5">SSD1306 OLED (similar I2C pattern to LCD)</priority>
+    <priority rank="6">Other sensors (HC-SR04, PIR)</priority>
+    <priority rank="7">Advanced components (NeoPixel, servo)</priority>
+  </priority-order>
+</coding-agent-prompt>

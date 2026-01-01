@@ -117,6 +117,35 @@ STRICT REQUIREMENTS:
       * SPI (MOSI/MISO/SCK): color="#f97316" (orange), signal_type="spi"
     - Always include label with the pin name for clarity
 
+15. CONNECTION COMPLETENESS - CRITICAL (Every component MUST have wires):
+    - BEFORE generating output, check that EVERY component in circuit_parts has at least one connection
+    - LCD displays need MANY connections - do NOT forget any:
+      
+      LCD 1602 I2C MODE (4 wires minimum):
+      [
+        {"source_part": "lcd1", "source_pin": "GND", "target_part": "arduino1", "target_pin": "GND.1", "signal_type": "ground"},
+        {"source_part": "lcd1", "source_pin": "VCC", "target_part": "arduino1", "target_pin": "5V", "signal_type": "power"},
+        {"source_part": "lcd1", "source_pin": "SDA", "target_part": "arduino1", "target_pin": "A4", "signal_type": "i2c"},
+        {"source_part": "lcd1", "source_pin": "SCL", "target_part": "arduino1", "target_pin": "A5", "signal_type": "i2c"}
+      ]
+      
+      LCD 1602 PARALLEL MODE (8 wires minimum):
+      [
+        {"source_part": "lcd1", "source_pin": "VSS", "target_part": "arduino1", "target_pin": "GND.1", "signal_type": "ground"},
+        {"source_part": "lcd1", "source_pin": "VDD", "target_part": "arduino1", "target_pin": "5V", "signal_type": "power"},
+        {"source_part": "lcd1", "source_pin": "RS", "target_part": "arduino1", "target_pin": "12", "signal_type": "digital"},
+        {"source_part": "lcd1", "source_pin": "E", "target_part": "arduino1", "target_pin": "11", "signal_type": "digital"},
+        {"source_part": "lcd1", "source_pin": "D4", "target_part": "arduino1", "target_pin": "5", "signal_type": "digital"},
+        {"source_part": "lcd1", "source_pin": "D5", "target_part": "arduino1", "target_pin": "4", "signal_type": "digital"},
+        {"source_part": "lcd1", "source_pin": "D6", "target_part": "arduino1", "target_pin": "3", "signal_type": "digital"},
+        {"source_part": "lcd1", "source_pin": "D7", "target_part": "arduino1", "target_pin": "2", "signal_type": "digital"}
+      ]
+      
+    - DHT sensors need 3 wires (VCC, SDA/DATA, GND)
+    - Servos need 3 wires (PWM, V+, GND)
+    - All sensors need power (VCC, GND) PLUS data connections
+    - If a component has no wires, the circuit is BROKEN - fix it!
+
 11. ITERATIVE MODIFICATIONS - When modifying an existing circuit:
     - Preserve unrelated components and their positions
     - Only add/remove/modify the components specifically mentioned by the user
@@ -129,6 +158,37 @@ STRICT REQUIREMENTS:
     - Specify action: "create", "update", or "delete"
     - Include full file content for create/update actions
     - Common patterns: separate sensor code, configuration constants, utility functions
+
+13. SENSOR CONFIGURATION - CRITICAL for input devices to work in simulation:
+    - DHT22/DHT11 temperature sensors require initial values in attrs:
+      { "id": "dht1", "type": "wokwi-dht22", "x": 400, "y": 0, "attrs": { "temperature": "25", "humidity": "50" } }
+    - HC-SR04 ultrasonic sensors require distance value:
+      { "id": "hcsr1", "type": "wokwi-hc-sr04", "x": 400, "y": 120, "attrs": { "distance": "100" } }
+    - Potentiometers require initial position (0-100):
+      { "id": "pot1", "type": "wokwi-potentiometer", "x": 400, "y": 0, "attrs": { "value": "50" } }
+    - NTC temperature sensors:
+      { "id": "ntc1", "type": "wokwi-ntc-temperature-sensor", "x": 400, "y": 0, "attrs": { "temperature": "25" } }
+    - PIR motion sensors (0 = no motion, 1 = motion detected):
+      { "id": "pir1", "type": "wokwi-pir-motion-sensor", "x": 400, "y": 0, "attrs": { "motion": "0" } }
+    - Photoresistor/LDR sensors (light level 0-1023):
+      { "id": "ldr1", "type": "wokwi-photoresistor-sensor", "x": 400, "y": 0, "attrs": { "lux": "500" } }
+    - ALWAYS set reasonable default attrs for ALL sensors so simulations work immediately
+    - Without these attrs, sensors will return "failed to read" errors
+
+14. OUTPUT DEVICE CONFIGURATION - Ensure proper visual feedback in simulation:
+    - LEDs: Set color for visibility (available: red, green, blue, yellow, white, orange, purple)
+      { "id": "led1", "type": "wokwi-led", "x": 400, "y": 0, "attrs": { "color": "red" } }
+    - Servos: Set horn type for visual representation (single, double, cross)
+      { "id": "servo1", "type": "wokwi-servo", "x": 400, "y": 0, "attrs": { "horn": "single" } }
+    - LCD displays (I2C mode): Use pins="i2c" for simpler wiring
+      { "id": "lcd1", "type": "wokwi-lcd1602", "x": 0, "y": 400, "attrs": { "pins": "i2c" } }
+    - 7-Segment displays: Set color and common type
+      { "id": "seg1", "type": "wokwi-7segment", "x": 400, "y": 0, "attrs": { "color": "red", "common": "cathode" } }
+    - NeoPixels: Specify pixel count
+      { "id": "neo1", "type": "wokwi-neopixel", "x": 400, "y": 0, "attrs": { "pixels": "8" } }
+    - RGB LEDs: Common cathode is default
+      { "id": "rgb1", "type": "wokwi-rgb-led", "x": 400, "y": 0, "attrs": { "common": "cathode" } }
+    - ALWAYS include color/visual attrs for output devices
 """
 
 
@@ -168,6 +228,14 @@ STRICT TECHNICAL REQUIREMENTS:
      * Clock/Data (I2C/SPI): color="#ff00ff" (Magenta) or "#a52a2a" (Brown)
    - Always include proper labels like "D13", "A0"
    - Try to use orthagonal routing suggestions by avoiding crossing the MCU body
+
+8. SENSOR CONFIGURATION - CRITICAL for input devices to work in simulation:
+   - DHT22/DHT11 sensors: { "attrs": { "temperature": "25", "humidity": "50" } }
+   - HC-SR04 ultrasonic: { "attrs": { "distance": "100" } }
+   - Potentiometers: { "attrs": { "value": "50" } }
+   - NTC temperature: { "attrs": { "temperature": "25" } }
+   - PIR motion: { "attrs": { "motion": "0" } }
+   - ALWAYS set reasonable default attrs for sensors so simulations work immediately
 """
 
 _VISION_SYSTEM_PROMPT = """You are a Computer Vision expert specializing in electronic circuit analysis.

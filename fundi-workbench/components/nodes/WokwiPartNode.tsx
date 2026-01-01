@@ -7,6 +7,7 @@ import { Trash2 } from 'lucide-react';
 import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
 import type { WirePoint } from '@/types/wire';
 import { getAudioSimulation, pwmToFrequency } from '@/utils/simulation/audio';
+import { getLCD1602 } from '@/utils/simulation/lcd1602';
 
 interface PinData {
     id: string;
@@ -54,6 +55,14 @@ interface WokwiPartNodeProps {
 function getPartTypeFromData(data: WokwiPartNodeData | undefined): WokwiPartType | null {
     const maybe = (data as unknown as { partType?: unknown } | undefined)?.partType;
     return typeof maybe === 'string' ? (maybe as WokwiPartType) : null;
+}
+
+function parseI2CAddress(attr: unknown, fallback: number): number {
+    if (typeof attr === 'number' && Number.isFinite(attr)) return attr;
+    if (typeof attr !== 'string') return fallback;
+    const t = attr.trim();
+    const parsed = t.startsWith('0x') ? Number.parseInt(t.slice(2), 16) : Number.parseInt(t, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 /**
@@ -475,6 +484,50 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         }
 
     }, [simulationPinStates, pwmValue, partType, nodeId]);
+
+    // Bind simulated LCD devices to their Wokwi visual elements (text/cursor/backlight).
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        if (partType !== 'lcd1602') return;
+
+        const attrs = data?.attrs ?? {};
+        const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x27);
+        const lcdDevice = getLCD1602(addr);
+
+        const lcdEl = element as unknown as {
+            text?: string;
+            cursor?: boolean;
+            blink?: boolean;
+            cursorX?: number;
+            cursorY?: number;
+            backlight?: boolean;
+            requestUpdate?: () => void;
+        };
+
+        const unsubscribe = lcdDevice.subscribe((state) => {
+            try {
+                // Wokwi lcd1602 element supports a simple text setter.
+                const text = state.display.map((row) => row.join('')).join('\n');
+                lcdEl.text = text;
+                lcdEl.backlight = state.backlightOn;
+                lcdEl.cursor = state.cursorOn;
+                lcdEl.blink = state.blinkOn;
+                lcdEl.cursorX = state.cursorCol;
+                lcdEl.cursorY = state.cursorRow;
+                if (typeof lcdEl.requestUpdate === 'function') {
+                    lcdEl.requestUpdate();
+                }
+            } catch {
+                // Ignore UI binding errors
+            }
+        });
+
+        return () => {
+            unsubscribe?.();
+        };
+    }, [data?.attrs, partType]);
 
     // Listen for button press/release events
     useEffect(() => {

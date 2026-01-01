@@ -230,8 +230,17 @@
   "wokwi-lcd1602": {
     "displayName": "LCD 16x2",
     "category": "display",
-    "pins": ["VSS", "VDD", "V0", "RS", "RW", "E", "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A", "K"],
+    "pins": {
+      "i2c": ["GND", "VCC", "SDA", "SCL"],
+      "parallel": ["VSS", "VDD", "V0", "RS", "RW", "E", "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A", "K"]
+    },
     "pinDescriptions": {
+      "pins(attr)": "Set attrs.pins to control pinout: 'i2c' (recommended, 4 wires), 'full' (parallel pins), or 'none'",
+      "i2cAddress(attr)": "Optional I2C address string like '0x27' (common default)",
+      "GND": "Ground (I2C mode)",
+      "VCC": "Power (5V) (I2C mode)",
+      "SDA": "I2C Data - connect to A4 on Uno (I2C mode)",
+      "SCL": "I2C Clock - connect to A5 on Uno (I2C mode)",
       "VSS": "Ground",
       "VDD": "Power (5V)",
       "V0": "Contrast adjustment",
@@ -244,7 +253,7 @@
     },
     "width": 120,
     "height": 50,
-    "libraries": ["LiquidCrystal"]
+    "libraries": ["LiquidCrystal_I2C", "LiquidCrystal"]
   },
   
   "wokwi-ssd1306": {

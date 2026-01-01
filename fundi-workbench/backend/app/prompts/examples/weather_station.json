@@ -2,25 +2,21 @@
   "name": "Temperature Display",
   "description": "DHT22 sensor with LCD display showing temperature and humidity",
   "complexity": "advanced",
-  "code": "#include <DHT.h>\n#include <LiquidCrystal.h>\n\n#define DHTPIN 2\n#define DHTTYPE DHT22\n\nDHT dht(DHTPIN, DHTTYPE);\nLiquidCrystal lcd(12, 11, 5, 4, 3, 7);\n\nvoid setup() {\n  lcd.begin(16, 2);\n  dht.begin();\n  lcd.print(\"Weather Station\");\n  delay(2000);\n}\n\nvoid loop() {\n  float h = dht.readHumidity();\n  float t = dht.readTemperature();\n  \n  if (isnan(h) || isnan(t)) {\n    lcd.clear();\n    lcd.print(\"Sensor Error!\");\n    delay(2000);\n    return;\n  }\n  \n  lcd.clear();\n  lcd.setCursor(0, 0);\n  lcd.print(\"Temp: \");\n  lcd.print(t, 1);\n  lcd.print((char)223);\n  lcd.print(\"C\");\n  \n  lcd.setCursor(0, 1);\n  lcd.print(\"Humidity: \");\n  lcd.print(h, 0);\n  lcd.print(\"%\");\n  \n  delay(2000);\n}",
+  "code": "#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\n#include <DHT.h>\n\n#define DHTPIN 2\n#define DHTTYPE DHT22\n\nDHT dht(DHTPIN, DHTTYPE);\nLiquidCrystal_I2C lcd(0x27, 16, 2);\n\nvoid setup() {\n  lcd.init();\n  lcd.backlight();\n\n  dht.begin();\n\n  lcd.clear();\n  lcd.setCursor(0, 0);\n  lcd.print(\"Weather Station\");\n  delay(2000);\n}\n\nvoid loop() {\n  float h = dht.readHumidity();\n  float t = dht.readTemperature();\n\n  if (isnan(h) || isnan(t)) {\n    lcd.clear();\n    lcd.setCursor(0, 0);\n    lcd.print(\"Sensor Error!\");\n    delay(2000);\n    return;\n  }\n\n  lcd.clear();\n  lcd.setCursor(0, 0);\n  lcd.print(\"Temp: \");\n  lcd.print(t, 1);\n  lcd.print((char)223);\n  lcd.print(\"C\");\n\n  lcd.setCursor(0, 1);\n  lcd.print(\"Humidity: \");\n  lcd.print(h, 0);\n  lcd.print(\"%\");\n\n  delay(2000);\n}",
   "circuit_parts": [
     {"id": "arduino1", "type": "wokwi-arduino-uno", "x": 0, "y": 0},
-    {"id": "dht1", "type": "wokwi-dht22", "x": 320, "y": 0},
-    {"id": "lcd1", "type": "wokwi-lcd1602", "x": 0, "y": 320}
+    {"id": "dht1", "type": "wokwi-dht22", "x": 320, "y": 0, "attrs": {"temperature": "25", "humidity": "50"}},
+    {"id": "lcd1", "type": "wokwi-lcd1602", "x": 0, "y": 320, "attrs": {"pins": "i2c", "i2cAddress": "0x27"}}
   ],
   "connections": [
     {"source_part": "dht1", "source_pin": "VCC", "target_part": "arduino1", "target_pin": "5V", "color": "#ef4444", "signal_type": "power"},
     {"source_part": "dht1", "source_pin": "SDA", "target_part": "arduino1", "target_pin": "2", "color": "#3b82f6", "signal_type": "digital"},
     {"source_part": "dht1", "source_pin": "GND", "target_part": "arduino1", "target_pin": "GND.1", "color": "#000000", "signal_type": "ground"},
-    
-    {"source_part": "lcd1", "source_pin": "VSS", "target_part": "arduino1", "target_pin": "GND.2", "color": "#000000", "signal_type": "ground"},
-    {"source_part": "lcd1", "source_pin": "VDD", "target_part": "arduino1", "target_pin": "5V", "color": "#ef4444", "signal_type": "power"},
-    {"source_part": "lcd1", "source_pin": "RS", "target_part": "arduino1", "target_pin": "12", "color": "#3b82f6", "signal_type": "digital"},
-    {"source_part": "lcd1", "source_pin": "E", "target_part": "arduino1", "target_pin": "11", "color": "#3b82f6", "signal_type": "digital"},
-    {"source_part": "lcd1", "source_pin": "D4", "target_part": "arduino1", "target_pin": "5", "color": "#3b82f6", "signal_type": "digital"},
-    {"source_part": "lcd1", "source_pin": "D5", "target_part": "arduino1", "target_pin": "4", "color": "#3b82f6", "signal_type": "digital"},
-    {"source_part": "lcd1", "source_pin": "D6", "target_part": "arduino1", "target_pin": "3", "color": "#3b82f6", "signal_type": "digital"},
-    {"source_part": "lcd1", "source_pin": "D7", "target_part": "arduino1", "target_pin": "7", "color": "#3b82f6", "signal_type": "digital"}
+
+    {"source_part": "lcd1", "source_pin": "GND", "target_part": "arduino1", "target_pin": "GND.1", "color": "#000000", "signal_type": "ground"},
+    {"source_part": "lcd1", "source_pin": "VCC", "target_part": "arduino1", "target_pin": "5V", "color": "#ef4444", "signal_type": "power"},
+    {"source_part": "lcd1", "source_pin": "SDA", "target_part": "arduino1", "target_pin": "A4", "color": "#8b5cf6", "signal_type": "i2c"},
+    {"source_part": "lcd1", "source_pin": "SCL", "target_part": "arduino1", "target_pin": "A5", "color": "#8b5cf6", "signal_type": "i2c"}
   ],
-  "explanation": "Weather station displaying temperature and humidity. Uses DHT22 sensor connected to pin 2, and 16x2 LCD in 4-bit mode. The DHT library reads the sensor, and LiquidCrystal library controls the display."
+  "explanation": "Weather station displaying temperature and humidity. Uses DHT22 sensor connected to pin 2, and LCD1602 in I2C mode (SDA=A4, SCL=A5, address 0x27)."
 }

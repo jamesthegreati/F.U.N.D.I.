@@ -5,31 +5,106 @@
       "displayName": "Arduino Uno",
       "description": "ATmega328P-based microcontroller development board",
       "pins": [
-        { "name": "D0", "function": "Digital I/O, RX (Serial)" },
-        { "name": "D1", "function": "Digital I/O, TX (Serial)" },
-        { "name": "D2", "function": "Digital I/O, INT0" },
-        { "name": "D3", "function": "Digital I/O, INT1, PWM" },
-        { "name": "D4", "function": "Digital I/O" },
-        { "name": "D5", "function": "Digital I/O, PWM" },
-        { "name": "D6", "function": "Digital I/O, PWM" },
-        { "name": "D7", "function": "Digital I/O" },
-        { "name": "D8", "function": "Digital I/O" },
-        { "name": "D9", "function": "Digital I/O, PWM" },
-        { "name": "D10", "function": "Digital I/O, PWM, SS (SPI)" },
-        { "name": "D11", "function": "Digital I/O, PWM, MOSI (SPI)" },
-        { "name": "D12", "function": "Digital I/O, MISO (SPI)" },
-        { "name": "D13", "function": "Digital I/O, SCK (SPI), Built-in LED" },
-        { "name": "A0", "function": "Analog Input" },
-        { "name": "A1", "function": "Analog Input" },
-        { "name": "A2", "function": "Analog Input" },
-        { "name": "A3", "function": "Analog Input" },
-        { "name": "A4", "function": "Analog Input, SDA (I2C)" },
-        { "name": "A5", "function": "Analog Input, SCL (I2C)" },
-        { "name": "5V", "function": "5V Power Supply" },
-        { "name": "3.3V", "function": "3.3V Power Supply" },
-        { "name": "GND", "function": "Ground" },
-        { "name": "VIN", "function": "External Power Input (7-12V)" },
-        { "name": "RESET", "function": "Reset Pin" }
+        {
+          "name": "D0",
+          "function": "Digital I/O, RX (Serial)"
+        },
+        {
+          "name": "D1",
+          "function": "Digital I/O, TX (Serial)"
+        },
+        {
+          "name": "D2",
+          "function": "Digital I/O, INT0"
+        },
+        {
+          "name": "D3",
+          "function": "Digital I/O, INT1, PWM"
+        },
+        {
+          "name": "D4",
+          "function": "Digital I/O"
+        },
+        {
+          "name": "D5",
+          "function": "Digital I/O, PWM"
+        },
+        {
+          "name": "D6",
+          "function": "Digital I/O, PWM"
+        },
+        {
+          "name": "D7",
+          "function": "Digital I/O"
+        },
+        {
+          "name": "D8",
+          "function": "Digital I/O"
+        },
+        {
+          "name": "D9",
+          "function": "Digital I/O, PWM"
+        },
+        {
+          "name": "D10",
+          "function": "Digital I/O, PWM, SS (SPI)"
+        },
+        {
+          "name": "D11",
+          "function": "Digital I/O, PWM, MOSI (SPI)"
+        },
+        {
+          "name": "D12",
+          "function": "Digital I/O, MISO (SPI)"
+        },
+        {
+          "name": "D13",
+          "function": "Digital I/O, SCK (SPI), Built-in LED"
+        },
+        {
+          "name": "A0",
+          "function": "Analog Input"
+        },
+        {
+          "name": "A1",
+          "function": "Analog Input"
+        },
+        {
+          "name": "A2",
+          "function": "Analog Input"
+        },
+        {
+          "name": "A3",
+          "function": "Analog Input"
+        },
+        {
+          "name": "A4",
+          "function": "Analog Input, SDA (I2C)"
+        },
+        {
+          "name": "A5",
+          "function": "Analog Input, SCL (I2C)"
+        },
+        {
+          "name": "5V",
+          "function": "5V Power Supply"
+        },
+        {
+          "name": "3.3V",
+          "function": "3.3V Power Supply"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        },
+        {
+          "name": "VIN",
+          "function": "External Power Input (7-12V)"
+        },
+        {
+          "name": "RESET",
+          "function": "Reset Pin"
+        }
       ],
       "datasheetUrl": "https://docs.arduino.cc/hardware/uno-rev3",
       "technicalSpecs": {
@@ -42,7 +117,11 @@
         "sram": "2KB",
         "eeprom": "1KB",
         "clockSpeed": "16MHz",
-        "protocol": ["UART", "SPI", "I2C"]
+        "protocol": [
+          "UART",
+          "SPI",
+          "I2C"
+        ]
       }
     },
     "wokwi-arduino-nano": {
@@ -50,11 +129,26 @@
       "displayName": "Arduino Nano",
       "description": "Compact ATmega328P-based microcontroller board",
       "pins": [
-        { "name": "D0-D13", "function": "Digital I/O" },
-        { "name": "A0-A7", "function": "Analog Input" },
-        { "name": "5V", "function": "5V Power Supply" },
-        { "name": "GND", "function": "Ground" },
-        { "name": "VIN", "function": "External Power Input" }
+        {
+          "name": "D0-D13",
+          "function": "Digital I/O"
+        },
+        {
+          "name": "A0-A7",
+          "function": "Analog Input"
+        },
+        {
+          "name": "5V",
+          "function": "5V Power Supply"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        },
+        {
+          "name": "VIN",
+          "function": "External Power Input"
+        }
       ],
       "datasheetUrl": "https://docs.arduino.cc/hardware/nano",
       "technicalSpecs": {
@@ -66,7 +160,11 @@
         "flash": "32KB",
         "sram": "2KB",
         "clockSpeed": "16MHz",
-        "protocol": ["UART", "SPI", "I2C"]
+        "protocol": [
+          "UART",
+          "SPI",
+          "I2C"
+        ]
       }
     },
     "wokwi-arduino-mega": {
@@ -74,11 +172,26 @@
       "displayName": "Arduino Mega",
       "description": "ATmega2560-based board with extended I/O",
       "pins": [
-        { "name": "D0-D53", "function": "Digital I/O" },
-        { "name": "A0-A15", "function": "Analog Input" },
-        { "name": "5V", "function": "5V Power Supply" },
-        { "name": "3.3V", "function": "3.3V Power Supply" },
-        { "name": "GND", "function": "Ground" }
+        {
+          "name": "D0-D53",
+          "function": "Digital I/O"
+        },
+        {
+          "name": "A0-A15",
+          "function": "Analog Input"
+        },
+        {
+          "name": "5V",
+          "function": "5V Power Supply"
+        },
+        {
+          "name": "3.3V",
+          "function": "3.3V Power Supply"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        }
       ],
       "datasheetUrl": "https://docs.arduino.cc/hardware/mega-2560",
       "technicalSpecs": {
@@ -90,7 +203,11 @@
         "flash": "256KB",
         "sram": "8KB",
         "clockSpeed": "16MHz",
-        "protocol": ["UART", "SPI", "I2C"]
+        "protocol": [
+          "UART",
+          "SPI",
+          "I2C"
+        ]
       }
     },
     "wokwi-esp32-devkit-v1": {
@@ -98,11 +215,26 @@
       "displayName": "ESP32 DevKit V1",
       "description": "ESP32 development board with WiFi and Bluetooth",
       "pins": [
-        { "name": "GPIO0-GPIO39", "function": "Digital I/O (varies)" },
-        { "name": "ADC", "function": "Analog Input (ADC1: GPIO32-39, ADC2: GPIO0-15)" },
-        { "name": "3.3V", "function": "3.3V Power Supply" },
-        { "name": "GND", "function": "Ground" },
-        { "name": "VIN", "function": "5V Power Input" }
+        {
+          "name": "GPIO0-GPIO39",
+          "function": "Digital I/O (varies)"
+        },
+        {
+          "name": "ADC",
+          "function": "Analog Input (ADC1: GPIO32-39, ADC2: GPIO0-15)"
+        },
+        {
+          "name": "3.3V",
+          "function": "3.3V Power Supply"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        },
+        {
+          "name": "VIN",
+          "function": "5V Power Input"
+        }
       ],
       "datasheetUrl": "https://www.espressif.com/en/products/socs/esp32",
       "technicalSpecs": {
@@ -116,7 +248,13 @@
         "clockSpeed": "240MHz",
         "wifi": "802.11 b/g/n",
         "bluetooth": "BLE 4.2",
-        "protocol": ["UART", "SPI", "I2C", "WiFi", "Bluetooth"]
+        "protocol": [
+          "UART",
+          "SPI",
+          "I2C",
+          "WiFi",
+          "Bluetooth"
+        ]
       }
     },
     "wokwi-pi-pico": {
@@ -124,11 +262,26 @@
       "displayName": "Raspberry Pi Pico",
       "description": "RP2040-based microcontroller board",
       "pins": [
-        { "name": "GP0-GP28", "function": "General Purpose I/O" },
-        { "name": "ADC0-ADC2", "function": "Analog Input" },
-        { "name": "3.3V", "function": "3.3V Power Supply" },
-        { "name": "VSYS", "function": "System Power Input" },
-        { "name": "GND", "function": "Ground" }
+        {
+          "name": "GP0-GP28",
+          "function": "General Purpose I/O"
+        },
+        {
+          "name": "ADC0-ADC2",
+          "function": "Analog Input"
+        },
+        {
+          "name": "3.3V",
+          "function": "3.3V Power Supply"
+        },
+        {
+          "name": "VSYS",
+          "function": "System Power Input"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        }
       ],
       "datasheetUrl": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf",
       "technicalSpecs": {
@@ -140,7 +293,12 @@
         "flash": "2MB",
         "sram": "264KB",
         "clockSpeed": "133MHz",
-        "protocol": ["UART", "SPI", "I2C", "PIO"]
+        "protocol": [
+          "UART",
+          "SPI",
+          "I2C",
+          "PIO"
+        ]
       }
     },
     "wokwi-led": {
@@ -148,14 +306,26 @@
       "displayName": "LED",
       "description": "Standard 5mm light-emitting diode",
       "pins": [
-        { "name": "A", "function": "Anode (positive)" },
-        { "name": "C", "function": "Cathode (negative, connect to GND)" }
+        {
+          "name": "A",
+          "function": "Anode (positive)"
+        },
+        {
+          "name": "C",
+          "function": "Cathode (negative, connect to GND)"
+        }
       ],
       "datasheetUrl": "https://www.vishay.com/docs/81009/tlhr5800.pdf",
       "technicalSpecs": {
         "forwardVoltage": "2V (red), 3.2V (blue/white)",
         "forwardCurrent": "20mA max",
-        "colors": ["red", "green", "blue", "yellow", "white"],
+        "colors": [
+          "red",
+          "green",
+          "blue",
+          "yellow",
+          "white"
+        ],
         "resistorRequired": true,
         "typicalResistor": "220Ω (5V), 100Ω (3.3V)"
       }
@@ -165,10 +335,22 @@
       "displayName": "RGB LED",
       "description": "Common-cathode RGB LED for color mixing",
       "pins": [
-        { "name": "R", "function": "Red Anode" },
-        { "name": "G", "function": "Green Anode" },
-        { "name": "B", "function": "Blue Anode" },
-        { "name": "COM", "function": "Common Cathode (GND)" }
+        {
+          "name": "R",
+          "function": "Red Anode"
+        },
+        {
+          "name": "G",
+          "function": "Green Anode"
+        },
+        {
+          "name": "B",
+          "function": "Blue Anode"
+        },
+        {
+          "name": "COM",
+          "function": "Common Cathode (GND)"
+        }
       ],
       "datasheetUrl": "https://www.sparkfun.com/datasheets/Components/YSL-R596AR3G4B5C-C10.pdf",
       "technicalSpecs": {
@@ -183,10 +365,22 @@
       "displayName": "NeoPixel (WS2812)",
       "description": "Addressable RGB LED with integrated driver",
       "pins": [
-        { "name": "VCC", "function": "5V Power" },
-        { "name": "GND", "function": "Ground" },
-        { "name": "DIN", "function": "Data Input" },
-        { "name": "DOUT", "function": "Data Output (to next pixel)" }
+        {
+          "name": "VCC",
+          "function": "5V Power"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        },
+        {
+          "name": "DIN",
+          "function": "Data Input"
+        },
+        {
+          "name": "DOUT",
+          "function": "Data Output (to next pixel)"
+        }
       ],
       "datasheetUrl": "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf",
       "technicalSpecs": {
@@ -202,14 +396,26 @@
       "displayName": "Resistor",
       "description": "Through-hole resistor with configurable value",
       "pins": [
-        { "name": "1", "function": "Terminal 1" },
-        { "name": "2", "function": "Terminal 2" }
+        {
+          "name": "1",
+          "function": "Terminal 1"
+        },
+        {
+          "name": "2",
+          "function": "Terminal 2"
+        }
       ],
       "datasheetUrl": "https://www.vishay.com/docs/28716/cfr.pdf",
       "technicalSpecs": {
         "power": "0.25W typical",
         "tolerance": "5%",
-        "commonValues": ["220Ω", "330Ω", "1kΩ", "4.7kΩ", "10kΩ"]
+        "commonValues": [
+          "220Ω",
+          "330Ω",
+          "1kΩ",
+          "4.7kΩ",
+          "10kΩ"
+        ]
       }
     },
     "wokwi-pushbutton": {
@@ -217,10 +423,22 @@
       "displayName": "Pushbutton",
       "description": "Momentary tactile pushbutton switch",
       "pins": [
-        { "name": "1.l", "function": "Terminal 1 Left" },
-        { "name": "2.l", "function": "Terminal 2 Left" },
-        { "name": "1.r", "function": "Terminal 1 Right" },
-        { "name": "2.r", "function": "Terminal 2 Right" }
+        {
+          "name": "1.l",
+          "function": "Terminal 1 Left"
+        },
+        {
+          "name": "2.l",
+          "function": "Terminal 2 Left"
+        },
+        {
+          "name": "1.r",
+          "function": "Terminal 1 Right"
+        },
+        {
+          "name": "2.r",
+          "function": "Terminal 2 Right"
+        }
       ],
       "datasheetUrl": "https://www.omron.com/ecb/products/sw/12/b3f.html",
       "technicalSpecs": {
@@ -236,9 +454,18 @@
       "displayName": "Servo Motor",
       "description": "Standard hobby servo motor (180° rotation)",
       "pins": [
-        { "name": "PWM", "function": "PWM Signal (Orange/White)" },
-        { "name": "V+", "function": "Power 5V (Red)" },
-        { "name": "GND", "function": "Ground (Brown/Black)" }
+        {
+          "name": "PWM",
+          "function": "PWM Signal (Orange/White)"
+        },
+        {
+          "name": "V+",
+          "function": "Power 5V (Red)"
+        },
+        {
+          "name": "GND",
+          "function": "Ground (Brown/Black)"
+        }
       ],
       "datasheetUrl": "https://www.towerpro.com.tw/product/sg90-7/",
       "technicalSpecs": {
@@ -255,10 +482,22 @@
       "displayName": "DHT22",
       "description": "Digital temperature and humidity sensor",
       "pins": [
-        { "name": "VCC", "function": "3.3-5V Power" },
-        { "name": "SDA", "function": "Data (requires 10kΩ pull-up)" },
-        { "name": "NC", "function": "Not Connected" },
-        { "name": "GND", "function": "Ground" }
+        {
+          "name": "VCC",
+          "function": "3.3-5V Power"
+        },
+        {
+          "name": "SDA",
+          "function": "Data (requires 10kΩ pull-up)"
+        },
+        {
+          "name": "NC",
+          "function": "Not Connected"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        }
       ],
       "datasheetUrl": "https://www.sparkfun.com/datasheets/Sensors/Temperature/DHT22.pdf",
       "technicalSpecs": {
@@ -270,6 +509,10 @@
         "samplingRate": "0.5Hz (2 seconds)",
         "protocol": "One-wire",
         "library": "DHT sensor library"
+      },
+      "defaultAttrs": {
+        "temperature": "25",
+        "humidity": "50"
       }
     },
     "wokwi-hc-sr04": {
@@ -277,10 +520,22 @@
       "displayName": "HC-SR04",
       "description": "Ultrasonic distance sensor",
       "pins": [
-        { "name": "VCC", "function": "5V Power" },
-        { "name": "TRIG", "function": "Trigger Input" },
-        { "name": "ECHO", "function": "Echo Output" },
-        { "name": "GND", "function": "Ground" }
+        {
+          "name": "VCC",
+          "function": "5V Power"
+        },
+        {
+          "name": "TRIG",
+          "function": "Trigger Input"
+        },
+        {
+          "name": "ECHO",
+          "function": "Echo Output"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        }
       ],
       "datasheetUrl": "https://cdn.sparkfun.com/datasheets/Sensors/Proximity/HCSR04.pdf",
       "technicalSpecs": {
@@ -290,6 +545,9 @@
         "accuracy": "3mm",
         "frequency": "40kHz",
         "triggerPulse": "10µs minimum"
+      },
+      "defaultAttrs": {
+        "distance": "100"
       }
     },
     "wokwi-potentiometer": {
@@ -297,9 +555,18 @@
       "displayName": "Potentiometer",
       "description": "Rotary potentiometer for analog input",
       "pins": [
-        { "name": "VCC", "function": "Voltage Reference (5V/3.3V)" },
-        { "name": "SIG", "function": "Signal Output (Wiper)" },
-        { "name": "GND", "function": "Ground" }
+        {
+          "name": "VCC",
+          "function": "Voltage Reference (5V/3.3V)"
+        },
+        {
+          "name": "SIG",
+          "function": "Signal Output (Wiper)"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        }
       ],
       "datasheetUrl": "https://www.bourns.com/docs/Product-Datasheets/3310.pdf",
       "technicalSpecs": {
@@ -307,6 +574,9 @@
         "rotation": "300°",
         "taper": "Linear",
         "outputRange": "0V to VCC"
+      },
+      "defaultAttrs": {
+        "value": "50"
       }
     },
     "wokwi-buzzer": {
@@ -314,8 +584,14 @@
       "displayName": "Buzzer",
       "description": "Piezoelectric buzzer for audio output",
       "pins": [
-        { "name": "+", "function": "Positive (Signal)" },
-        { "name": "-", "function": "Negative (GND)" }
+        {
+          "name": "+",
+          "function": "Positive (Signal)"
+        },
+        {
+          "name": "-",
+          "function": "Negative (GND)"
+        }
       ],
       "datasheetUrl": "https://www.murata.com/products/productdata/8796738650142/PKMCS0909E4000-R1.pdf",
       "technicalSpecs": {
@@ -330,15 +606,42 @@
       "displayName": "LCD 1602",
       "description": "16x2 character LCD display",
       "pins": [
-        { "name": "VSS", "function": "Ground" },
-        { "name": "VDD", "function": "5V Power" },
-        { "name": "V0", "function": "Contrast Adjustment" },
-        { "name": "RS", "function": "Register Select" },
-        { "name": "RW", "function": "Read/Write" },
-        { "name": "E", "function": "Enable" },
-        { "name": "D0-D7", "function": "Data Bus" },
-        { "name": "A", "function": "Backlight Anode" },
-        { "name": "K", "function": "Backlight Cathode" }
+        {
+          "name": "VSS",
+          "function": "Ground"
+        },
+        {
+          "name": "VDD",
+          "function": "5V Power"
+        },
+        {
+          "name": "V0",
+          "function": "Contrast Adjustment"
+        },
+        {
+          "name": "RS",
+          "function": "Register Select"
+        },
+        {
+          "name": "RW",
+          "function": "Read/Write"
+        },
+        {
+          "name": "E",
+          "function": "Enable"
+        },
+        {
+          "name": "D0-D7",
+          "function": "Data Bus"
+        },
+        {
+          "name": "A",
+          "function": "Backlight Anode"
+        },
+        {
+          "name": "K",
+          "function": "Backlight Cathode"
+        }
       ],
       "datasheetUrl": "https://www.sparkfun.com/datasheets/LCD/HD44780.pdf",
       "technicalSpecs": {
@@ -354,10 +657,22 @@
       "displayName": "OLED 128x64 (I2C)",
       "description": "SSD1306 monochrome OLED display",
       "pins": [
-        { "name": "GND", "function": "Ground" },
-        { "name": "VCC", "function": "3.3-5V Power" },
-        { "name": "SCL", "function": "I2C Clock" },
-        { "name": "SDA", "function": "I2C Data" }
+        {
+          "name": "GND",
+          "function": "Ground"
+        },
+        {
+          "name": "VCC",
+          "function": "3.3-5V Power"
+        },
+        {
+          "name": "SCL",
+          "function": "I2C Clock"
+        },
+        {
+          "name": "SDA",
+          "function": "I2C Data"
+        }
       ],
       "datasheetUrl": "https://cdn-shop.adafruit.com/datasheets/SSD1306.pdf",
       "technicalSpecs": {
@@ -374,9 +689,18 @@
       "displayName": "PIR Motion Sensor",
       "description": "Passive infrared motion detector",
       "pins": [
-        { "name": "VCC", "function": "5V Power" },
-        { "name": "OUT", "function": "Digital Output" },
-        { "name": "GND", "function": "Ground" }
+        {
+          "name": "VCC",
+          "function": "5V Power"
+        },
+        {
+          "name": "OUT",
+          "function": "Digital Output"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        }
       ],
       "datasheetUrl": "https://www.mpja.com/download/31227sc.pdf",
       "technicalSpecs": {
@@ -392,10 +716,22 @@
       "displayName": "Photoresistor (LDR)",
       "description": "Light-dependent resistor sensor module",
       "pins": [
-        { "name": "VCC", "function": "3.3-5V Power" },
-        { "name": "AO", "function": "Analog Output" },
-        { "name": "DO", "function": "Digital Output (threshold)" },
-        { "name": "GND", "function": "Ground" }
+        {
+          "name": "VCC",
+          "function": "3.3-5V Power"
+        },
+        {
+          "name": "AO",
+          "function": "Analog Output"
+        },
+        {
+          "name": "DO",
+          "function": "Digital Output (threshold)"
+        },
+        {
+          "name": "GND",
+          "function": "Ground"
+        }
       ],
       "datasheetUrl": "https://cdn.sparkfun.com/datasheets/Sensors/LightImaging/SEN-09088.pdf",
       "technicalSpecs": {
@@ -410,8 +746,14 @@
       "displayName": "Membrane Keypad",
       "description": "4x4 matrix membrane keypad",
       "pins": [
-        { "name": "R1-R4", "function": "Row Pins" },
-        { "name": "C1-C4", "function": "Column Pins" }
+        {
+          "name": "R1-R4",
+          "function": "Row Pins"
+        },
+        {
+          "name": "C1-C4",
+          "function": "Column Pins"
+        }
       ],
       "datasheetUrl": "https://www.parallax.com/sites/default/files/downloads/27899-4x4-Matrix-Membrane-Keypad-v1.2.pdf",
       "technicalSpecs": {
