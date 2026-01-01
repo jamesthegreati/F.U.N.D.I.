@@ -794,19 +794,20 @@ export const useAppStore = create<AppState>()(
 
         // Apply defaults to parts that may be missing attrs
         const partsWithDefaults = parts.map(part => {
-          const defaults = allDefaults[part.type.toLowerCase()] || allDefaults[part.type]
-          if (defaults) {
-            let attrs = { ...defaults, ...(part.attrs || {}) }
+          const typeLower = String(part.type).toLowerCase()
+          const defaults = allDefaults[typeLower] || allDefaults[part.type] || {}
+          let attrs = { ...defaults, ...(part.attrs || {}) }
 
-            // Ensure LCD1602/LCD2004 pin mode matches the generated wiring.
-            // If we force the wrong mode (e.g. i2c) the canvas can't attach wires to RS/E/D4..D7, etc.
-            const typeLower = String(part.type).toLowerCase()
-            if ((typeLower === 'wokwi-lcd1602' || typeLower === 'wokwi-lcd2004') && (part.attrs == null || (part.attrs as any).pins == null)) {
-              const inferred = inferLcdPinsMode(part.id)
-              // Default to I2C only when we have no signal either way.
-              attrs = { ...attrs, pins: inferred ?? 'i2c' }
-            }
+          // Ensure LCD1602/LCD2004 pin mode matches the generated wiring.
+          // If we force the wrong mode (e.g. i2c) the canvas can't attach wires to RS/E/D4..D7, etc.
+          if ((typeLower === 'wokwi-lcd1602' || typeLower === 'wokwi-lcd2004' || typeLower === 'lcd1602' || typeLower === 'lcd2004') && (part.attrs == null || (part.attrs as any).pins == null)) {
+            const inferred = inferLcdPinsMode(part.id)
+            // Default to I2C only when we have no signal either way.
+            attrs = { ...attrs, pins: inferred ?? 'i2c' }
+          }
 
+          // Return part with merged attrs, or original if no defaults or changes
+          if (Object.keys(attrs).length > 0) {
             return { ...part, attrs }
           }
           return part
