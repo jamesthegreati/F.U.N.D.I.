@@ -5,6 +5,7 @@ import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import type { ElementType } from 'react';
 import { Trash2 } from 'lucide-react';
 import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
+import { useAppStore, type CircuitPart } from '@/store/useAppStore';
 import type { WirePoint } from '@/types/wire';
 import { getAudioSimulation, pwmToFrequency } from '@/utils/simulation/audio';
 import { getLCD1602 } from '@/utils/simulation/lcd1602';
@@ -296,19 +297,23 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         applyStaticAttrs();
     }, [applyStaticAttrs]);
 
-    // Update element properties based on simulation pin states
+    // Update element properties based on simulation pin states and PWM values
     useEffect(() => {
         const element = elementRef.current;
         if (!element) return;
 
-        // Debug log when simulation states are received
-        if (simulationPinStates && Object.keys(simulationPinStates).length > 0) {
-            console.log('[WokwiPartNode] Applying simulation states:', { partType, simulationPinStates, pwmValue });
+        // Debug log when simulation states or PWM values are received
+        const hasSimStates = simulationPinStates && Object.keys(simulationPinStates).length > 0;
+        const hasPwm = typeof pwmValue === 'number' && pwmValue > 0;
+
+        if (hasSimStates || hasPwm) {
+            console.log('[WokwiPartNode] Applying states:', { partType, nodeId, simulationPinStates, pwmValue });
         }
 
         // For LED elements: if anode (A) is HIGH and cathode (C) is LOW or ground, turn ON
         // LED element has a 'value' property (boolean) to control on/off state
         // For PWM: use 'brightness' property (0-1) with gamma correction
+        // Wokwi LED: value=boolean (on/off), brightness=0-1 (intensity)
         if (partType === 'led' || partType === 'wokwi-led') {
             const anodeState = simulationPinStates?.['A'];
             const ledEl = element as HTMLElement & {
@@ -321,30 +326,35 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             // Wokwi uses gamma=2.8 by default
             const GAMMA = 2.8;
 
+            console.log('[LED] Processing LED update:', {
+                nodeId,
+                pwmValue,
+                anodeState,
+                currentValue: ledEl.value,
+                currentBrightness: ledEl.brightness
+            });
+
             // Check for PWM value first (from componentPwmStates), then fall back to pin state
             if (typeof pwmValue === 'number' && pwmValue > 0) {
                 // PWM mode from componentPwmStates
                 const normalized = pwmValue / 255;
                 const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
-                console.log('[LED] PWM brightness from pwmValue:', pwmValue, '-> gamma:', gammaCorrected.toFixed(2));
+                console.log('[LED] Setting PWM brightness:', pwmValue, '-> normalized:', normalized.toFixed(3), '-> gamma:', gammaCorrected.toFixed(3));
                 ledEl.value = true;
-                element.style.setProperty('--led-brightness', gammaCorrected.toString());
-                element.style.opacity = (0.3 + gammaCorrected * 0.7).toString();
+                ledEl.brightness = gammaCorrected; // Use native Wokwi brightness property
             } else if (typeof anodeState === 'number') {
                 // PWM mode: anodeState is 0-255
                 const normalized = anodeState / 255;
                 const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
                 console.log('[LED] PWM brightness from pin:', anodeState, '-> gamma:', gammaCorrected.toFixed(2));
                 ledEl.value = anodeState > 0;
-                element.style.setProperty('--led-brightness', gammaCorrected.toString());
-                element.style.opacity = (0.3 + gammaCorrected * 0.7).toString();
+                ledEl.brightness = gammaCorrected; // Use native Wokwi brightness property
             } else {
                 // Boolean mode: simple on/off
                 const anodeHigh = anodeState === true;
                 console.log('[LED] Setting value:', anodeHigh, 'current:', ledEl.value);
                 ledEl.value = anodeHigh;
-                element.style.removeProperty('--led-brightness');
-                element.style.opacity = anodeHigh ? '1' : '0.3';
+                ledEl.brightness = anodeHigh ? 1.0 : 0; // Full brightness when on
             }
 
             // Force Lit element to re-render
@@ -415,24 +425,30 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             }
         }
 
-        // For servo elements - convert PWM value to angle (0-180°)
+        // For servo elements - update angle from simulation or attrs
         if (partType === 'servo' || partType === 'wokwi-servo') {
-            const pwmValue = simulationPinStates?.['PWM'];
             const servoEl = element as HTMLElement & {
                 angle?: number;
                 requestUpdate?: () => void
             };
 
-            if (typeof pwmValue === 'number') {
-                // PWM value (0-255) maps to servo angle (0-180°)
-                // In real servos, pulse width 1000-2000µs = 0-180°
-                // For simulation, we use direct mapping from PWM duty cycle
-                const angle = (pwmValue / 255) * 180;
-                console.log('[Servo] PWM value:', pwmValue, '-> angle:', angle.toFixed(1));
-                servoEl.angle = angle;
-            } else if (pwmValue === true) {
-                // Digital HIGH might mean 90° (center position)
-                servoEl.angle = 90;
+            // First check if angle is set via ServoDevice simulation (stored in attrs)
+            const attrs = (data?.attrs ?? {}) as Record<string, unknown>;
+            const angleFromAttrs = attrs.angle;
+            if (typeof angleFromAttrs === 'number') {
+                servoEl.angle = angleFromAttrs;
+            } else {
+                // Fallback: convert PWM value to angle (0-180°)
+                const pwmValue = simulationPinStates?.['PWM'];
+                if (typeof pwmValue === 'number') {
+                    // PWM value (0-255) maps to servo angle (0-180°)
+                    const angle = (pwmValue / 255) * 180;
+                    console.log('[Servo] PWM value:', pwmValue, '-> angle:', angle.toFixed(1));
+                    servoEl.angle = angle;
+                } else if (pwmValue === true) {
+                    // Digital HIGH might mean 90° (center position)
+                    servoEl.angle = 90;
+                }
             }
 
             if (typeof servoEl.requestUpdate === 'function') {
@@ -484,7 +500,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             }
         }
 
-    }, [simulationPinStates, pwmValue, partType, nodeId]);
+    }, [simulationPinStates, pwmValue, partType, nodeId, data?.attrs]);
 
     // Bind simulated LCD devices to their Wokwi visual elements (text/cursor/backlight).
     useEffect(() => {
@@ -560,7 +576,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 // Convert boolean pixel array to page-based format
                 const pages = Math.ceil(state.height / 8);
                 const buffer = new Uint8Array(state.width * pages);
-                
+
                 for (let page = 0; page < pages; page++) {
                     for (let x = 0; x < state.width; x++) {
                         let byte = 0;
@@ -620,10 +636,64 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         }
     }, [data, nodeId, partType]);
 
-    // Handle potentiometer/slider value changes via native Wokwi element events
+    // Listen for keypad button press/release events
     useEffect(() => {
         const element = elementRef.current;
         if (!element) return;
+
+        const isKeypad = partType.toLowerCase().includes('keypad') || partType.toLowerCase().includes('membrane');
+        if (!isKeypad) return;
+
+        const handleKeypadPress = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { key: string; row: number; column: number };
+            console.log('[WokwiPartNode] Keypad press:', nodeId, detail);
+            
+            // Update the pressedKeys array in the component attrs
+            const state = useAppStore.getState();
+            const parts = state.circuitParts || [];
+            const partIndex = parts.findIndex((p: CircuitPart) => p.id === nodeId);
+            if (partIndex !== -1) {
+                const part = parts[partIndex];
+                const currentKeys = ((part.attrs as Record<string, unknown>)?.pressedKeys as string[]) || [];
+                if (!currentKeys.includes(detail.key)) {
+                    const newKeys = [...currentKeys, detail.key];
+                    state.updatePartAttrs(nodeId, { ...part.attrs, pressedKeys: newKeys });
+                }
+            }
+        };
+
+        const handleKeypadRelease = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { key: string; row: number; column: number };
+            console.log('[WokwiPartNode] Keypad release:', nodeId, detail);
+            
+            // Remove the key from pressedKeys array
+            const state = useAppStore.getState();
+            const parts = state.circuitParts || [];
+            const partIndex = parts.findIndex((p: CircuitPart) => p.id === nodeId);
+            if (partIndex !== -1) {
+                const part = parts[partIndex];
+                const currentKeys = ((part.attrs as Record<string, unknown>)?.pressedKeys as string[]) || [];
+                const newKeys = currentKeys.filter((k: string) => k !== detail.key);
+                state.updatePartAttrs(nodeId, { ...part.attrs, pressedKeys: newKeys });
+            }
+        };
+
+        element.addEventListener('button-press', handleKeypadPress);
+        element.addEventListener('button-release', handleKeypadRelease);
+
+        return () => {
+            element.removeEventListener('button-press', handleKeypadPress);
+            element.removeEventListener('button-release', handleKeypadRelease);
+        };
+    }, [nodeId, partType]);
+
+    // Handle potentiometer/slider value changes via native Wokwi element events
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) {
+            console.log('[WokwiPartNode] No element ref for potentiometer check:', nodeId);
+            return;
+        }
 
         const onValueChange = data?.onValueChange;
         if (!onValueChange) {
@@ -634,31 +704,55 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         const isPotentiometer = partType.toLowerCase().includes('potentiometer') ||
             partType.toLowerCase().includes('slide-potentiometer');
 
-        if (!isPotentiometer) return;
+        if (!isPotentiometer) {
+            return;
+        }
 
-        console.log('[WokwiPartNode] Setting up potentiometer listener for:', nodeId);
+        console.log('[WokwiPartNode] Setting up potentiometer listener for:', nodeId, 'element:', element.tagName);
 
         // Listen for the native 'input' event from Wokwi potentiometer element
-        // The element's value property is 0-1 (or based on min/max attrs)
-        // We need to map it to 0-1023 for Arduino ADC
+        // Wokwi potentiometer default: min=0, max=1023, value=0
+        // The element dispatches InputEvent with detail containing the value
         const handleInput = (e: Event) => {
             const potElement = element as HTMLElement & { value?: number; min?: number; max?: number };
+            // Wokwi potentiometer defaults: min=0, max=1023
             const min = potElement.min ?? 0;
-            const max = potElement.max ?? 1;
+            const max = potElement.max ?? 1023;
             const rawValue = potElement.value ?? 0;
-            
-            // Map the element's value range to 0-1023 (Arduino ADC range)
-            const normalized = (rawValue - min) / (max - min);
-            const adcValue = Math.round(normalized * 1023);
-            
+
+            // Clamp value to valid range
+            const clampedValue = Math.max(min, Math.min(max, rawValue));
+
+            // If the range is already 0-1023 (default), use directly
+            // Otherwise normalize to 0-1023 for Arduino ADC
+            let adcValue: number;
+            if (min === 0 && max === 1023) {
+                adcValue = Math.round(clampedValue);
+            } else {
+                // Normalize to 0-1, then scale to 0-1023
+                const normalized = (clampedValue - min) / (max - min);
+                adcValue = Math.round(normalized * 1023);
+            }
+
             console.log('[WokwiPartNode] Potentiometer input:', { nodeId, rawValue, min, max, adcValue });
             onValueChange(nodeId, adcValue);
         };
 
-        element.addEventListener('input', handleInput);
+        // Use capture phase to ensure we get the event even if it doesn't bubble
+        element.addEventListener('input', handleInput, { capture: true });
+
+        // Also try listening on the shadow root if present
+        const shadowRoot = element.shadowRoot;
+        if (shadowRoot) {
+            console.log('[WokwiPartNode] Also adding listener to shadow root');
+            shadowRoot.addEventListener('input', handleInput, { capture: true });
+        }
 
         return () => {
-            element.removeEventListener('input', handleInput);
+            element.removeEventListener('input', handleInput, { capture: true });
+            if (shadowRoot) {
+                shadowRoot.removeEventListener('input', handleInput, { capture: true });
+            }
         };
     }, [data?.onValueChange, nodeId, partType]);
 
@@ -700,7 +794,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     }
 
     // Determine if this is an interactive component that needs higher z-index
-    const isInteractiveComponent = 
+    const isInteractiveComponent =
         partType.toLowerCase().includes('pushbutton') ||
         partType.toLowerCase().includes('button') ||
         partType.toLowerCase().includes('potentiometer') ||
@@ -712,8 +806,8 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         <div
             ref={containerRef}
             className={`relative rounded-md transition-all duration-200 ${isSelected
-                    ? 'ring-2 ring-cyan-500/70 ring-offset-2 ring-offset-transparent shadow-lg shadow-cyan-500/20'
-                    : 'glass-panel border-alchemist hover:ring-1 hover:ring-amber-500/30'
+                ? 'ring-2 ring-cyan-500/70 ring-offset-2 ring-offset-transparent shadow-lg shadow-cyan-500/20'
+                : 'glass-panel border-alchemist hover:ring-1 hover:ring-amber-500/30'
                 }`}
             style={{
                 display: 'inline-block',
@@ -745,7 +839,15 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             )}
 
             {/* Render the Wokwi custom element */}
-            {PartElement ? <PartElement style={{ display: 'block' }} /> : null}
+            {PartElement ? (
+                <PartElement
+                    style={{
+                        display: 'block',
+                        // Interactive components need pointer-events to receive input
+                        pointerEvents: isInteractiveComponent ? 'auto' : undefined,
+                    }}
+                />
+            ) : null}
 
             {/* Pin hitboxes (Wokwi-style): big invisible clickable targets */}
             <div
@@ -867,13 +969,20 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     );
 }
 
-// Custom memo comparison to ensure simulationPinStates changes trigger re-renders
+// Custom memo comparison to ensure simulationPinStates and pwmValue changes trigger re-renders
 export default memo(WokwiPartNode, (prevProps, nextProps) => {
     const prevStates = prevProps.data?.simulationPinStates;
     const nextStates = nextProps.data?.simulationPinStates;
+    const prevPwm = prevProps.data?.pwmValue;
+    const nextPwm = nextProps.data?.pwmValue;
 
     // Always re-render if simulationPinStates changed
     if (JSON.stringify(prevStates) !== JSON.stringify(nextStates)) {
+        return false; // Should re-render
+    }
+
+    // Always re-render if pwmValue changed
+    if (prevPwm !== nextPwm) {
         return false; // Should re-render
     }
 
@@ -883,4 +992,3 @@ export default memo(WokwiPartNode, (prevProps, nextProps) => {
 
     return prevProps.id === nextProps.id && prevPartType === nextPartType;
 });
-

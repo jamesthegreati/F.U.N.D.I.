@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import Link from 'next/link'
 import {
   ChevronDown,
@@ -243,11 +243,15 @@ function SimulationCanvasInner({
   isRunning,
   componentPinStates,
   componentPwmStates,
+  setButtonStateRef,
+  setAnalogValueRef,
 }: {
   canvasRef: React.RefObject<HTMLDivElement | null>
   isRunning: boolean
   componentPinStates?: Record<string, Record<string, boolean>>
   componentPwmStates?: Record<string, number>
+  setButtonStateRef: MutableRefObject<((partId: string, pressed: boolean) => void) | null>
+  setAnalogValueRef: MutableRefObject<((partId: string, value: number) => void) | null>
 }) {
   const addPart = useAppStore((s) => s.addPart)
   const removePart = useAppStore((s) => s.removePart)
@@ -326,12 +330,16 @@ function SimulationCanvasInner({
     const manager = getInteractiveComponentManager()
     manager.setValue(partId, value)
     console.log('[SimulationCanvas] Value change:', partId, value)
+    // Also update simulation analog value
+    setAnalogValueRef.current?.(partId, value)
   }, [])
-  
+
   // Handlers for button press/release
   const handleButtonPress = useCallback((partId: string) => {
     setPressedButtons(prev => new Set(prev).add(partId))
     console.log('[SimulationCanvas] Button pressed:', partId)
+    // Call simulation button state handler
+    setButtonStateRef.current?.(partId, true)
   }, [])
   
   const handleButtonRelease = useCallback((partId: string) => {
@@ -341,6 +349,8 @@ function SimulationCanvasInner({
       return next
     })
     console.log('[SimulationCanvas] Button released:', partId)
+    // Call simulation button state handler
+    setButtonStateRef.current?.(partId, false)
   }, [])
 
   // Seed a default part once.
@@ -439,18 +449,24 @@ function SimulationCanvasInner({
   }, [selectedPartIds, setNodes])
 
   // Update node data with simulation pin states for visual component updates
+  // Force re-render by including a timestamp when PWM values change
   useEffect(() => {
+    const updateTime = Date.now()
     setNodes((nds) =>
       nds.map((node) => {
         if (node.type === 'wokwi') {
           const simStates = componentPinStates?.[node.id]
           const pwmValue = componentPwmStates?.[node.id]
+          const hasPwm = typeof pwmValue === 'number' && pwmValue > 0
           return {
             ...node,
+            // Force ReactFlow to detect changes by updating a top-level property
             data: {
               ...node.data,
               simulationPinStates: simStates,
               pwmValue: pwmValue,
+              // Include update timestamp to force re-render when values change
+              _simUpdateTime: hasPwm || simStates ? updateTime : undefined,
             },
           }
         }
@@ -718,10 +734,14 @@ function SimulationCanvas({
   isRunning,
   componentPinStates,
   componentPwmStates,
+  setButtonStateRef,
+  setAnalogValueRef,
 }: {
   isRunning: boolean
   componentPinStates?: Record<string, Record<string, boolean>>
   componentPwmStates?: Record<string, number>
+  setButtonStateRef: MutableRefObject<((partId: string, pressed: boolean) => void) | null>
+  setAnalogValueRef: MutableRefObject<((partId: string, value: number) => void) | null>
 }) {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   return (
@@ -731,6 +751,8 @@ function SimulationCanvas({
         isRunning={isRunning}
         componentPinStates={componentPinStates}
         componentPwmStates={componentPwmStates}
+        setButtonStateRef={setButtonStateRef}
+        setAnalogValueRef={setAnalogValueRef}
       />
     </ReactFlowProvider>
   )
@@ -1124,7 +1146,19 @@ export default function Home() {
     pwmStates,
     serialOutput,
     clearSerialOutput,
+    setButtonState,
+    setAnalogValue,
   } = useSimulation(hex, compiledBoard ?? '')
+
+  // Refs used by the canvas handlers; populated from useSimulation outputs.
+  const setButtonStateRef = useRef<((partId: string, pressed: boolean) => void) | null>(null)
+  const setAnalogValueRef = useRef<((partId: string, value: number) => void) | null>(null)
+
+  // Populate refs for simulation control functions so button handlers can use them
+  useEffect(() => {
+    setButtonStateRef.current = setButtonState
+    setAnalogValueRef.current = setAnalogValue
+  }, [setButtonState, setAnalogValue])
 
   useEffect(() => {
     if (!hex || !compiledBoard) return
@@ -1267,42 +1301,112 @@ export default function Home() {
   }, [circuitParts, connections, pinStates])
 
   // Compute PWM values for components based on connections to PWM pins
+  // This follows the connection graph through passive components (resistors, wires)
   const componentPwmStates = useMemo(() => {
     const states: Record<string, number> = {}
     
     const mcuPart = circuitParts.find((p) => p.type.includes('arduino') || p.type.includes('esp32') || p.type.includes('pi-pico'))
     if (!mcuPart) return states
 
-    // Find components connected to PWM pins and map their PWM values
+    // Build adjacency graph for tracing connections
+    const adjacency = new Map<string, Set<string>>()
     for (const conn of connections) {
-      let mcuEndpoint = null
-      let componentEndpoint = null
-      
-      if (conn.from.partId === mcuPart.id) {
-        mcuEndpoint = conn.from
-        componentEndpoint = conn.to
-      } else if (conn.to.partId === mcuPart.id) {
-        mcuEndpoint = conn.to
-        componentEndpoint = conn.from
+      const a = `${conn.from.partId}:${conn.from.pinId}`
+      const b = `${conn.to.partId}:${conn.to.pinId}`
+      if (!adjacency.has(a)) adjacency.set(a, new Set())
+      if (!adjacency.has(b)) adjacency.set(b, new Set())
+      adjacency.get(a)!.add(b)
+      adjacency.get(b)!.add(a)
+    }
+
+    // For resistors, treat both pins as connected (pass-through)
+    const resistorParts = circuitParts.filter(p => 
+      p.type.toLowerCase().includes('resistor') || p.type.toLowerCase().includes('wire')
+    )
+    for (const resistor of resistorParts) {
+      const pin1 = `${resistor.id}:1`
+      const pin2 = `${resistor.id}:2`
+      // Connect pin1's neighbors to pin2's neighbors (pass-through)
+      const neighbors1 = adjacency.get(pin1) ?? new Set()
+      const neighbors2 = adjacency.get(pin2) ?? new Set()
+      for (const n1 of neighbors1) {
+        for (const n2 of neighbors2) {
+          if (n1 !== n2 && !n1.startsWith(resistor.id) && !n2.startsWith(resistor.id)) {
+            if (!adjacency.has(n1)) adjacency.set(n1, new Set())
+            if (!adjacency.has(n2)) adjacency.set(n2, new Set())
+            adjacency.get(n1)!.add(n2)
+            adjacency.get(n2)!.add(n1)
+          }
+        }
       }
+    }
+
+    // PWM pins on Arduino Uno
+    const pwmPins = [3, 5, 6, 9, 10, 11]
+    
+    // For each PWM pin with a value, find connected components
+    for (const pinNum of pwmPins) {
+      const pwmValue = pwmStates[pinNum]
+      if (typeof pwmValue !== 'number' || pwmValue === 0) continue
       
-      if (!mcuEndpoint || !componentEndpoint) continue
+      const startKey = `${mcuPart.id}:${pinNum}`
+      const neighbors = adjacency.get(startKey)
+      if (!neighbors) continue
       
-      // Check if MCU pin is a PWM pin (3, 5, 6, 9, 10, 11 for Arduino Uno)
-      const pinNum = parseInt(mcuEndpoint.pinId, 10)
-      if (isNaN(pinNum)) continue
+      // BFS to find all connected components through the graph
+      const visited = new Set<string>([startKey])
+      const queue = [...neighbors]
       
-      const pwmPins = [3, 5, 6, 9, 10, 11]
-      if (pwmPins.includes(pinNum)) {
-        const pwmValue = pwmStates[pinNum]
-        if (typeof pwmValue === 'number' && pwmValue > 0) {
-          states[componentEndpoint.partId] = pwmValue
+      while (queue.length > 0) {
+        const current = queue.shift()!
+        if (visited.has(current)) continue
+        visited.add(current)
+        
+        const [partId, pinId] = current.split(':')
+        const part = circuitParts.find(p => p.id === partId)
+        
+        if (part) {
+          // Skip MCU, resistors, and wires - they're pass-through components
+          const isPassThrough = part.id === mcuPart.id || 
+            part.type.toLowerCase().includes('resistor') ||
+            part.type.toLowerCase().includes('wire')
+          
+          if (!isPassThrough) {
+            // This is an active component (LED, servo, etc.) - assign PWM value
+            states[partId] = pwmValue
+            console.log(`[PWM] Mapped pin ${pinNum} (value=${pwmValue}) to ${partId} via ${pinId}`)
+          }
+        }
+        
+        // Continue BFS
+        const nextNeighbors = adjacency.get(current)
+        if (nextNeighbors) {
+          for (const n of nextNeighbors) {
+            if (!visited.has(n)) {
+              queue.push(n)
+            }
+          }
         }
       }
     }
     
     return states
   }, [circuitParts, connections, pwmStates])
+
+  // Debug: Log PWM states changes
+  useEffect(() => {
+    const activePwm = Object.entries(pwmStates).filter(([, v]) => v > 0)
+    if (activePwm.length > 0) {
+      console.log('[Page] Active PWM states:', Object.fromEntries(activePwm))
+    }
+  }, [pwmStates])
+
+  // Debug: Log componentPwmStates changes
+  useEffect(() => {
+    if (Object.keys(componentPwmStates).length > 0) {
+      console.log('[Page] componentPwmStates updated:', componentPwmStates)
+    }
+  }, [componentPwmStates])
 
   // Debug: Log componentPinStates changes
   useEffect(() => {
@@ -1499,6 +1603,8 @@ export default function Home() {
                     isRunning={simIsRunning}
                     componentPinStates={componentPinStates}
                     componentPwmStates={componentPwmStates}
+                    setButtonStateRef={setButtonStateRef}
+                    setAnalogValueRef={setAnalogValueRef}
                   />
 
                   {/* Unified Action Bar */}

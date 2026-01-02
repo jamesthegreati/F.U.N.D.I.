@@ -144,6 +144,8 @@ export type AppState = {
   setSelectedPartIds: (ids: string[]) => void
   toggleSelectedPartId: (id: string) => void
   clearSelectedParts: () => void
+  updatePartAttrs: (id: string, attrs: Record<string, unknown>) => void
+  setCircuitPartAttr: (id: string, key: string, value: unknown) => void
 
   addConnection: (conn: Omit<Connection, 'id'>) => string
   allocateNextWireColor: () => string
@@ -649,6 +651,22 @@ export const useAppStore = create<AppState>()(
 
       clearSelectedParts: () => {
         set({ selectedPartIds: [] })
+      },
+
+      updatePartAttrs: (id, attrs) => {
+        set({
+          circuitParts: get().circuitParts.map((p) =>
+            p.id === id ? { ...p, attrs: { ...p.attrs, ...attrs } } : p
+          ),
+        })
+      },
+
+      setCircuitPartAttr: (id, key, value) => {
+        set({
+          circuitParts: get().circuitParts.map((p) =>
+            p.id === id ? { ...p, attrs: { ...p.attrs, [key]: value } } : p
+          ),
+        })
       },
 
       addConnection: (conn) => {

@@ -699,9 +699,14 @@ svg.react-flow__connectionline {
     --color-red-500: #fb2c36;
     --color-red-600: #e40014;
     --color-amber-500: #f99c00;
+    --color-yellow-400: #fac800;
     --color-yellow-500: #edb200;
+    --color-green-400: #05df72;
+    --color-green-500: #00c758;
     --color-emerald-500: #00bb7f;
     --color-cyan-500: #00b7d7;
+    --color-purple-400: #c07eff;
+    --color-purple-500: #ac4bff;
     --color-slate-200: #e2e8f0;
     --color-slate-400: #90a1b9;
     --color-slate-500: #62748e;
@@ -753,9 +758,14 @@ svg.react-flow__connectionline {
       --color-red-500: lab(55.4814% 75.0732 48.8528);
       --color-red-600: lab(48.4493% 77.4328 61.5452);
       --color-amber-500: lab(72.7183% 31.8672 97.9407);
+      --color-yellow-400: lab(83.2664% 8.65132 106.895);
       --color-yellow-500: lab(76.3898% 14.5258 98.4589);
+      --color-green-400: lab(78.503% -64.9265 39.7492);
+      --color-green-500: lab(70.5521% -66.5147 45.8072);
       --color-emerald-500: lab(66.9756% -58.27 19.5419);
       --color-cyan-500: lab(67.805% -35.3952 -30.2018);
+      --color-purple-400: lab(63.6946% 47.6127 -59.2066);
+      --color-purple-500: lab(52.0183% 66.11 -78.2316);
       --color-slate-200: lab(91.7353% -.998765 -4.76968);
       --color-slate-400: lab(65.5349% -2.25151 -14.5072);
       --color-slate-500: lab(48.0876% -2.03595 -16.5814);
@@ -1068,6 +1078,10 @@ svg.react-flow__connectionline {
     top: calc(var(--spacing) * 0);
   }
 
+  .top-1\/2 {
+    top: 50%;
+  }
+
   .top-4 {
     top: calc(var(--spacing) * 4);
   }
@@ -1114,6 +1128,10 @@ svg.react-flow__connectionline {
 
   .left-1\/2 {
     left: 50%;
+  }
+
+  .left-3 {
+    left: calc(var(--spacing) * 3);
   }
 
   .z-10 {
@@ -1190,12 +1208,20 @@ svg.react-flow__connectionline {
     margin-top: calc(var(--spacing) * .5);
   }
 
+  .mt-1 {
+    margin-top: calc(var(--spacing) * 1);
+  }
+
   .mt-1\.5 {
     margin-top: calc(var(--spacing) * 1.5);
   }
 
   .mt-2 {
     margin-top: calc(var(--spacing) * 2);
+  }
+
+  .mt-3 {
+    margin-top: calc(var(--spacing) * 3);
   }
 
   .mt-4 {
@@ -1232,6 +1258,13 @@ svg.react-flow__connectionline {
 
   .ml-1 {
     margin-left: calc(var(--spacing) * 1);
+  }
+
+  .line-clamp-2 {
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    display: -webkit-box;
+    overflow: hidden;
   }
 
   .block {
@@ -1276,6 +1309,10 @@ svg.react-flow__connectionline {
 
   .h-2 {
     height: calc(var(--spacing) * 2);
+  }
+
+  .h-2\.5 {
+    height: calc(var(--spacing) * 2.5);
   }
 
   .h-3 {
@@ -1330,8 +1367,16 @@ svg.react-flow__connectionline {
     height: calc(var(--spacing) * 40);
   }
 
+  .h-50 {
+    height: calc(var(--spacing) * 50);
+  }
+
   .h-64 {
     height: calc(var(--spacing) * 64);
+  }
+
+  .h-\[700px\] {
+    height: 700px;
   }
 
   .h-\[calc\(100vh-40px\)\] {
@@ -1352,6 +1397,14 @@ svg.react-flow__connectionline {
 
   .max-h-\[80vh\] {
     max-height: 80vh;
+  }
+
+  .max-h-\[90vh\] {
+    max-height: 90vh;
+  }
+
+  .max-h-\[400px\] {
+    max-height: 400px;
   }
 
   .min-h-0 {
@@ -1376,6 +1429,10 @@ svg.react-flow__connectionline {
 
   .w-2 {
     width: calc(var(--spacing) * 2);
+  }
+
+  .w-2\.5 {
+    width: calc(var(--spacing) * 2.5);
   }
 
   .w-3 {
@@ -1426,8 +1483,16 @@ svg.react-flow__connectionline {
     width: calc(var(--spacing) * 40);
   }
 
+  .w-\[360px\] {
+    width: 360px;
+  }
+
   .w-\[600px\] {
     width: 600px;
+  }
+
+  .w-\[900px\] {
+    width: 900px;
   }
 
   .w-full {
@@ -1448,6 +1513,10 @@ svg.react-flow__connectionline {
 
   .max-w-\[85\%\] {
     max-width: 85%;
+  }
+
+  .max-w-\[95vw\] {
+    max-width: 95vw;
   }
 
   .max-w-\[120px\] {
@@ -1478,12 +1547,17 @@ svg.react-flow__connectionline {
     flex: 1;
   }
 
-  .shrink-0 {
+  .flex-shrink-0, .shrink-0 {
     flex-shrink: 0;
   }
 
   .-translate-x-1\/2 {
     --tw-translate-x: calc(calc(1 / 2 * 100%) * -1);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
+
+  .-translate-y-1\/2 {
+    --tw-translate-y: calc(calc(1 / 2 * 100%) * -1);
     translate: var(--tw-translate-x) var(--tw-translate-y);
   }
 
@@ -1743,6 +1817,26 @@ svg.react-flow__connectionline {
     border-color: var(--color-cyan-500);
   }
 
+  .border-green-500\/30 {
+    border-color: #00c7584d;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .border-green-500\/30 {
+      border-color: color-mix(in oklab, var(--color-green-500) 30%, transparent);
+    }
+  }
+
+  .border-red-500\/30 {
+    border-color: #fb2c364d;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .border-red-500\/30 {
+      border-color: color-mix(in oklab, var(--color-red-500) 30%, transparent);
+    }
+  }
+
   .border-slate-600 {
     border-color: var(--color-slate-600);
   }
@@ -1777,6 +1871,16 @@ svg.react-flow__connectionline {
     border-color: var(--color-yellow-500);
   }
 
+  .border-yellow-500\/30 {
+    border-color: #edb2004d;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .border-yellow-500\/30 {
+      border-color: color-mix(in oklab, var(--color-yellow-500) 30%, transparent);
+    }
+  }
+
   .border-t-white {
     border-top-color: var(--color-white);
   }
@@ -1788,6 +1892,16 @@ svg.react-flow__connectionline {
   @supports (color: color-mix(in lab, red, red)) {
     .bg-black\/50 {
       background-color: color-mix(in oklab, var(--color-black) 50%, transparent);
+    }
+  }
+
+  .bg-black\/60 {
+    background-color: #0009;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-black\/60 {
+      background-color: color-mix(in oklab, var(--color-black) 60%, transparent);
     }
   }
 
@@ -1808,6 +1922,36 @@ svg.react-flow__connectionline {
   @supports (color: color-mix(in lab, red, red)) {
     .bg-cyan-500\/90 {
       background-color: color-mix(in oklab, var(--color-cyan-500) 90%, transparent);
+    }
+  }
+
+  .bg-green-500\/20 {
+    background-color: #00c75833;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-green-500\/20 {
+      background-color: color-mix(in oklab, var(--color-green-500) 20%, transparent);
+    }
+  }
+
+  .bg-purple-500\/10 {
+    background-color: #ac4bff1a;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-purple-500\/10 {
+      background-color: color-mix(in oklab, var(--color-purple-500) 10%, transparent);
+    }
+  }
+
+  .bg-red-500\/20 {
+    background-color: #fb2c3633;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-red-500\/20 {
+      background-color: color-mix(in oklab, var(--color-red-500) 20%, transparent);
     }
   }
 
@@ -1861,6 +2005,16 @@ svg.react-flow__connectionline {
 
   .bg-transparent {
     background-color: #0000;
+  }
+
+  .bg-yellow-500\/20 {
+    background-color: #edb20033;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .bg-yellow-500\/20 {
+      background-color: color-mix(in oklab, var(--color-yellow-500) 20%, transparent);
+    }
   }
 
   .bg-gradient-to-l {
@@ -1990,12 +2144,20 @@ svg.react-flow__connectionline {
     padding-top: calc(var(--spacing) * 2);
   }
 
+  .pr-3 {
+    padding-right: calc(var(--spacing) * 3);
+  }
+
   .pr-6 {
     padding-right: calc(var(--spacing) * 6);
   }
 
   .pb-3 {
     padding-bottom: calc(var(--spacing) * 3);
+  }
+
+  .pl-9 {
+    padding-left: calc(var(--spacing) * 9);
   }
 
   .text-center {
@@ -2112,6 +2274,14 @@ svg.react-flow__connectionline {
     color: var(--color-cyan-500);
   }
 
+  .text-green-400 {
+    color: var(--color-green-400);
+  }
+
+  .text-purple-400 {
+    color: var(--color-purple-400);
+  }
+
   .text-red-400 {
     color: var(--color-red-400);
   }
@@ -2132,12 +2302,20 @@ svg.react-flow__connectionline {
     color: var(--color-white);
   }
 
+  .text-yellow-400 {
+    color: var(--color-yellow-400);
+  }
+
   .text-yellow-500 {
     color: var(--color-yellow-500);
   }
 
   .uppercase {
     text-transform: uppercase;
+  }
+
+  .underline {
+    text-decoration-line: underline;
   }
 
   .antialiased {
@@ -2147,6 +2325,10 @@ svg.react-flow__connectionline {
 
   .opacity-0 {
     opacity: 0;
+  }
+
+  .opacity-30 {
+    opacity: .3;
   }
 
   .opacity-50 {
@@ -2362,6 +2544,18 @@ svg.react-flow__connectionline {
   @media (hover: hover) {
     .hover\:border-slate-500:hover {
       border-color: var(--color-slate-500);
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:bg-purple-500\/20:hover {
+      background-color: #ac4bff33;
+    }
+
+    @supports (color: color-mix(in lab, red, red)) {
+      .hover\:bg-purple-500\/20:hover {
+        background-color: color-mix(in oklab, var(--color-purple-500) 20%, transparent);
+      }
     }
   }
 

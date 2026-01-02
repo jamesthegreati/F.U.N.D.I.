@@ -27,6 +27,9 @@ import { getI2CBus } from '@/utils/simulation/i2c';
 import { getLCD1602 } from '@/utils/simulation/lcd1602';
 import { getSSD1306 } from '@/utils/simulation/ssd1306';
 import { DHTDevice, type DHTType } from '@/utils/simulation/dht';
+import { ServoDevice } from '@/utils/simulation/servo';
+import { HCSR04Device } from '@/utils/simulation/hcsr04';
+import { KeypadDevice } from '@/utils/simulation/keypad';
 import { getInteractiveComponentManager } from '@/utils/simulation/interactiveComponents';
 
 type PinStates = Record<number, boolean>;
@@ -137,7 +140,7 @@ class AVRRunner {
 }
 
 class I2CBusTwiEventHandler implements TWIEventHandler {
-  constructor(private readonly twi: AVRTWI) {}
+  constructor(private readonly twi: AVRTWI) { }
 
   start(): void {
     getI2CBus().start();
@@ -258,6 +261,8 @@ export type UseSimulationControls = {
   pwmStates: PwmStates;
   serialOutput: string[];
   clearSerialOutput: () => void;
+  setButtonState: (partId: string, pressed: boolean) => void;
+  setAnalogValue: (partId: string, value: number) => void;
 };
 
 function isAvrPart(partType: string): boolean {
@@ -281,6 +286,7 @@ const PWM_PIN_CONFIGS: Record<number, { timer: string; ocrOffset: number }> = {
 export function useSimulation(hexData: string | null | undefined, partType: string): UseSimulationControls {
   const circuitParts = useAppStore((s) => s.circuitParts) as unknown as CircuitPart[];
   const connections = useAppStore((s) => s.connections) as unknown as CircuitConnection[];
+  const setCircuitPartAttr = useAppStore((s) => s.setCircuitPartAttr);
 
   const [isRunning, setIsRunning] = useState(false);
   const [pinStates, setPinStates] = useState<PinStates>({});
@@ -294,6 +300,16 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const stepFrameRef = useRef<() => void>(() => { });
 
   const dhtDevicesRef = useRef<DHTDevice[]>([]);
+  const servoDevicesRef = useRef<ServoDevice[]>([]);
+  const hcsr04DevicesRef = useRef<HCSR04Device[]>([]);
+  const keypadDevicesRef = useRef<KeypadDevice[]>([]);
+
+  // Mappings for button part IDs to GPIO port/bit
+  const buttonPinMapRef = useRef<Map<string, { port: AVRIOPort; bit: number }>>(new Map());
+  // Mappings for analog part IDs to ADC channel
+  const analogChannelMapRef = useRef<Map<string, number>>(new Map());
+  // Current analog values per channel (0-1023)
+  const analogValuesRef = useRef<Map<number, number>>(new Map());
 
   const cyclesPerFrame = useMemo(() => Math.floor(16_000_000 / 60), []);
 
@@ -352,6 +368,17 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         next[9] = data[0x88] ?? 0;   // OCR1AL (low byte)
         next[10] = data[0x8A] ?? 0;  // OCR1BL (low byte)
         next[11] = data[0xB3] ?? 0;  // OCR2A
+
+        // Debug: Log PWM values when they change significantly
+        const hasChanges = Object.entries(next).some(([pin, val]) =>
+          prev[parseInt(pin)] !== val && val > 0
+        );
+        if (hasChanges) {
+          const activePwm = Object.entries(next).filter(([, v]) => v > 0);
+          if (activePwm.length > 0) {
+            console.log('[PWM] OCR register values:', Object.fromEntries(activePwm));
+          }
+        }
       } catch {
         // Ignore errors reading CPU data
       }
@@ -383,6 +410,15 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         // Tick protocol-level input devices that depend on tight timing.
         for (const dht of dhtDevicesRef.current) {
           dht.tick(runner.cpu.cycles);
+        }
+        for (const servo of servoDevicesRef.current) {
+          servo.tick(runner.cpu.cycles);
+        }
+        for (const hcsr04 of hcsr04DevicesRef.current) {
+          hcsr04.tick(runner.cpu.cycles);
+        }
+        for (const keypad of keypadDevicesRef.current) {
+          keypad.tick();
         }
 
         // Process timers/USART clock events and interrupts.
@@ -430,6 +466,9 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
     runnerRef.current = null;
     dhtDevicesRef.current = [];
+    servoDevicesRef.current = [];
+    hcsr04DevicesRef.current = [];
+    keypadDevicesRef.current = [];
     // Reset I2C devices/bus state between runs.
     try {
       const bus = getI2CBus();
@@ -532,7 +571,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
               const possiblePinNames = ['SDA', 'DATA', 'OUT', 'SIGNAL', 'DQ'];
               let foundPin: number | null = null;
               let usedPinName: string | null = null;
-              
+
               for (const pinName of possiblePinNames) {
                 const startKey = `${part.id}:${pinName}`;
                 const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
@@ -561,10 +600,10 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
               }
 
               const partId = part.id;
-              const portName = portBit.port === runner.portD ? 'D' : 
-                               portBit.port === runner.portB ? 'B' : 'C';
+              const portName = portBit.port === runner.portD ? 'D' :
+                portBit.port === runner.portB ? 'B' : 'C';
               console.log(`[DHT] Binding ${partId} to port${portName}${portBit.bit} (Arduino pin ${foundPin})`);
-              
+
               dhtDevicesRef.current.push(
                 new DHTDevice({
                   type: dhtType,
@@ -588,6 +627,209 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
               );
             }
           }
+
+          // Instantiate button-to-pin mappings for pushbuttons
+          buttonPinMapRef.current = new Map();
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('pushbutton') && !typeLower.includes('button')) continue;
+            // Skip membrane keypads
+            if (typeLower.includes('keypad') || typeLower.includes('membrane')) continue;
+
+            // Find which MCU pin the button is connected to
+            // Wokwi pushbutton has pins: 1.l, 1.r, 2.l, 2.r
+            const buttonPinNames = ['1.l', '1.r', '2.l', '2.r', '1', '2', 'OUT', 'SIG'];
+            let foundPin: number | null = null;
+
+            for (const pinName of buttonPinNames) {
+              const startKey = `${part.id}:${pinName}`;
+              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+              if (pin != null) {
+                foundPin = pin;
+                break;
+              }
+            }
+
+            if (foundPin == null) {
+              console.log(`[Button] No MCU connection found for ${part.id}`);
+              continue;
+            }
+
+            const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
+            if (!portBit) continue;
+
+            console.log(`[Button] Binding ${part.id} to Arduino pin ${foundPin}`);
+            buttonPinMapRef.current.set(part.id, portBit);
+          }
+
+          // Instantiate Servo devices and bind them to their control pins
+          servoDevicesRef.current = [];
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('servo')) continue;
+
+            // Find which MCU pin the servo's PWM pin is connected to
+            const servoPinNames = ['PWM', 'SIGNAL', 'SIG', 'IN'];
+            let foundPin: number | null = null;
+
+            for (const pinName of servoPinNames) {
+              const startKey = `${part.id}:${pinName}`;
+              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+              if (pin != null) {
+                foundPin = pin;
+                break;
+              }
+            }
+
+            if (foundPin == null) continue;
+
+            const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
+            if (!portBit) continue;
+
+            const partId = part.id;
+            console.log(`[Servo] Binding ${partId} to Arduino pin ${foundPin}`);
+
+            servoDevicesRef.current.push(
+              new ServoDevice({
+                port: portBit.port,
+                bit: portBit.bit,
+                cpuFrequencyHz: 16_000_000,
+                onAngleChange: (angle: number) => {
+                  // Update the servo's angle attribute in the store
+                  setCircuitPartAttr(partId, 'angle', angle);
+                },
+              })
+            );
+          }
+
+          // Instantiate HC-SR04 ultrasonic sensors
+          hcsr04DevicesRef.current = [];
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('hc-sr04') && !typeLower.includes('hcsr04') && !typeLower.includes('ultrasonic')) continue;
+
+            // Find TRIG and ECHO pins
+            const trigPinNames = ['TRIG', 'TRIGGER'];
+            const echoPinNames = ['ECHO'];
+            let trigPin: number | null = null;
+            let echoPin: number | null = null;
+
+            for (const pinName of trigPinNames) {
+              const startKey = `${part.id}:${pinName}`;
+              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+              if (pin != null) {
+                trigPin = pin;
+                break;
+              }
+            }
+
+            for (const pinName of echoPinNames) {
+              const startKey = `${part.id}:${pinName}`;
+              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+              if (pin != null) {
+                echoPin = pin;
+                break;
+              }
+            }
+
+            if (trigPin == null || echoPin == null) {
+              console.log(`[HC-SR04] Incomplete wiring for ${part.id}: TRIG=${trigPin}, ECHO=${echoPin}`);
+              continue;
+            }
+
+            const trigPortBit = getPortBitForArduinoDigitalPin(runner, trigPin);
+            const echoPortBit = getPortBitForArduinoDigitalPin(runner, echoPin);
+            if (!trigPortBit || !echoPortBit) continue;
+
+            const partId = part.id;
+            console.log(`[HC-SR04] Binding ${partId}: TRIG=pin${trigPin}, ECHO=pin${echoPin}`);
+
+            // Register with interactive manager for distance control
+            const interactiveManager = getInteractiveComponentManager();
+            interactiveManager.registerComponent(partId, part.type);
+
+            hcsr04DevicesRef.current.push(
+              new HCSR04Device({
+                trigPort: trigPortBit.port,
+                trigBit: trigPortBit.bit,
+                echoPort: echoPortBit.port,
+                echoBit: echoPortBit.bit,
+                cpuFrequencyHz: 16_000_000,
+                getDistanceCm: () => {
+                  const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                  const pNow = state.circuitParts.find((p) => p.id === partId);
+                  const attrs = pNow?.attrs ?? {};
+                  const distRaw = (attrs as any).distance;
+                  const dist = typeof distRaw === 'number' ? distRaw : Number.parseFloat(String(distRaw ?? '100'));
+                  return Number.isFinite(dist) ? dist : 100;
+                },
+              })
+            );
+          }
+
+          // Instantiate keypad matrix devices
+          keypadDevicesRef.current = [];
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('keypad') && !typeLower.includes('membrane')) continue;
+
+            // Find row and column pins (R1-R4, C1-C4)
+            const rowPins: { port: AVRIOPort; bit: number }[] = [];
+            const colPins: { port: AVRIOPort; bit: number }[] = [];
+
+            for (let r = 1; r <= 4; r++) {
+              const startKey = `${part.id}:R${r}`;
+              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+              if (pin != null) {
+                const portBit = getPortBitForArduinoDigitalPin(runner, pin);
+                if (portBit) rowPins.push(portBit);
+              }
+            }
+
+            for (let c = 1; c <= 4; c++) {
+              const startKey = `${part.id}:C${c}`;
+              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+              if (pin != null) {
+                const portBit = getPortBitForArduinoDigitalPin(runner, pin);
+                if (portBit) colPins.push(portBit);
+              }
+            }
+
+            if (rowPins.length === 0 || colPins.length === 0) {
+              console.log(`[Keypad] Incomplete wiring for ${part.id}: rows=${rowPins.length}, cols=${colPins.length}`);
+              continue;
+            }
+
+            const partId = part.id;
+            console.log(`[Keypad] Binding ${partId}: ${rowPins.length} rows, ${colPins.length} cols`);
+
+            keypadDevicesRef.current.push(
+              new KeypadDevice({
+                rowPorts: rowPins,
+                colPorts: colPins,
+                getButtonState: (row: number, col: number) => {
+                  const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                  const pNow = state.circuitParts.find((p) => p.id === partId);
+                  const attrs = pNow?.attrs ?? {};
+                  // Check if this button is pressed (stored as pressedKeys array or individual button states)
+                  const pressedKeys = (attrs as any).pressedKeys as string[] | undefined;
+                  if (pressedKeys) {
+                    // Default key layout
+                    const keyLayout = [
+                      ['1', '2', '3', 'A'],
+                      ['4', '5', '6', 'B'],
+                      ['7', '8', '9', 'C'],
+                      ['*', '0', '#', 'D'],
+                    ];
+                    if (row < keyLayout.length && col < keyLayout[row].length) {
+                      return pressedKeys.includes(keyLayout[row][col]);
+                    }
+                  }
+                  return false;
+                },
+              })
+            );
+          }
         } catch (e) {
           console.warn('[Simulation] Peripheral initialization failed:', e);
         }
@@ -607,28 +849,28 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
           const normalizedPType = p.type.replace('wokwi-', '');
           return normalizedPType === normalizedPartType;
         });
-        
+
         console.log('[ADC Setup] Looking for MCU:', partType, 'normalized:', normalizedPartType);
         console.log('[ADC Setup] Circuit parts:', circuitParts.map(p => ({ id: p.id, type: p.type })));
         console.log('[ADC Setup] Found MCU:', mcuPart?.id, mcuPart?.type);
-        
+
         if (mcuPart) {
           const adjacency = buildAdjacency(connections);
-          
+
           // Map analog channels to the components connected to them
           const analogChannelMap = new Map<number, string>(); // channel -> partId
           const interactiveManager = getInteractiveComponentManager();
-          
+
           for (const part of circuitParts) {
             const typeLower = part.type.toLowerCase();
             // Check for analog input components
-            if (typeLower.includes('potentiometer') || 
-                typeLower.includes('photoresistor') ||
-                typeLower.includes('ntc') ||
-                typeLower.includes('ldr')) {
+            if (typeLower.includes('potentiometer') ||
+              typeLower.includes('photoresistor') ||
+              typeLower.includes('ntc') ||
+              typeLower.includes('ldr')) {
               // Register the component with the interactive manager
               interactiveManager.registerComponent(part.id, part.type);
-              
+
               // Find which analog pin this component's signal pin is connected to
               const signalPins = ['SIG', 'SIGNAL', 'OUT', 'WIPER', 'AO'];
               for (const pinName of signalPins) {
@@ -644,7 +886,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
               }
             }
           }
-          
+
           // Set up ADC channel value callback
           // The callback receives an ADCMuxInput object with type and channel info
           runner.adc.onADCRead = (input) => {
@@ -715,5 +957,27 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     };
   }, [stop]);
 
-  return { run, stop, pause, isRunning, pinStates, pwmStates, serialOutput, clearSerialOutput };
+  // Set button state (pressed = true pulls pin LOW for INPUT_PULLUP)
+  const setButtonState = useCallback((partId: string, pressed: boolean) => {
+    const portBit = buttonPinMapRef.current.get(partId);
+    if (!portBit) {
+      console.log(`[Button] No mapping found for ${partId}`);
+      return;
+    }
+
+    // For INPUT_PULLUP, button pressed = pin LOW, button released = pin HIGH (pulled up)
+    // setPin(bit, value) - value true = HIGH, false = LOW
+    portBit.port.setPin(portBit.bit, !pressed);
+    console.log(`[Button] ${partId} ${pressed ? 'pressed (LOW)' : 'released (HIGH)'}`);
+  }, []);
+
+  // Set analog value for a component (e.g., potentiometer)
+  const setAnalogValue = useCallback((partId: string, value: number) => {
+    // Update the interactive component manager
+    const manager = getInteractiveComponentManager();
+    manager.setValue(partId, value);
+    console.log(`[Analog] ${partId} set to ${value}`);
+  }, []);
+
+  return { run, stop, pause, isRunning, pinStates, pwmStates, serialOutput, clearSerialOutput, setButtonState, setAnalogValue };
 }
