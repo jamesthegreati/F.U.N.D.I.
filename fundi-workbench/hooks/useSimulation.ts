@@ -558,10 +558,20 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
           // Instantiate DHT input devices and bind them to the MCU pin they are wired to.
           dhtDevicesRef.current = [];
+          // Instantiate button-to-pin mappings for pushbuttons
+          buttonPinMapRef.current = new Map();
+          // Instantiate Servo devices
+          servoDevicesRef.current = [];
+          // Instantiate HC-SR04 ultrasonic sensors
+          hcsr04DevicesRef.current = [];
+          // Instantiate keypad matrix devices
+          keypadDevicesRef.current = [];
+
           const mcuPart = circuitParts.find((p) => p.type === partType);
           if (mcuPart) {
             const adjacency = buildAdjacency(connections);
 
+            // DHT sensors
             for (const part of circuitParts) {
               const typeLower = part.type.toLowerCase();
               if (!typeLower.includes('dht')) continue;
@@ -626,210 +636,206 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
                 })
               );
             }
-          }
 
-          // Instantiate button-to-pin mappings for pushbuttons
-          buttonPinMapRef.current = new Map();
-          for (const part of circuitParts) {
-            const typeLower = part.type.toLowerCase();
-            if (!typeLower.includes('pushbutton') && !typeLower.includes('button')) continue;
-            // Skip membrane keypads
-            if (typeLower.includes('keypad') || typeLower.includes('membrane')) continue;
+            // Pushbuttons
+            for (const part of circuitParts) {
+              const typeLower = part.type.toLowerCase();
+              if (!typeLower.includes('pushbutton') && !typeLower.includes('button')) continue;
+              // Skip membrane keypads
+              if (typeLower.includes('keypad') || typeLower.includes('membrane')) continue;
 
-            // Find which MCU pin the button is connected to
-            // Wokwi pushbutton has pins: 1.l, 1.r, 2.l, 2.r
-            const buttonPinNames = ['1.l', '1.r', '2.l', '2.r', '1', '2', 'OUT', 'SIG'];
-            let foundPin: number | null = null;
+              // Find which MCU pin the button is connected to
+              // Wokwi pushbutton has pins: 1.l, 1.r, 2.l, 2.r
+              const buttonPinNames = ['1.l', '1.r', '2.l', '2.r', '1', '2', 'OUT', 'SIG'];
+              let foundPin: number | null = null;
 
-            for (const pinName of buttonPinNames) {
-              const startKey = `${part.id}:${pinName}`;
-              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
-              if (pin != null) {
-                foundPin = pin;
-                break;
+              for (const pinName of buttonPinNames) {
+                const startKey = `${part.id}:${pinName}`;
+                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (pin != null) {
+                  foundPin = pin;
+                  break;
+                }
               }
-            }
 
-            if (foundPin == null) {
-              console.log(`[Button] No MCU connection found for ${part.id}`);
-              continue;
-            }
-
-            const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
-            if (!portBit) continue;
-
-            console.log(`[Button] Binding ${part.id} to Arduino pin ${foundPin}`);
-            buttonPinMapRef.current.set(part.id, portBit);
-          }
-
-          // Instantiate Servo devices and bind them to their control pins
-          servoDevicesRef.current = [];
-          for (const part of circuitParts) {
-            const typeLower = part.type.toLowerCase();
-            if (!typeLower.includes('servo')) continue;
-
-            // Find which MCU pin the servo's PWM pin is connected to
-            const servoPinNames = ['PWM', 'SIGNAL', 'SIG', 'IN'];
-            let foundPin: number | null = null;
-
-            for (const pinName of servoPinNames) {
-              const startKey = `${part.id}:${pinName}`;
-              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
-              if (pin != null) {
-                foundPin = pin;
-                break;
+              if (foundPin == null) {
+                console.log(`[Button] No MCU connection found for ${part.id}`);
+                continue;
               }
+
+              const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
+              if (!portBit) continue;
+
+              console.log(`[Button] Binding ${part.id} to Arduino pin ${foundPin}`);
+              buttonPinMapRef.current.set(part.id, portBit);
             }
 
-            if (foundPin == null) continue;
+            // Servo devices
+            for (const part of circuitParts) {
+              const typeLower = part.type.toLowerCase();
+              if (!typeLower.includes('servo')) continue;
 
-            const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
-            if (!portBit) continue;
+              // Find which MCU pin the servo's PWM pin is connected to
+              const servoPinNames = ['PWM', 'SIGNAL', 'SIG', 'IN'];
+              let foundPin: number | null = null;
 
-            const partId = part.id;
-            console.log(`[Servo] Binding ${partId} to Arduino pin ${foundPin}`);
-
-            servoDevicesRef.current.push(
-              new ServoDevice({
-                port: portBit.port,
-                bit: portBit.bit,
-                cpuFrequencyHz: 16_000_000,
-                onAngleChange: (angle: number) => {
-                  // Update the servo's angle attribute in the store
-                  setCircuitPartAttr(partId, 'angle', angle);
-                },
-              })
-            );
-          }
-
-          // Instantiate HC-SR04 ultrasonic sensors
-          hcsr04DevicesRef.current = [];
-          for (const part of circuitParts) {
-            const typeLower = part.type.toLowerCase();
-            if (!typeLower.includes('hc-sr04') && !typeLower.includes('hcsr04') && !typeLower.includes('ultrasonic')) continue;
-
-            // Find TRIG and ECHO pins
-            const trigPinNames = ['TRIG', 'TRIGGER'];
-            const echoPinNames = ['ECHO'];
-            let trigPin: number | null = null;
-            let echoPin: number | null = null;
-
-            for (const pinName of trigPinNames) {
-              const startKey = `${part.id}:${pinName}`;
-              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
-              if (pin != null) {
-                trigPin = pin;
-                break;
+              for (const pinName of servoPinNames) {
+                const startKey = `${part.id}:${pinName}`;
+                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (pin != null) {
+                  foundPin = pin;
+                  break;
+                }
               }
+
+              if (foundPin == null) continue;
+
+              const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
+              if (!portBit) continue;
+
+              const partId = part.id;
+              console.log(`[Servo] Binding ${partId} to Arduino pin ${foundPin}`);
+
+              servoDevicesRef.current.push(
+                new ServoDevice({
+                  port: portBit.port,
+                  bit: portBit.bit,
+                  cpuFrequencyHz: 16_000_000,
+                  onAngleChange: (angle: number) => {
+                    // Update the servo's angle attribute in the store
+                    setCircuitPartAttr(partId, 'angle', angle);
+                  },
+                })
+              );
             }
 
-            for (const pinName of echoPinNames) {
-              const startKey = `${part.id}:${pinName}`;
-              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
-              if (pin != null) {
-                echoPin = pin;
-                break;
+            // HC-SR04 ultrasonic sensors
+            for (const part of circuitParts) {
+              const typeLower = part.type.toLowerCase();
+              if (!typeLower.includes('hc-sr04') && !typeLower.includes('hcsr04') && !typeLower.includes('ultrasonic')) continue;
+
+              // Find TRIG and ECHO pins
+              const trigPinNames = ['TRIG', 'TRIGGER'];
+              const echoPinNames = ['ECHO'];
+              let trigPin: number | null = null;
+              let echoPin: number | null = null;
+
+              for (const pinName of trigPinNames) {
+                const startKey = `${part.id}:${pinName}`;
+                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (pin != null) {
+                  trigPin = pin;
+                  break;
+                }
               }
-            }
 
-            if (trigPin == null || echoPin == null) {
-              console.log(`[HC-SR04] Incomplete wiring for ${part.id}: TRIG=${trigPin}, ECHO=${echoPin}`);
-              continue;
-            }
-
-            const trigPortBit = getPortBitForArduinoDigitalPin(runner, trigPin);
-            const echoPortBit = getPortBitForArduinoDigitalPin(runner, echoPin);
-            if (!trigPortBit || !echoPortBit) continue;
-
-            const partId = part.id;
-            console.log(`[HC-SR04] Binding ${partId}: TRIG=pin${trigPin}, ECHO=pin${echoPin}`);
-
-            // Register with interactive manager for distance control
-            const interactiveManager = getInteractiveComponentManager();
-            interactiveManager.registerComponent(partId, part.type);
-
-            hcsr04DevicesRef.current.push(
-              new HCSR04Device({
-                trigPort: trigPortBit.port,
-                trigBit: trigPortBit.bit,
-                echoPort: echoPortBit.port,
-                echoBit: echoPortBit.bit,
-                cpuFrequencyHz: 16_000_000,
-                getDistanceCm: () => {
-                  const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
-                  const pNow = state.circuitParts.find((p) => p.id === partId);
-                  const attrs = pNow?.attrs ?? {};
-                  const distRaw = (attrs as any).distance;
-                  const dist = typeof distRaw === 'number' ? distRaw : Number.parseFloat(String(distRaw ?? '100'));
-                  return Number.isFinite(dist) ? dist : 100;
-                },
-              })
-            );
-          }
-
-          // Instantiate keypad matrix devices
-          keypadDevicesRef.current = [];
-          for (const part of circuitParts) {
-            const typeLower = part.type.toLowerCase();
-            if (!typeLower.includes('keypad') && !typeLower.includes('membrane')) continue;
-
-            // Find row and column pins (R1-R4, C1-C4)
-            const rowPins: { port: AVRIOPort; bit: number }[] = [];
-            const colPins: { port: AVRIOPort; bit: number }[] = [];
-
-            for (let r = 1; r <= 4; r++) {
-              const startKey = `${part.id}:R${r}`;
-              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
-              if (pin != null) {
-                const portBit = getPortBitForArduinoDigitalPin(runner, pin);
-                if (portBit) rowPins.push(portBit);
+              for (const pinName of echoPinNames) {
+                const startKey = `${part.id}:${pinName}`;
+                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (pin != null) {
+                  echoPin = pin;
+                  break;
+                }
               }
-            }
 
-            for (let c = 1; c <= 4; c++) {
-              const startKey = `${part.id}:C${c}`;
-              const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
-              if (pin != null) {
-                const portBit = getPortBitForArduinoDigitalPin(runner, pin);
-                if (portBit) colPins.push(portBit);
+              if (trigPin == null || echoPin == null) {
+                console.log(`[HC-SR04] Incomplete wiring for ${part.id}: TRIG=${trigPin}, ECHO=${echoPin}`);
+                continue;
               }
+
+              const trigPortBit = getPortBitForArduinoDigitalPin(runner, trigPin);
+              const echoPortBit = getPortBitForArduinoDigitalPin(runner, echoPin);
+              if (!trigPortBit || !echoPortBit) continue;
+
+              const partId = part.id;
+              console.log(`[HC-SR04] Binding ${partId}: TRIG=pin${trigPin}, ECHO=pin${echoPin}`);
+
+              // Register with interactive manager for distance control
+              const interactiveManager = getInteractiveComponentManager();
+              interactiveManager.registerComponent(partId, part.type);
+
+              hcsr04DevicesRef.current.push(
+                new HCSR04Device({
+                  trigPort: trigPortBit.port,
+                  trigBit: trigPortBit.bit,
+                  echoPort: echoPortBit.port,
+                  echoBit: echoPortBit.bit,
+                  cpuFrequencyHz: 16_000_000,
+                  getDistanceCm: () => {
+                    const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                    const pNow = state.circuitParts.find((p) => p.id === partId);
+                    const attrs = pNow?.attrs ?? {};
+                    const distRaw = (attrs as any).distance;
+                    const dist = typeof distRaw === 'number' ? distRaw : Number.parseFloat(String(distRaw ?? '100'));
+                    return Number.isFinite(dist) ? dist : 100;
+                  },
+                })
+              );
             }
 
-            if (rowPins.length === 0 || colPins.length === 0) {
-              console.log(`[Keypad] Incomplete wiring for ${part.id}: rows=${rowPins.length}, cols=${colPins.length}`);
-              continue;
-            }
+            // Keypad matrix devices
+            for (const part of circuitParts) {
+              const typeLower = part.type.toLowerCase();
+              if (!typeLower.includes('keypad') && !typeLower.includes('membrane')) continue;
 
-            const partId = part.id;
-            console.log(`[Keypad] Binding ${partId}: ${rowPins.length} rows, ${colPins.length} cols`);
+              // Find row and column pins (R1-R4, C1-C4)
+              const rowPins: { port: AVRIOPort; bit: number }[] = [];
+              const colPins: { port: AVRIOPort; bit: number }[] = [];
 
-            keypadDevicesRef.current.push(
-              new KeypadDevice({
-                rowPorts: rowPins,
-                colPorts: colPins,
-                getButtonState: (row: number, col: number) => {
-                  const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
-                  const pNow = state.circuitParts.find((p) => p.id === partId);
-                  const attrs = pNow?.attrs ?? {};
-                  // Check if this button is pressed (stored as pressedKeys array or individual button states)
-                  const pressedKeys = (attrs as any).pressedKeys as string[] | undefined;
-                  if (pressedKeys) {
-                    // Default key layout
-                    const keyLayout = [
-                      ['1', '2', '3', 'A'],
-                      ['4', '5', '6', 'B'],
-                      ['7', '8', '9', 'C'],
-                      ['*', '0', '#', 'D'],
-                    ];
-                    if (row < keyLayout.length && col < keyLayout[row].length) {
-                      return pressedKeys.includes(keyLayout[row][col]);
+              for (let r = 1; r <= 4; r++) {
+                const startKey = `${part.id}:R${r}`;
+                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (pin != null) {
+                  const portBit = getPortBitForArduinoDigitalPin(runner, pin);
+                  if (portBit) rowPins.push(portBit);
+                }
+              }
+
+              for (let c = 1; c <= 4; c++) {
+                const startKey = `${part.id}:C${c}`;
+                const pin = findConnectedMcuDigitalPin(adjacency, startKey, mcuPart.id);
+                if (pin != null) {
+                  const portBit = getPortBitForArduinoDigitalPin(runner, pin);
+                  if (portBit) colPins.push(portBit);
+                }
+              }
+
+              if (rowPins.length === 0 || colPins.length === 0) {
+                console.log(`[Keypad] Incomplete wiring for ${part.id}: rows=${rowPins.length}, cols=${colPins.length}`);
+                continue;
+              }
+
+              const partId = part.id;
+              console.log(`[Keypad] Binding ${partId}: ${rowPins.length} rows, ${colPins.length} cols`);
+
+              keypadDevicesRef.current.push(
+                new KeypadDevice({
+                  rowPorts: rowPins,
+                  colPorts: colPins,
+                  getButtonState: (row: number, col: number) => {
+                    const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                    const pNow = state.circuitParts.find((p) => p.id === partId);
+                    const attrs = pNow?.attrs ?? {};
+                    // Check if this button is pressed (stored as pressedKeys array or individual button states)
+                    const pressedKeys = (attrs as any).pressedKeys as string[] | undefined;
+                    if (pressedKeys) {
+                      // Default key layout
+                      const keyLayout = [
+                        ['1', '2', '3', 'A'],
+                        ['4', '5', '6', 'B'],
+                        ['7', '8', '9', 'C'],
+                        ['*', '0', '#', 'D'],
+                      ];
+                      if (row < keyLayout.length && col < keyLayout[row].length) {
+                        return pressedKeys.includes(keyLayout[row][col]);
+                      }
                     }
-                  }
-                  return false;
-                },
-              })
-            );
-          }
+                    return false;
+                  },
+                })
+              );
+            }
+          } // End of if (mcuPart)
         } catch (e) {
           console.warn('[Simulation] Peripheral initialization failed:', e);
         }
@@ -944,7 +950,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     runningRef.current = true;
     setIsRunning(true);
     rafRef.current = requestAnimationFrame(stepFrame);
-  }, [appendSerialLine, circuitParts, connections, hexData, partType, stepFrame, updatePortPins]);
+  }, [appendSerialLine, circuitParts, connections, hexData, partType, setCircuitPartAttr, stepFrame, updatePortPins]);
 
   useEffect(() => {
     // Reset simulation when program/target changes.
