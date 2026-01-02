@@ -12,7 +12,7 @@ export type CircuitPart = {
     y: number
   }
   rotate?: number
-  attrs?: Record<string, string>
+  attrs?: Record<string, unknown>
 }
 
 export type CircuitConnection = {
