@@ -865,7 +865,6 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
           // Map analog channels to the components connected to them
           const analogChannelMap = new Map<number, string>(); // channel -> partId
-          const interactiveManager = getInteractiveComponentManager();
 
           for (const part of circuitParts) {
             const typeLower = part.type.toLowerCase();
@@ -873,10 +872,8 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
             if (typeLower.includes('potentiometer') ||
               typeLower.includes('photoresistor') ||
               typeLower.includes('ntc') ||
+              typeLower.includes('temp') ||
               typeLower.includes('ldr')) {
-              // Register the component with the interactive manager
-              interactiveManager.registerComponent(part.id, part.type);
-
               // Find which analog pin this component's signal pin is connected to
               const signalPins = ['SIG', 'SIGNAL', 'OUT', 'WIPER', 'AO'];
               for (const pinName of signalPins) {
@@ -901,17 +898,30 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
               const channel = (input as { type: ADCMuxInputType.SingleEnded; channel: number }).channel;
               const partId = analogChannelMap.get(channel);
               if (partId) {
-                // Get value from interactive component manager
-                const manager = getInteractiveComponentManager();
-                const value = manager.getValue(partId) ?? 512;
-                console.log(`[ADC] Channel ${channel} (${partId}) read: ${value}`);
-                // Complete the ADC read with the value
-                runner.adc.completeADCRead(value);
-                return;
+                // Fetch the latest state directly from the store
+                const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                const part = state.circuitParts.find((p) => p.id === partId);
+
+                if (part && part.attrs) {
+                  // Check common attribute names for values
+                  const val = (part.attrs as any).value ?? (part.attrs as any).angle ?? (part.attrs as any).position;
+
+                  // Map raw attributes to 0-1023 range if necessary
+                  let adcValue = Number(val);
+
+                  // Simple normalization if value is missing or NaN
+                  if (!Number.isFinite(adcValue)) adcValue = 512;
+
+                  // Clamp to 10-bit range
+                  adcValue = Math.max(0, Math.min(1023, Math.round(adcValue)));
+
+                  runner.adc.completeADCRead(adcValue);
+                  return;
+                }
               }
             }
-            // Default: complete with mid-range value
-            runner.adc.completeADCRead(512);
+            // Default open/floating input
+            runner.adc.completeADCRead(0);
           };
         }
 
@@ -979,11 +989,15 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
   // Set analog value for a component (e.g., potentiometer)
   const setAnalogValue = useCallback((partId: string, value: number) => {
-    // Update the interactive component manager
+    // Keep store as the single source of truth for simulation inputs.
+    setCircuitPartAttr(partId, 'value', value);
+
+    // Back-compat: also update the interactive component manager (if other UI paths still use it)
     const manager = getInteractiveComponentManager();
     manager.setValue(partId, value);
+
     console.log(`[Analog] ${partId} set to ${value}`);
-  }, []);
+  }, [setCircuitPartAttr]);
 
   return { run, stop, pause, isRunning, pinStates, pwmStates, serialOutput, clearSerialOutput, setButtonState, setAnalogValue };
 }

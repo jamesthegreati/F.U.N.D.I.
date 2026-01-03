@@ -136,9 +136,12 @@ export class DHTDevice {
     // Host is not driving low.
     if (this.hostLowStartCycle !== null) {
       const lowDurationCycles = cpuCycles - this.hostLowStartCycle;
+      // Timing leniency:
+      // DHT11 spec = 18ms, DHT22 spec = 1ms.
+      // Accept a lower threshold to tolerate browser/JS scheduling jitter.
       const minLow = this.type === 'dht11'
-        ? msToCycles(this.cpuFrequencyHz, 18)
-        : msToCycles(this.cpuFrequencyHz, 1);
+        ? msToCycles(this.cpuFrequencyHz, 10)
+        : msToCycles(this.cpuFrequencyHz, 0.5);
 
       if (lowDurationCycles >= minLow) {
         this.armed = true;
