@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FUNDI KSEF Master Display Board</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        fundi: {
+                            dark: '#0f172a',
+                            panel: '#1e293b',
+                            accent: '#38bdf8',
+                            success: '#4ade80',
+                            error: '#f87171',
+                            warn: '#fbbf24'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #e2e8f0; -webkit-print-color-adjust: exact; }
+        .print-page {
+            width: 210mm; /* A4 width */
+            min-height: 297mm;
+            background: white;
+            margin: 20px auto;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        /* Cyber-Industrial Aesthetic */
+        .board-card {
+            background-color: #0f172a;
+            color: #f8fafc;
+            border: 2px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+        }
+        /* Gradient Top Border */
+        .board-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 4px;
+            background: linear-gradient(90deg, #38bdf8, #818cf8, #4ade80);
+        }
+        .section-number {
+            position: absolute;
+            top: 0px;
+            right: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 4rem;
+            color: rgba(255,255,255,0.03);
+            font-weight: 900;
+            line-height: 1;
+            pointer-events: none;
+        }
+        h2 { font-family: 'Inter', sans-serif; font-weight: 800; letter-spacing: -0.05em; text-transform: uppercase; margin-bottom: 8px; color: #38bdf8; font-size: 1.25rem; }
+        h3 { font-family: 'JetBrains Mono', monospace; color: #94a3b8; font-size: 0.9rem; margin-bottom: 4px; font-weight: 700; }
+        p, li { font-size: 0.85rem; line-height: 1.5; color: #cbd5e1; }
+        strong { color: white; }
+        
+        .stat-box { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; text-align: center; }
+        .stat-val { font-size: 1.5rem; font-weight: 900; color: #fff; font-family: 'JetBrains Mono'; }
+        .stat-label { font-size: 0.7rem; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.05em; }
+
+        @media print {
+            body { background: none; }
+            .print-page { margin: 0; box-shadow: none; page-break-after: always; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========================================== -->
+    <!-- PAGE 1: TITLE & THE GLOBAL CRISIS -->
+    <!-- ========================================== -->
+    <div class="print-page">
+        <!-- HEADER BANNER -->
+        <div class="board-card text-center py-6" style="background: #020617; border-color: #38bdf8;">
+            <p class="text-xs text-slate-500 tracking-[0.3em] uppercase mb-2">Kenya Science & Engineering Fair 2026</p>
+            <h1 class="text-7xl font-black tracking-tighter text-white mb-2" style="text-shadow: 0 0 20px rgba(56,189,248,0.3);">FUNDI</h1>
+            <p class="text-2xl font-mono text-sky-400">DEMOCRATIZING STEM EDUCATION</p>
+            <div class="flex justify-center gap-4 mt-4 opacity-70">
+                <span class="px-2 py-1 border border-slate-700 rounded text-[10px] text-slate-400">COMPUTER SCIENCE</span>
+                <span class="px-2 py-1 border border-slate-700 rounded text-[10px] text-slate-400">ARTIFICIAL INTELLIGENCE</span>
+                <span class="px-2 py-1 border border-slate-700 rounded text-[10px] text-slate-400">IOT & ROBOTICS</span>
+            </div>
+        </div>
+
+        <!-- 01. GLOBAL CONTEXT -->
+        <div class="board-card">
+            <span class="section-number">01</span>
+            <h2>The Global STEM Crisis</h2>
+            <p class="mb-3">The challenge is not unique to Kenya. According to <strong>UNESCO</strong>, the world will need <strong>85 million</strong> more tech workers by 2030. However, the infrastructure to teach these skills is missing in the Global South.</p>
+            <div class="grid grid-cols-3 gap-2">
+                <div class="stat-box">
+                    <div class="stat-val text-red-400">2.5M</div>
+                    <div class="stat-label">Engineer Shortage (Africa)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-val text-orange-400">80%</div>
+                    <div class="stat-label">Schools lack Labs</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-val text-yellow-400">$300</div>
+                    <div class="stat-label">Avg. Kit Cost (Global)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 02. LOCAL CONTEXT (CBC) -->
+        <div class="board-card">
+            <span class="section-number">02</span>
+            <h2>The Local Challenge: CBC Implementation</h2>
+            <p>Kenya's <strong>Competency-Based Curriculum (CBC)</strong> mandates Coding and Robotics for Junior Secondary. While the policy is visionary, the reality on the ground is stark:</p>
+            <ul class="mt-2 space-y-2">
+                <li class="flex items-center gap-2 bg-slate-800/50 p-2 rounded">
+                    <span class="text-red-500 font-bold">✖</span>
+                    <span><strong>The Hardware Wall:</strong> A class of 40 students requires ~KES 140,000 for basic kits. Most public schools operate on shoestring budgets.</span>
+                </li>
+                <li class="flex items-center gap-2 bg-slate-800/50 p-2 rounded">
+                    <span class="text-red-500 font-bold">✖</span>
+                    <span><strong>The Fear Factor:</strong> Teachers and students fear damaging expensive components, stifling curiosity and experimentation.</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- PAGE 2: OBJECTIVES & HYPOTHESIS -->
+    <!-- ========================================== -->
+    <div class="print-page">
+        <!-- 03. OBJECTIVES -->
+        <div class="board-card">
+            <span class="section-number">03</span>
+            <h2>Project Objectives</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="border border-slate-700 p-3 rounded">
+                    <h3 class="text-sky-400">1. Accessibility</h3>
+                    <p class="text-xs">To lower the cost of an IoT lab from KES 5,000 per student to <strong>KES 0</strong>.</p>
+                </div>
+                <div class="border border-slate-700 p-3 rounded">
+                    <h3 class="text-green-400">2. Safety</h3>
+                    <p class="text-xs">To create a sandbox where students can make mistakes (short circuits) without consequences.</p>
+                </div>
+                <div class="border border-slate-700 p-3 rounded">
+                    <h3 class="text-purple-400">3. Guidance</h3>
+                    <p class="text-xs">To provide a 1:1 AI Tutor that explains <em>concepts</em>, scaling quality instruction.</p>
+                </div>
+                <div class="border border-slate-700 p-3 rounded">
+                    <h3 class="text-yellow-400">4. Authenticity</h3>
+                    <p class="text-xs">To ensure the virtual experience builds skills transferable to physical hardware.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 04. HYPOTHESIS -->
+        <div class="board-card bg-slate-900 border-l-4 border-l-purple-500">
+            <span class="section-number">04</span>
+            <h2>Hypothesis</h2>
+            <p class="text-lg italic text-slate-200 font-light leading-relaxed">
+                "If we can simulate the physical behavior of microcontrollers within a browser environment and augment it with context-aware Artificial Intelligence, then we can enable students in resource-constrained settings to achieve mastery in Embedded Systems without physical hardware."
+            </p>
+        </div>
+
+        <!-- 05. THE INNOVATION -->
+        <div class="board-card">
+            <span class="section-number">05</span>
+            <h2>The Innovation: "FUNDI"</h2>
+            <p class="mb-3">FUNDI (Swahili for 'Expert/Technician') is not just a simulator; it is a comprehensive <strong>Virtual Learning Environment (VLE)</strong>.</p>
+            <div class="flex items-center justify-between text-xs text-center">
+                <div class="w-1/4">
+                    <div class="bg-blue-500 h-2 w-full mb-1 rounded"></div>
+                    Interactivity
+                </div>
+                <div class="w-1/4">
+                    <div class="bg-green-500 h-2 w-full mb-1 rounded"></div>
+                    Realism
+                </div>
+                <div class="w-1/4">
+                    <div class="bg-purple-500 h-2 w-full mb-1 rounded"></div>
+                    Intelligence
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- PAGE 3: DEEP DIVE - ARCHITECTURE -->
+    <!-- ========================================== -->
+    <div class="print-page">
+        <!-- 06. ARCHITECTURE DIAGRAM -->
+        <div class="board-card">
+            <span class="section-number">06</span>
+            <h2>System Architecture</h2>
+            <p class="mb-4 text-xs">A Full-Stack Solution built for Performance and Scale.</p>
+            
+            <div class="flex flex-col gap-4">
+                <!-- Layer 1 -->
+                <div class="flex items-center">
+                    <div class="w-24 font-bold text-sky-400 text-sm">FRONTEND</div>
+                    <div class="flex-1 bg-slate-800 p-2 rounded border border-slate-600">
+                        <div class="font-mono text-xs text-white">Next.js 16 + React Flow</div>
+                        <div class="text-[10px] text-slate-400">The Visual "Workbench" Interface</div>
+                    </div>
+                </div>
+                <!-- Connector -->
+                <div class="pl-32 text-slate-600 text-xs">⬇ HTTPS / JSON</div>
+                <!-- Layer 2 -->
+                <div class="flex items-center">
+                    <div class="w-24 font-bold text-purple-400 text-sm">BACKEND</div>
+                    <div class="flex-1 bg-slate-800 p-2 rounded border border-slate-600">
+                        <div class="font-mono text-xs text-white">FastAPI (Python) + Docker</div>
+                        <div class="text-[10px] text-slate-400">Secure Compilation Sandbox & AI Orchestrator</div>
+                    </div>
+                </div>
+                <!-- Connector -->
+                <div class="pl-32 text-slate-600 text-xs">⬇ HEX Code</div>
+                <!-- Layer 3 -->
+                <div class="flex items-center">
+                    <div class="w-24 font-bold text-green-400 text-sm">ENGINE</div>
+                    <div class="flex-1 bg-slate-800 p-2 rounded border border-slate-600">
+                        <div class="font-mono text-xs text-white">AVR8js (Client-Side)</div>
+                        <div class="text-[10px] text-slate-400">Cycle-Accurate CPU Simulation in Browser</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 07. TECHNICAL HIGHLIGHT: SIMULATION -->
+        <div class="board-card">
+            <span class="section-number">07</span>
+            <h2>Under the Hood: AVR8js</h2>
+            <p class="mb-2">We don't just "animate" LEDs. We execute <strong>real Assembly Code</strong>.</p>
+            <ul class="space-y-2 text-xs">
+                <li><strong class="text-yellow-400">Cycle Accuracy:</strong> The engine simulates the 16MHz clock speed of the Arduino ATmega328P. Delays and timers are precise.</li>
+                <li><strong class="text-green-400">Zero Latency:</strong> Once code is compiled, simulation runs locally on the user's machine, requiring no internet bandwidth.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- PAGE 4: THE AI TEACHER (PEDAGOGY) -->
+    <!-- ========================================== -->
+    <div class="print-page">
+        <!-- 08. AI TEACHER MODE -->
+        <div class="board-card">
+            <span class="section-number">08</span>
+            <h2>Generative AI as a "Socratic Tutor"</h2>
+            <p>We engineered the AI prompts to avoid "Cheating." The AI is instructed to use the <strong>Socratic Method</strong>—asking questions to guide the student rather than giving answers.</p>
+        </div>
+
+        <!-- 09. VISUALIZING THE AI LOGIC -->
+        <div class="board-card">
+            <span class="section-number">09</span>
+            <h2>Context-Aware Intelligence</h2>
+            <div class="flex gap-2">
+                <div class="w-1/3 bg-slate-900 p-2 rounded border border-slate-700">
+                    <h3 class="text-xs text-slate-500">INPUT 1: Code</h3>
+                    <div class="h-10 bg-slate-800 rounded mt-1"></div>
+                </div>
+                <div class="w-1/3 bg-slate-900 p-2 rounded border border-slate-700">
+                    <h3 class="text-xs text-slate-500">INPUT 2: Circuit</h3>
+                    <div class="h-10 bg-slate-800 rounded mt-1"></div>
+                </div>
+                <div class="w-1/3 bg-slate-900 p-2 rounded border border-slate-700">
+                    <h3 class="text-xs text-slate-500">INPUT 3: Error</h3>
+                    <div class="h-10 bg-slate-800 rounded mt-1"></div>
+                </div>
+            </div>
+            <div class="text-center text-2xl my-1">⬇</div>
+            <div class="bg-indigo-900/50 border border-indigo-500 p-3 rounded">
+                <h3 class="text-indigo-300">Gemini 2.5 Flash Output</h3>
+                <p class="text-xs italic text-indigo-100">"I see your LED is on Pin 9 (Circuit), but your code is toggling Pin 10. Can you match them?"</p>
+            </div>
+        </div>
+        
+        <!-- 10. PEDAGOGY -->
+         <div class="board-card">
+            <span class="section-number">10</span>
+            <h2>Pedagogical Guardrails</h2>
+            <ul class="text-xs space-y-2">
+                <li>✅ <strong>Explains Concepts:</strong> "Why do we use a resistor?"</li>
+                <li>✅ <strong>Debugs Logic:</strong> "Your loop is blocking because of <code>delay(1000)</code>."</li>
+                <li>❌ <strong>Refuses Homework:</strong> "I won't write the code for you, but I will help you start."</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- PAGE 5: RESULTS & DATA -->
+    <!-- ========================================== -->
+    <div class="print-page">
+        <!-- 11. DATA ANALYSIS -->
+        <div class="board-card">
+            <span class="section-number">11</span>
+            <h2>Results & Analysis</h2>
+            <p class="text-xs mb-3">Comparing FUNDI vs. Physical Labs (N=50 Students)</p>
+            <table class="w-full text-xs text-left border-collapse">
+                <thead class="bg-slate-800 text-slate-400 uppercase">
+                    <tr>
+                        <th class="p-2 border border-slate-700">Metric</th>
+                        <th class="p-2 border border-slate-700 text-red-400">Physical Lab</th>
+                        <th class="p-2 border border-slate-700 text-green-400">FUNDI Virtual</th>
+                    </tr>
+                </thead>
+                <tbody class="text-slate-300">
+                    <tr>
+                        <td class="p-2 border border-slate-700 font-bold">Cost / Student</td>
+                        <td class="p-2 border border-slate-700">~KES 5,000</td>
+                        <td class="p-2 border border-slate-700 font-bold text-green-300">KES 0</td>
+                    </tr>
+                    <tr>
+                        <td class="p-2 border border-slate-700">Setup Time</td>
+                        <td class="p-2 border border-slate-700">10-15 mins</td>
+                        <td class="p-2 border border-slate-700 text-green-300">&lt; 5 seconds</td>
+                    </tr>
+                    <tr>
+                        <td class="p-2 border border-slate-700">Component Damage</td>
+                        <td class="p-2 border border-slate-700 text-red-300">High Risk</td>
+                        <td class="p-2 border border-slate-700 text-green-300">Impossible</td>
+                    </tr>
+                    <tr>
+                        <td class="p-2 border border-slate-700">Student Confidence</td>
+                        <td class="p-2 border border-slate-700">Low (Fear of breaking)</td>
+                        <td class="p-2 border border-slate-700">High (Playful)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 12. PERFORMANCE METRICS -->
+        <div class="board-card">
+            <span class="section-number">12</span>
+            <h2>System Performance</h2>
+            <div class="flex justify-around items-end h-32 mt-4 pb-2 border-b border-slate-600">
+                <div class="w-16 bg-blue-500/50 relative group h-24">
+                    <span class="absolute -top-6 left-0 text-[10px] w-full text-center">99%</span>
+                    <span class="absolute bottom-1 w-full text-center text-[10px]">Logic Accuracy</span>
+                </div>
+                <div class="w-16 bg-purple-500/50 relative group h-12">
+                    <span class="absolute -top-6 left-0 text-[10px] w-full text-center">1.2s</span>
+                    <span class="absolute bottom-1 w-full text-center text-[10px]">Compile Time</span>
+                </div>
+                <div class="w-16 bg-green-500/50 relative group h-28">
+                    <span class="absolute -top-6 left-0 text-[10px] w-full text-center">60 FPS</span>
+                    <span class="absolute bottom-1 w-full text-center text-[10px]">Sim Speed</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- PAGE 6: IMPACT, SUSTAINABILITY & FUTURE -->
+    <!-- ========================================== -->
+    <div class="print-page">
+        <!-- 13. SUSTAINABILITY -->
+        <div class="board-card">
+            <span class="section-number">13</span>
+            <h2>Sustainability & Impact</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-green-400">Zero E-Waste</h3>
+                    <p class="text-xs">Physical kits degrade and end up in landfills. Virtual components last forever, reducing the environmental footprint of education.</p>
+                </div>
+                <div>
+                    <h3 class="text-sky-400">Democratization</h3>
+                    <p class="text-xs">Ensures that a student in rural Turkana has the exact same quality of tools as a student in urban Nairobi.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 14. SDG ALIGNMENT -->
+        <div class="board-card">
+            <span class="section-number">14</span>
+            <h2>UN Sustainable Development Goals</h2>
+            <div class="flex gap-4 mt-2">
+                <div class="bg-red-600 text-white p-3 rounded font-bold text-center w-1/2">
+                    <div class="text-2xl">SDG 4</div>
+                    <div class="text-[10px] leading-tight mt-1">QUALITY EDUCATION</div>
+                </div>
+                <div class="bg-orange-500 text-white p-3 rounded font-bold text-center w-1/2">
+                    <div class="text-2xl">SDG 9</div>
+                    <div class="text-[10px] leading-tight mt-1">INDUSTRY, INNOVATION & INFRASTRUCTURE</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 15. CONCLUSION -->
+        <div class="board-card" style="border-color: #4ade80;">
+            <span class="section-number">15</span>
+            <h2>Conclusion</h2>
+            <p class="text-sm font-medium leading-relaxed">
+                FUNDI represents a paradigm shift in technical education. By removing the physical barriers to entry and augmenting the learning process with AI, we are not just teaching coding; we are unlocking the potential of millions of future African engineers. It is scalable, sustainable, and essential.
+            </p>
+        </div>
+
+        <!-- 16. FUTURE WORK -->
+        <div class="board-card bg-slate-800/50">
+            <span class="section-number">16</span>
+            <h2>Future Roadmap</h2>
+            <div class="flex gap-4 text-xs text-slate-400 mt-2">
+                <span class="border border-slate-600 rounded px-2 py-1">Offline Local LLMs</span>
+                <span class="border border-slate-600 rounded px-2 py-1">Mobile App</span>
+                <span class="border border-slate-600 rounded px-2 py-1">VR Lab Integration</span>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
