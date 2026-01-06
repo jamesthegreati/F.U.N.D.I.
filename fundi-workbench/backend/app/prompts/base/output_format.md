@@ -1,9 +1,15 @@
 # Output Format Specification
 
-You must return a JSON object with the following structure:
+Return **ONLY** a single valid JSON object (no markdown, no code fences, no extra text).
+
+The JSON object must have the following structure:
 
 ```json
 {
+  "action": "'answer'|'update_code'|'update_circuit'|'update_both'",
+  "apply_code": "boolean - whether the frontend should apply the 'code' field",
+  "apply_circuit": "boolean - whether the frontend should apply circuit_parts/connections",
+  "apply_files": "boolean - whether the frontend should apply file_changes",
   "code": "string - Complete Arduino C++ code",
   "circuit_parts": [
     {
@@ -25,11 +31,11 @@ You must return a JSON object with the following structure:
       "target_part": "string - ID of target component",
       "target_pin": "string - EXACT pin name",
       "color": "string - Wire color (optional, hex format)",
+      "label": "string - Optional connection label (e.g., 'GND', 'VCC', 'D13', 'A0')",
       "signal_type": "string - 'power'|'ground'|'digital'|'analog'|'pwm'|'i2c'|'spi'"
     }
   ],
   "explanation": "string - User-friendly explanation of the circuit",
-  "reasoning": "string - Optional: Your step-by-step thinking process",
   "file_changes": [
     {
       "path": "string - File path (e.g., 'config.h')",
@@ -46,3 +52,17 @@ You must return a JSON object with the following structure:
 2. **Coordinates**: All x/y values must be multiples of 20 (grid snapping)
 3. **Unique IDs**: Each component must have a unique ID
 4. **Valid JSON**: Output must be valid, parseable JSON
+
+## Intent Rules
+
+- If the user is asking a question and does NOT request changes, set:
+  - action='answer'
+  - apply_code=false, apply_circuit=false, apply_files=false
+  - Provide the answer in "explanation" and do not propose changes.
+- If only code changes are requested, use action='update_code' and set apply_circuit=false.
+- If only wiring/layout/components changes are requested, use action='update_circuit' and set apply_code=false.
+
+## Do Not
+
+- Do not include markdown or ``` fences
+- Do not include extra keys not listed above

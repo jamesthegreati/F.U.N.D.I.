@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Node.js** (v18+)
-- **Python** (3.10+)
+- **Python** (3.12+)
 - **Arduino CLI** installed at `C:\arduino-cli` (with AVR core)
 
 ## Quick Start
@@ -23,6 +23,22 @@ python -m pip install -r requirements.txt
 # Run the backend (every time)
 $env:PATH = "C:\arduino-cli;$env:PATH"
 .\venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+If you use **Git Bash** instead of PowerShell, use:
+
+```bash
+cd fundi-workbench/backend
+
+# First time setup (only once)
+python -m venv venv
+source venv/Scripts/activate
+python -m pip install -r requirements.txt
+
+# Run the backend (every time)
+export PATH="/c/arduino-cli:$PATH"
+source venv/Scripts/activate
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -62,6 +78,47 @@ Backend should show:
 ✅ Arduino CLI found at: C:\arduino-cli\arduino-cli.EXE
 ✅ Backend startup complete ✨
 ```
+
+## Upload Code To A Physical Arduino
+
+The backend already supports listing ports and uploading a compiled sketch via Arduino CLI.
+
+### 1) List available ports
+
+- API: `GET http://localhost:8000/api/v1/arduino/ports`
+
+Example (Git Bash):
+
+```bash
+curl -sS http://localhost:8000/api/v1/arduino/ports | cat
+```
+
+### 2) Compile + Upload in one request
+
+Use `POST /api/v1/compile` with `upload=true` and `upload_port`.
+
+Supported `board` values:
+
+- `wokwi-arduino-uno`
+- `wokwi-arduino-nano`
+- `wokwi-arduino-mega`
+- `wokwi-esp32-devkit-v1`
+- `wokwi-pi-pico`
+
+Example (replace `COM3` and `board` as needed):
+
+```bash
+curl -sS http://localhost:8000/api/v1/compile \
+	-H 'Content-Type: application/json' \
+	-d '{
+		"code": "void setup(){pinMode(13,OUTPUT);} void loop(){digitalWrite(13,HIGH);delay(500);digitalWrite(13,LOW);delay(500);}",
+		"board": "wokwi-arduino-uno",
+		"upload": true,
+		"upload_port": "COM3"
+	}' | cat
+```
+
+If the upload fails, the response includes `upload_error` and `upload_output` (Arduino CLI output).
 
 ## Troubleshooting
 

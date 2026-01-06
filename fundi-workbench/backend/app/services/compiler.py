@@ -15,7 +15,7 @@ import tempfile
 import os
 import shutil
 
-from app.core.security import is_safe_filename, validate_file_path
+from app.core.security import is_safe_filename, validate_file_path, is_safe_serial_port
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,13 @@ class CompileResult:
     success: bool
     hex: Optional[str] = None
     error: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class UploadResult:
+    success: bool
+    error: Optional[str] = None
+    output: Optional[str] = None
 
 
 # List of pre-installed libraries available in the Docker image
@@ -43,12 +50,26 @@ _HEADER_TO_LIBRARY: dict[str, str] = {
     "DHT.h": "DHT sensor library",
     "LiquidCrystal.h": "LiquidCrystal",
     "LiquidCrystal_I2C.h": "LiquidCrystal I2C",
+    # Featured projects
+    "Servo.h": "Servo",
+    "Keypad.h": "Keypad",
     # Common dependency for many Adafruit libraries (sometimes shows up separately)
     "Adafruit_Sensor.h": "Adafruit Unified Sensor",
+
+    # OLED / graphics
+    "Adafruit_GFX.h": "Adafruit GFX Library",
+    "Adafruit_SSD1306.h": "Adafruit SSD1306",
+    # Dependency frequently required by Adafruit displays/sensors
+    "Adafruit_I2CDevice.h": "Adafruit BusIO",
 }
 
 _LIB_INSTALL_LOCK = threading.Lock()
 _LIB_INDEX_READY = False
+
+_PORTS_CACHE_LOCK = threading.Lock()
+_PORTS_CACHE: list[dict[str, object]] | None = None
+_PORTS_CACHE_TS: float = 0.0
+_PORTS_CACHE_TTL_S: float = 3.0
 
 
 class CompilerService:
@@ -69,6 +90,14 @@ class CompilerService:
     }
 
     SUPPORTED_BOARDS: frozenset[str] = frozenset(FQBN_MAP.keys())
+
+    UPLOAD_SUPPORTED_BOARDS: frozenset[str] = frozenset(
+        {
+            "wokwi-arduino-uno",
+            "wokwi-arduino-nano",
+            "wokwi-arduino-mega",
+        }
+    )
 
     def check_library_available(self, library_name: str) -> bool:
         """Check if a library is available in the pre-installed libraries."""
@@ -199,6 +228,8 @@ class CompilerService:
                         cmd,
                         capture_output=True,
                         text=True,
+                        encoding="utf-8",
+                        errors="replace",
                         check=False,
                         timeout=120,  # 2 minute timeout for compilation
                     )
@@ -304,11 +335,274 @@ class CompilerService:
                 error=f"Unexpected error during compilation setup: {exc}"
             )
 
+    def list_ports(self) -> list[dict[str, object]]:
+        """List detected serial ports via `arduino-cli board list`.
+
+        Returns a JSON-serializable list of ports with best-effort fields.
+        """
+        # Cache results briefly: `arduino-cli board list` can be slow on Windows.
+        # This keeps the UI responsive when users open the Upload tab or hit refresh repeatedly.
+        import time
+        global _PORTS_CACHE, _PORTS_CACHE_TS
+        now = time.time()
+        if _PORTS_CACHE is not None and (now - _PORTS_CACHE_TS) < _PORTS_CACHE_TTL_S:
+            return list(_PORTS_CACHE)
+
+        with _PORTS_CACHE_LOCK:
+            now = time.time()
+            if _PORTS_CACHE is not None and (now - _PORTS_CACHE_TS) < _PORTS_CACHE_TTL_S:
+                return list(_PORTS_CACHE)
+
+        arduino_cli = self._resolve_arduino_cli()
+        if not arduino_cli:
+            return []
+
+        try:
+            proc = subprocess.run(
+                [arduino_cli, "board", "list", "--format", "json", "--no-color"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=15,
+            )
+            raw = (proc.stdout or "").strip()
+            if not raw:
+                return []
+
+            payload = json.loads(raw)
+            detected = payload.get("detected_ports") if isinstance(payload, dict) else None
+            if not isinstance(detected, list):
+                return []
+
+            out: list[dict[str, object]] = []
+            for entry in detected:
+                if not isinstance(entry, dict):
+                    continue
+                port_info = entry.get("port") if isinstance(entry.get("port"), dict) else {}
+                address = port_info.get("address")
+                if not isinstance(address, str) or not address.strip():
+                    continue
+                address = address.strip()
+                if not is_safe_serial_port(address):
+                    # Avoid returning weird entries; callers should only see upload-safe ports.
+                    continue
+
+                matching_boards = entry.get("matching_boards")
+                boards_out: list[dict[str, object]] = []
+                if isinstance(matching_boards, list):
+                    for b in matching_boards:
+                        if not isinstance(b, dict):
+                            continue
+                        name = b.get("name")
+                        fqbn = b.get("fqbn")
+                        item: dict[str, object] = {}
+                        if isinstance(name, str) and name.strip():
+                            item["name"] = name.strip()
+                        if isinstance(fqbn, str) and fqbn.strip():
+                            item["fqbn"] = fqbn.strip()
+                        if item:
+                            boards_out.append(item)
+
+                out.append(
+                    {
+                        "address": address,
+                        "label": port_info.get("label") if isinstance(port_info.get("label"), str) else None,
+                        "protocol": port_info.get("protocol") if isinstance(port_info.get("protocol"), str) else None,
+                        "protocol_label": port_info.get("protocol_label")
+                        if isinstance(port_info.get("protocol_label"), str)
+                        else None,
+                        "boards": boards_out,
+                    }
+                )
+
+            with _PORTS_CACHE_LOCK:
+                _PORTS_CACHE = list(out)
+                _PORTS_CACHE_TS = time.time()
+            return out
+        except Exception:
+            return []
+
+    def upload_artifact(self, artifact_b64: str, board: str, port: str) -> UploadResult:
+        """Upload a pre-compiled artifact (base64 .hex/.bin) to a connected board."""
+        if board not in self.UPLOAD_SUPPORTED_BOARDS:
+            return UploadResult(
+                success=False,
+                error=(
+                    "Upload currently supports Arduino AVR boards only (Uno/Nano/Mega). "
+                    f"Requested: {board}"
+                ),
+            )
+        if board not in self.SUPPORTED_BOARDS:
+            return UploadResult(success=False, error=f"Board not supported: {board}")
+
+        if not is_safe_serial_port(port):
+            return UploadResult(success=False, error="Invalid or unsafe serial port")
+
+        fqbn = self.FQBN_MAP.get(board)
+        if not fqbn:
+            return UploadResult(success=False, error=f"Unsupported board: {board}")
+
+        arduino_cli = self._resolve_arduino_cli()
+        if not arduino_cli:
+            return UploadResult(success=False, error="arduino-cli executable not found")
+
+        if not artifact_b64 or not isinstance(artifact_b64, str):
+            return UploadResult(success=False, error="Missing compiled artifact")
+
+        try:
+            artifact_bytes = base64.b64decode(artifact_b64, validate=True)
+        except Exception:
+            return UploadResult(success=False, error="Invalid artifact encoding (expected base64)")
+
+        # Best-effort extension (arduino-cli uses content; extension mainly for debugging).
+        ext = ".hex" if board.startswith("wokwi-arduino-") else ".bin"
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="fundi-upload-") as temp_dir:
+                os.chmod(temp_dir, stat.S_IRWXU)
+                artifact_path = Path(temp_dir) / f"artifact{ext}"
+                artifact_path.write_bytes(artifact_bytes)
+
+                cmd = [
+                    arduino_cli,
+                    "upload",
+                    "--fqbn",
+                    fqbn,
+                    "-p",
+                    port.strip(),
+                    "--input-file",
+                    str(artifact_path),
+                    "--no-color",
+                ]
+
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                    timeout=120,
+                )
+
+                stderr = (proc.stderr or "").strip()
+                stdout = (proc.stdout or "").strip()
+                combined = "\n".join([s for s in [stderr, stdout] if s]).strip()
+                if proc.returncode != 0:
+                    # Keep the output but cap it to avoid huge responses.
+                    if len(combined) > 20000:
+                        combined = combined[:20000] + "\n…(truncated)"
+                    return UploadResult(success=False, error="Upload failed", output=combined or None)
+
+                if len(combined) > 20000:
+                    combined = combined[:20000] + "\n…(truncated)"
+                return UploadResult(success=True, error=None, output=combined or None)
+        except subprocess.TimeoutExpired:
+            return UploadResult(success=False, error="Upload timed out after 2 minutes")
+        except FileNotFoundError:
+            return UploadResult(success=False, error="Failed to execute arduino-cli")
+        except Exception as exc:  # noqa: BLE001
+            return UploadResult(success=False, error=f"Unexpected upload error: {exc}")
+
     def _resolve_arduino_cli(self) -> Optional[str]:
         override = os.environ.get("ARDUINO_CLI_PATH")
         if override:
             return override
         return shutil.which("arduino-cli")
+
+    def get_missing_header(self, compiler_output: str) -> Optional[str]:
+        """Public wrapper to extract missing header from compiler output."""
+        return self._extract_missing_header(compiler_output)
+
+    def resolve_library_suggestions(self, header: str) -> list[dict[str, object]]:
+        """Return candidate libraries for a missing include header.
+
+        Each entry is: {"name": <library name>, "installed": <bool>}.
+        """
+        header = (header or "").strip()
+        if not header:
+            return []
+
+        arduino_cli = self._resolve_arduino_cli()
+        if not arduino_cli:
+            return []
+
+        candidates = self._resolve_library_candidates_for_header(arduino_cli, header)
+        installed = self._get_installed_library_names(arduino_cli)
+
+        out: list[dict[str, object]] = []
+        for name in candidates:
+            out.append({"name": name, "installed": name in installed})
+        return out
+
+    def install_library(self, library_name: str) -> bool:
+        """Install a library via Arduino CLI Library Manager."""
+        library_name = (library_name or "").strip()
+        if not library_name:
+            return False
+
+        arduino_cli = self._resolve_arduino_cli()
+        if not arduino_cli:
+            return False
+
+        return self._install_library(arduino_cli, library_name)
+
+    def _get_installed_library_names(self, arduino_cli: str) -> set[str]:
+        """Best-effort list of installed library names."""
+        try:
+            # Newer arduino-cli supports JSON output for lib list.
+            proc = subprocess.run(
+                [arduino_cli, "lib", "list", "--format", "json", "--no-color"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=20,
+            )
+            raw = (proc.stdout or "").strip()
+            if raw:
+                payload = json.loads(raw)
+                libs = payload.get("installed_libraries") if isinstance(payload, dict) else None
+                if isinstance(libs, list):
+                    names = {
+                        str(entry.get("name"))
+                        for entry in libs
+                        if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+                    }
+                    return {n for n in names if n}
+        except Exception:
+            pass
+
+        # Fallback: parse plaintext output.
+        try:
+            proc = subprocess.run(
+                [arduino_cli, "lib", "list", "--no-color"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=20,
+            )
+            lines = (proc.stdout or "").splitlines()
+            names: set[str] = set()
+            for line in lines:
+                # Typical format: "Name Version ..."
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                # Skip header lines.
+                if parts[0].lower() in {"name", "libraries"}:
+                    continue
+                # Library names can contain spaces; plaintext parsing is fuzzy, so keep first token only.
+                # This is only used as a best-effort installed indicator.
+                names.add(parts[0])
+            return names
+        except Exception:
+            return set()
 
     def _find_artifact(self, out_dir: Path) -> Optional[Path]:
         # Prefer AVR .hex (including with_bootloader) first, then ESP32 .bin.
@@ -353,6 +647,8 @@ class CompilerService:
                     cmd,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     check=False,
                     timeout=180,
                 )
@@ -414,6 +710,8 @@ class CompilerService:
                 [arduino_cli, "lib", "search", f"provides:{header}", "--json", "--omit-releases-details"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=30,
             )
@@ -473,6 +771,8 @@ class CompilerService:
                     [arduino_cli, "lib", "update-index", "--no-color"],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     check=False,
                     timeout=60,
                 )
@@ -490,6 +790,8 @@ class CompilerService:
                     cmd,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     check=False,
                     timeout=180,
                 )
@@ -510,6 +812,9 @@ class CompilerService:
 
         These shims intentionally trade hardware-accurate behavior for predictable simulation output.
         Controlled by env var FUNDI_ENABLE_SIM_SHIMS (default: enabled).
+
+        Today this is used primarily to provide lightweight stubs for libraries that are either not
+        installed in the local Arduino CLI environment or are difficult to emulate accurately.
         """
 
         enabled = os.environ.get("FUNDI_ENABLE_SIM_SHIMS", "1").strip().lower() not in {"0", "false", "no"}
@@ -523,14 +828,14 @@ class CompilerService:
                     haystack += "\n" + v
 
         def includes(header: str) -> bool:
-            return (f"#include <{header}>" in haystack) or (f"#include \"{header}\"" in haystack)
+            # Be tolerant to whitespace variations.
+            pattern = re.compile(rf"^\s*#\s*include\s*[<\"]\s*{re.escape(header)}\s*[>\"]", re.MULTILINE)
+            return bool(pattern.search(haystack))
 
         def prefer_local_header(header: str) -> None:
-            # The Arduino builder's include path order can cause <header> to resolve to an installed
-            # library even when a local shim exists. Rewriting to "header" ensures the sketch folder
-            # shim takes precedence.
+            # Ensure the sketch-local shim wins over installed libs.
             pat = re.compile(
-                rf"(^\\s*#\\s*include\\s*)<\\s*{re.escape(header)}\\s*>(.*)$",
+                rf"(^\s*#\s*include\s*)<\s*{re.escape(header)}\s*>(.*)$",
                 flags=re.MULTILINE,
             )
 
@@ -546,75 +851,134 @@ class CompilerService:
                 except Exception:
                     continue
 
-                updated = pat.sub(rf"\\1\\\"{header}\\\"\\2", original)
+                updated = pat.sub(rf'\1"{header}"\2', original)
                 if updated != original:
                     src.write_text(updated, encoding="utf-8")
 
-        if includes("DHT.h"):
-            (sketch_dir / "DHT.h").write_text(
+        # Servo shim: pulse-per-write implementation good enough for FUNDI's servo visualization.
+        if includes("Servo.h"):
+            (sketch_dir / "Servo.h").write_text(
                 """#pragma once
 
 #include <Arduino.h>
 
 // Simulation shim for FUNDI Workbench (AVR8js)
-// Provides a minimal subset of the Adafruit DHT API so sketches can run without
-// hardware-accurate DHT timing emulation.
+// Minimal Servo API that emits a PWM-style pulse on each write().
+// Not a full timer-driven implementation.
 
-#ifndef DHT11
-#define DHT11 11
-#endif
-
-#ifndef DHT22
-#define DHT22 22
-#endif
-
-class DHT {
+class Servo {
 public:
-  DHT(uint8_t pin, uint8_t type, uint8_t count = 6) : _pin(pin), _type(type), _count(count) {}
+  Servo() : _pin(255) {}
 
-  void begin(uint8_t usec = 55) {
-    (void)usec;
-    // Keep the line pulled up so user code that expects an idle-high bus behaves.
-    pinMode(_pin, INPUT_PULLUP);
+  uint8_t attach(int pin) {
+    _pin = (uint8_t)pin;
+    pinMode(_pin, OUTPUT);
+    digitalWrite(_pin, LOW);
+    return 1;
   }
 
-  bool read(bool force = false) {
-    (void)force;
-    return true;
+  void detach() { _pin = 255; }
+
+  void write(int angle) {
+    if (_pin == 255) return;
+    if (angle < 0) angle = 0;
+    if (angle > 180) angle = 180;
+    const int us = map(angle, 0, 180, 544, 2400);
+    writeMicroseconds(us);
   }
 
-  float readTemperature(bool isFahrenheit = false, bool force = false) {
-    (void)force;
-    const float c = 25.0f;
-    return isFahrenheit ? convertCtoF(c) : c;
-  }
-
-  float readHumidity(bool force = false) {
-    (void)force;
-    return 50.0f;
-  }
-
-  static float convertCtoF(float c) { return c * 1.8f + 32.0f; }
-  static float convertFtoC(float f) { return (f - 32.0f) * 0.5555556f; }
-
-  static float computeHeatIndex(float temperature, float percentHumidity, bool isFahrenheit = true) {
-    // Simple approximation good enough for demos.
-    float t = isFahrenheit ? temperature : convertCtoF(temperature);
-    float rh = percentHumidity;
-    float hi =
-        -42.379f + 2.04901523f * t + 10.14333127f * rh - 0.22475541f * t * rh -
-        0.00683783f * t * t - 0.05481717f * rh * rh + 0.00122874f * t * t * rh +
-        0.00085282f * t * rh * rh - 0.00000199f * t * t * rh * rh;
-    return isFahrenheit ? hi : convertFtoC(hi);
+  void writeMicroseconds(int value) {
+    if (_pin == 255) return;
+    if (value < 400) value = 400;
+    if (value > 2600) value = 2600;
+    digitalWrite(_pin, HIGH);
+    delayMicroseconds((unsigned int)value);
+    digitalWrite(_pin, LOW);
   }
 
 private:
   uint8_t _pin;
-  uint8_t _type;
-  uint8_t _count;
 };
 """,
                 encoding="utf-8",
             )
+            prefer_local_header("Servo.h")
 
-            prefer_local_header("DHT.h")
+        # Keypad shim: deterministic matrix scan for the featured keypad project.
+        if includes("Keypad.h"):
+            (sketch_dir / "Keypad.h").write_text(
+                """#pragma once
+
+#include <Arduino.h>
+
+// Simulation shim for FUNDI Workbench (AVR8js)
+// Minimal subset of the Keypad library used by the featured keypad project.
+
+typedef unsigned char byte;
+
+#ifndef makeKeymap
+#define makeKeymap(x) ((char*)x)
+#endif
+
+class Keypad {
+public:
+  Keypad(char* userKeymap, byte* row, byte* col, byte numRows, byte numCols)
+      : _keymap(userKeymap), _rowPins(row), _colPins(col), _rows(numRows), _cols(numCols), _lastRow(255),
+        _lastCol(255) {
+    for (byte r = 0; r < _rows; r++) {
+      pinMode(_rowPins[r], OUTPUT);
+      digitalWrite(_rowPins[r], HIGH);
+    }
+    for (byte c = 0; c < _cols; c++) {
+      pinMode(_colPins[c], INPUT_PULLUP);
+    }
+  }
+
+  char getKey() {
+    byte pressedRow = 255;
+    byte pressedCol = 255;
+
+    for (byte r = 0; r < _rows; r++) {
+      for (byte rr = 0; rr < _rows; rr++) digitalWrite(_rowPins[rr], HIGH);
+      digitalWrite(_rowPins[r], LOW);
+
+      for (byte c = 0; c < _cols; c++) {
+        if (digitalRead(_colPins[c]) == LOW) {
+          pressedRow = r;
+          pressedCol = c;
+          break;
+        }
+      }
+      if (pressedRow != 255) break;
+    }
+
+    for (byte rr = 0; rr < _rows; rr++) digitalWrite(_rowPins[rr], HIGH);
+
+    if (pressedRow == 255) {
+      _lastRow = 255;
+      _lastCol = 255;
+      return 0;
+    }
+
+    if (pressedRow == _lastRow && pressedCol == _lastCol) {
+      return 0;
+    }
+
+    _lastRow = pressedRow;
+    _lastCol = pressedCol;
+    return _keymap[pressedRow * _cols + pressedCol];
+  }
+
+private:
+  char* _keymap;
+  byte* _rowPins;
+  byte* _colPins;
+  byte _rows;
+  byte _cols;
+  byte _lastRow;
+  byte _lastCol;
+};
+""",
+                encoding="utf-8",
+            )
+            prefer_local_header("Keypad.h")

@@ -121,6 +121,44 @@ Content-Type: application/json
 }
 ```
 
+#### Compile + Upload (optional)
+
+You can also request an upload immediately after a successful compile by setting `upload=true` and providing `upload_port`.
+
+```http
+POST /api/v1/compile
+Content-Type: application/json
+
+{
+   "code": "void setup() { pinMode(13, OUTPUT); } void loop() { digitalWrite(13, HIGH); delay(1000); digitalWrite(13, LOW); delay(1000); }",
+   "board": "wokwi-arduino-uno",
+   "files": null,
+   "upload": true,
+   "upload_port": "COM3"
+}
+```
+
+### List Connected Boards / Ports
+
+```http
+GET /api/v1/arduino/ports
+```
+
+### Upload Pre-compiled Artifact
+
+If you already compiled and have the returned base64 `hex`/`bin` artifact, you can upload it directly:
+
+```http
+POST /api/v1/arduino/upload
+Content-Type: application/json
+
+{
+   "artifact": "<base64>",
+   "board": "wokwi-arduino-uno",
+   "port": "COM3"
+}
+```
+
 ## Error Handling
 
 The backend implements comprehensive error handling:
@@ -169,6 +207,13 @@ The container includes built-in health checks:
 - In Docker: Rebuild the image
 - Locally: Install Arduino CLI and add to PATH
 - Set `ARDUINO_CLI_PATH` environment variable to full path
+
+### Uploading from Docker
+
+Uploading to physical hardware from inside Docker requires passing the serial device into the container.
+
+- Linux example: run with `--device=/dev/ttyACM0` (or `/dev/ttyUSB0`) and ensure permissions allow access.
+- Windows/macOS: device passthrough depends on Docker Desktop configuration; if this is hard, run the backend locally (non-Docker) for uploads.
 
 ### Compilation failures
 

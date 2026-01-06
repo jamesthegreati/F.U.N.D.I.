@@ -2,7 +2,14 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
+
+
+_SERIAL_PORT_RE = re.compile(
+    r"^(?:COM\d{1,3}|\\\\\\.\\COM\d{1,3}|/dev/(?:tty|cu)\.[A-Za-z0-9._-]+|/dev/tty[A-Za-z0-9._-]+)$",
+    re.IGNORECASE,
+)
 
 
 def is_safe_filename(filename: str, allowed_extensions: set[str] | None = None) -> bool:
@@ -81,3 +88,23 @@ def validate_file_path(file_path: Path | str, base_dir: Path | str) -> bool:
     except (ValueError, OSError):
         # Handle errors in path resolution
         return False
+
+
+def is_safe_serial_port(port: str) -> bool:
+    """Validate that a serial port identifier looks like a real port, not a path.
+
+    Allows common patterns:
+    - Windows: COM3, COM10, \\\\.\\COM3
+    - Linux: /dev/ttyUSB0, /dev/ttyACM0, /dev/ttyS0
+    - macOS: /dev/cu.usbmodem1234, /dev/tty.usbserial-XXXX
+    """
+    if not port or not isinstance(port, str):
+        return False
+    port = port.strip()
+    if not port:
+        return False
+    if "\x00" in port:
+        return False
+    if ".." in port:
+        return False
+    return _SERIAL_PORT_RE.match(port) is not None

@@ -1,5 +1,7 @@
 'use client';
 
+import smartFacilityGuardian from '../data/featured-projects/smart-facility-guardian.json';
+
 /**
  * Featured Projects - Wokwi Project Loader
  * 
@@ -774,7 +776,8 @@ void loop() {
     }
   }
 }`
-  }
+  },
+  smartFacilityGuardian as unknown as FeaturedProject
 ];
 
 /**
@@ -845,7 +848,7 @@ export function convertToFundiCircuit(project: FeaturedProject): {
     color: string;
   }>;
 } {
-  const parts = project.diagram.parts.map(part => ({
+  const rawParts = project.diagram.parts.map(part => ({
     id: part.id,
     type: part.type.replace('wokwi-', ''),
     position: {
@@ -855,6 +858,20 @@ export function convertToFundiCircuit(project: FeaturedProject): {
     rotation: part.rotate,
     attrs: part.attrs as Record<string, unknown>
   }));
+
+  // Some Wokwi projects use negative top/left coordinates. If we keep them as-is,
+  // the circuit can render off-screen and look like it didn't load.
+  const minX = Math.min(0, ...rawParts.map(p => p.position.x));
+  const minY = Math.min(0, ...rawParts.map(p => p.position.y));
+  const shiftX = minX < 0 ? -minX : 0;
+  const shiftY = minY < 0 ? -minY : 0;
+
+  const parts = (shiftX || shiftY)
+    ? rawParts.map(p => ({
+        ...p,
+        position: { x: p.position.x + shiftX, y: p.position.y + shiftY },
+      }))
+    : rawParts;
 
   const connections = project.diagram.connections.map((conn, index) => ({
     id: `wire_${index + 1}`,

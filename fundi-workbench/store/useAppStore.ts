@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
 import { calculateCircuitLayout } from '@/utils/circuitLayout'
+import { WOKWI_PARTS } from '@/lib/wokwiParts'
 
 export type CircuitPart = {
   id: string
@@ -85,6 +86,10 @@ export type AppState = {
 
   isCompiling: boolean
   compilationError: string | null
+  compilationMissingHeader: string | null
+  compilationLibrarySuggestions: Array<{ name: string; installed: boolean }>
+  isInstallingLibrary: boolean
+  libraryInstallError: string | null
   hex: string | null
   compiledBoard: string | null
 
@@ -98,6 +103,17 @@ export type AppState = {
   // Terminal/AI Chat state
   terminalHistory: TerminalEntry[]
   isAiLoading: boolean
+
+  // Copilot-style: allow undoing the last AI-applied change set after testing
+  lastAiAppliedEntryId: string | null
+  lastAiUndoSnapshot: {
+    code: string
+    circuitParts: CircuitPart[]
+    connections: Connection[]
+    files: ProjectFile[]
+    activeFilePath: string | null
+    openFilePaths: string[]
+  } | null
 
   // Teacher mode toggle (Socratic Tutor feature)
   teacherMode: boolean
@@ -131,6 +147,10 @@ export type AppState = {
   toggleSimulation: () => void
 
   compileAndRun: () => Promise<void>
+  installCompilationLibrary: (header: string, library: string) => Promise<void>
+
+  listArduinoPorts: () => Promise<Array<{ address: string; label?: string | null }>>
+  uploadToArduino: (port: string) => Promise<{ success: boolean; error?: string | null; output?: string | null }>
 
   addPart: (part: {
     type: string
@@ -155,9 +175,12 @@ export type AppState = {
 
   // Terminal/AI Chat actions
   submitCommand: (text: string, imageData?: string) => Promise<void>
-  addTerminalEntry: (entry: Omit<TerminalEntry, 'id' | 'timestamp'>) => void
+  addTerminalEntry: (entry: Omit<TerminalEntry, 'id' | 'timestamp'>) => string
   clearTerminalHistory: () => void
   setTeacherMode: (enabled: boolean) => void
+
+  undoLastAiChanges: () => void
+  keepLastAiChanges: () => void
 
   // Image staging actions
   stageImage: (imageData: string) => void
@@ -168,6 +191,52 @@ export type AppState = {
 
   // Apply AI-generated circuit to canvas
   applyGeneratedCircuit: (parts: CircuitPart[], connections: Connection[]) => void
+}
+
+type AiAction = 'answer' | 'update_code' | 'update_circuit' | 'update_both'
+
+// Map custom-element tag -> FUNDI part type.
+// IMPORTANT: multiple part types may point at the same element (aliases).
+// We intentionally keep the *first* mapping to make normalization stable.
+const ELEMENT_TO_FUNDI_PART_TYPE: Record<string, string> = (() => {
+  const map: Record<string, string> = {}
+  for (const [key, cfg] of Object.entries(WOKWI_PARTS)) {
+    const el = cfg?.element
+    if (typeof el !== 'string' || el.length === 0) continue
+    if (!(el in map)) map[el] = key
+  }
+  return map
+})()
+
+const DEFAULT_PART_ATTRS: Record<string, Record<string, string>> = {
+  // NeoPixel family
+  neopixel: { pixels: '8' },
+  'led-ring': { pixels: '16' },
+  'neopixel-ring': { pixels: '16' },
+  'neopixel-matrix': { rows: '8', cols: '8' },
+
+  // LCDs: default to I2C so they render before wiring
+  lcd1602: { pins: 'i2c' },
+  lcd2004: { pins: 'i2c' },
+}
+
+function normalizeFundiPartType(rawType: string): string {
+  const t = String(rawType || '').trim()
+  if (!t) return t
+
+  // Already a valid FUNDI part type key.
+  if (WOKWI_PARTS[t as keyof typeof WOKWI_PARTS]) return t
+
+  // Sometimes the model emits element tags (e.g. 'wokwi-ssd1306').
+  if (ELEMENT_TO_FUNDI_PART_TYPE[t]) return ELEMENT_TO_FUNDI_PART_TYPE[t]
+
+  // Sometimes the model emits non-prefixed names ('ssd1306'), try mapping via element.
+  const maybeElement = t.startsWith('wokwi-') ? t : `wokwi-${t}`
+  if (ELEMENT_TO_FUNDI_PART_TYPE[maybeElement]) return ELEMENT_TO_FUNDI_PART_TYPE[maybeElement]
+
+  // Fall back to stripping a leading prefix.
+  if (t.startsWith('wokwi-')) return t.slice('wokwi-'.length)
+  return t
 }
 
 const DEFAULT_WIRE_COLOR_CYCLE = [
@@ -346,6 +415,10 @@ export const useAppStore = create<AppState>()(
 
       isCompiling: false,
       compilationError: null,
+      compilationMissingHeader: null,
+      compilationLibrarySuggestions: [],
+      isInstallingLibrary: false,
+      libraryInstallError: null,
       hex: null,
       compiledBoard: null,
 
@@ -359,6 +432,9 @@ export const useAppStore = create<AppState>()(
       // Terminal/AI Chat state
       terminalHistory: [],
       isAiLoading: false,
+
+      lastAiAppliedEntryId: null,
+      lastAiUndoSnapshot: null,
 
       // Teacher mode (Socratic Tutor feature)
       teacherMode: false,
@@ -550,7 +626,13 @@ export const useAppStore = create<AppState>()(
 
         const board = normalizeBoardType(mcu.type)
 
-        set({ isCompiling: true, compilationError: null })
+        set({
+          isCompiling: true,
+          compilationError: null,
+          compilationMissingHeader: null,
+          compilationLibrarySuggestions: [],
+          libraryInstallError: null,
+        })
 
         try {
           const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
@@ -574,12 +656,23 @@ export const useAppStore = create<AppState>()(
           })
 
           const data = (await res.json().catch(() => null)) as
-            | { success?: boolean; hex?: string | null; error?: string | null }
+            | {
+                success?: boolean
+                hex?: string | null
+                error?: string | null
+                missing_header?: string | null
+                library_suggestions?: Array<{ name?: string; installed?: boolean }> | null
+              }
             | null
 
           if (!res.ok) {
             set({
               compilationError: (data && (data.error || (!data.success ? 'Compilation failed.' : null))) || res.statusText,
+              compilationMissingHeader: data?.missing_header || null,
+              compilationLibrarySuggestions: (data?.library_suggestions || [])
+                .filter((x): x is { name?: string; installed?: boolean } => !!x && typeof x === 'object')
+                .map((x) => ({ name: String(x.name || ''), installed: !!x.installed }))
+                .filter((x) => !!x.name),
               hex: null,
               compiledBoard: null,
             })
@@ -587,27 +680,140 @@ export const useAppStore = create<AppState>()(
           }
 
           if (!data?.success || !data.hex) {
-            set({ compilationError: data?.error || 'Compilation failed.', hex: null, compiledBoard: null })
+            set({
+              compilationError: data?.error || 'Compilation failed.',
+              compilationMissingHeader: data?.missing_header || null,
+              compilationLibrarySuggestions: (data?.library_suggestions || [])
+                .filter((x): x is { name?: string; installed?: boolean } => !!x && typeof x === 'object')
+                .map((x) => ({ name: String(x.name || ''), installed: !!x.installed }))
+                .filter((x) => !!x.name),
+              hex: null,
+              compiledBoard: null,
+            })
             return
           }
 
-          set({ hex: data.hex, compiledBoard: board, compilationError: null })
+          set({
+            hex: data.hex,
+            compiledBoard: board,
+            compilationError: null,
+            compilationMissingHeader: null,
+            compilationLibrarySuggestions: [],
+            libraryInstallError: null,
+          })
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          set({ compilationError: msg || 'Compilation request failed.', hex: null, compiledBoard: null })
+          set({
+            compilationError: msg || 'Compilation request failed.',
+            compilationMissingHeader: null,
+            compilationLibrarySuggestions: [],
+            hex: null,
+            compiledBoard: null,
+          })
         } finally {
           set({ isCompiling: false })
         }
       },
 
+      listArduinoPorts: async () => {
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const res = await fetch(`${baseUrl}/api/v1/arduino/ports`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          })
+
+          const data = (await res.json().catch(() => null)) as
+            | { ports?: Array<{ address?: string; label?: string | null }> | null }
+            | null
+
+          const ports = (data?.ports || [])
+            .filter((p): p is { address?: string; label?: string | null } => !!p && typeof p === 'object')
+            .map((p) => ({ address: String(p.address || '').trim(), label: p.label ?? null }))
+            .filter((p) => !!p.address)
+
+          if (!res.ok) return []
+          return ports
+        } catch {
+          return []
+        }
+      },
+
+      uploadToArduino: async (port) => {
+        const p = String(port || '').trim()
+        const artifact = get().hex
+        const board = get().compiledBoard
+
+        if (!p) return { success: false, error: 'Port is required', output: null }
+        if (!artifact || !board) return { success: false, error: 'Nothing compiled yet (compile first).', output: null }
+
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const res = await fetch(`${baseUrl}/api/v1/arduino/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ artifact, board, port: p }),
+          })
+
+          const data = (await res.json().catch(() => null)) as
+            | { success?: boolean; error?: string | null; output?: string | null }
+            | null
+
+          if (!res.ok || !data?.success) {
+            return { success: false, error: data?.error || res.statusText || 'Upload failed.', output: data?.output || null }
+          }
+
+          return { success: true, error: null, output: data.output || null }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return { success: false, error: msg || 'Upload request failed.', output: null }
+        }
+      },
+
+      installCompilationLibrary: async (header, library) => {
+        const h = (header || '').trim()
+        const lib = (library || '').trim()
+        if (!h || !lib) return
+
+        set({ isInstallingLibrary: true, libraryInstallError: null })
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const res = await fetch(`${baseUrl}/api/v1/compile/install-library`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ header: h, library: lib }),
+          })
+
+          const data = (await res.json().catch(() => null)) as
+            | { success?: boolean; error?: string | null }
+            | null
+
+          if (!res.ok || !data?.success) {
+            set({ libraryInstallError: data?.error || res.statusText || 'Library install failed.' })
+            return
+          }
+
+          // Refresh diagnostics by recompiling.
+          await get().compileAndRun()
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          set({ libraryInstallError: msg || 'Library install request failed.' })
+        } finally {
+          set({ isInstallingLibrary: false })
+        }
+      },
+
       addPart: (part) => {
         const id = nanoid()
+        const incomingAttrs = part.attrs ?? {}
+        const defaults = DEFAULT_PART_ATTRS[part.type] ?? {}
+        const attrs = Object.keys(incomingAttrs).length > 0 ? incomingAttrs : { ...defaults }
         const next: CircuitPart = {
           id,
           type: part.type,
           position: { x: part.position.x, y: part.position.y },
           rotate: part.rotate ?? 0,
-          attrs: part.attrs ?? {},
+          attrs,
         }
         set({ circuitParts: [...get().circuitParts, next] })
         return id
@@ -710,6 +916,7 @@ export const useAppStore = create<AppState>()(
           ...entry,
         }
         set({ terminalHistory: [...get().terminalHistory, newEntry] })
+        return newEntry.id
       },
 
       clearTerminalHistory: () => {
@@ -724,6 +931,25 @@ export const useAppStore = create<AppState>()(
             ? '🎓 Teacher Mode enabled. AI will explain concepts before providing implementations.'
             : '🔧 Builder Mode enabled. AI will focus on generating code and circuits.',
         })
+      },
+
+      undoLastAiChanges: () => {
+        const snap = get().lastAiUndoSnapshot
+        if (!snap) return
+        set({
+          code: snap.code,
+          circuitParts: snap.circuitParts,
+          connections: snap.connections,
+          files: snap.files,
+          openFilePaths: snap.openFilePaths,
+          lastAiAppliedEntryId: null,
+          lastAiUndoSnapshot: null,
+        })
+        get().addTerminalEntry({ type: 'log', content: '↩️ Undid last AI-applied changes.' })
+      },
+
+      keepLastAiChanges: () => {
+        set({ lastAiAppliedEntryId: null, lastAiUndoSnapshot: null })
       },
 
       // Image staging
@@ -766,6 +992,8 @@ export const useAppStore = create<AppState>()(
           // LCD pin mode is inferred from connections (i2c vs full)
           'wokwi-7segment': { color: 'red', common: 'cathode' },
           'wokwi-neopixel': { pixels: '8' },
+          'wokwi-neopixel-matrix': { rows: '8', cols: '8' },
+          'wokwi-led-ring': { pixels: '16' },
           'wokwi-neopixel-ring': { pixels: '16' },
           'wokwi-buzzer': { volume: '1' },
           'wokwi-ssd1306': { i2cAddress: '0x3C' },
@@ -818,7 +1046,7 @@ export const useAppStore = create<AppState>()(
 
           // Ensure LCD1602/LCD2004 pin mode matches the generated wiring.
           // If we force the wrong mode (e.g. i2c) the canvas can't attach wires to RS/E/D4..D7, etc.
-          if ((typeLower === 'wokwi-lcd1602' || typeLower === 'wokwi-lcd2004' || typeLower === 'lcd1602' || typeLower === 'lcd2004') && (part.attrs == null || (part.attrs as any).pins == null)) {
+          if ((typeLower === 'wokwi-lcd1602' || typeLower === 'wokwi-lcd2004' || typeLower === 'lcd1602' || typeLower === 'lcd2004') && (part.attrs == null || (part.attrs as Record<string, unknown>).pins == null)) {
             const inferred = inferLcdPinsMode(part.id)
             // Default to I2C only when we have no signal either way.
             attrs = { ...attrs, pins: inferred ?? 'i2c' }
@@ -987,26 +1215,75 @@ You can also upload images of physical circuits for recognition.`,
 
           const data = await res.json()
 
+          const action: AiAction | null =
+            typeof data.action === 'string' ? (data.action as AiAction) : null
+
+          const shouldApplyCode: boolean =
+            typeof data.apply_code === 'boolean'
+              ? data.apply_code
+              : action
+                ? (action === 'update_code' || action === 'update_both')
+                : true
+
+          const shouldApplyCircuit: boolean =
+            typeof data.apply_circuit === 'boolean'
+              ? data.apply_circuit
+              : action
+                ? (action === 'update_circuit' || action === 'update_both')
+                : true
+
+          const shouldApplyFiles: boolean =
+            typeof data.apply_files === 'boolean'
+              ? data.apply_files
+              : action
+                ? (action === 'update_code' || action === 'update_both')
+                : true
+
+          // Copilot-style checkpoint: if we are about to apply anything, capture a pre-AI snapshot.
+          const willApplyAnything =
+            (shouldApplyCode && !!data.code) ||
+            (shouldApplyCircuit && Array.isArray(data.circuit_parts) && data.circuit_parts.length > 0) ||
+            (shouldApplyFiles && Array.isArray(data.file_changes) && data.file_changes.length > 0)
+
+          const undoSnapshot = willApplyAnything
+            ? {
+              code: get().code,
+              circuitParts: [...get().circuitParts],
+              connections: [...get().connections],
+              files: get().files.map((f) => ({ ...f })),
+              activeFilePath: get().activeFilePath,
+              openFilePaths: [...get().openFilePaths],
+            }
+            : null
+
+          let appliedSomething = false
+
           // Format the AI response as a log entry
           let response = ''
           if (data.explanation) {
             response += data.explanation + '\n\n'
           }
-          if (data.code) {
+
+          // Only show/apply code when backend says to apply it.
+          if (data.code && shouldApplyCode) {
             response += '```cpp\n' + data.code + '\n```'
+
             // Also update the code editor
             set({ code: data.code })
+
             // Update the main file content
             const mainFile = get().files.find(f => f.isMain)
             if (mainFile) {
               get().updateFileContent(mainFile.path, data.code)
             }
+
+            appliedSomething = true
           }
 
-          get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
+          const aiEntryId = get().addTerminalEntry({ type: 'ai', content: response || 'Generated successfully.' })
 
           // Process file changes from AI (GitHub Copilot-like codebase modifications)
-          if (data.file_changes && Array.isArray(data.file_changes)) {
+          if (shouldApplyFiles && data.file_changes && Array.isArray(data.file_changes)) {
             const fileActions: string[] = []
             for (const change of data.file_changes) {
               const { action, path, content, description } = change as {
@@ -1037,6 +1314,10 @@ You can also upload images of physical circuits for recognition.`,
             }
 
             if (fileActions.length > 0) {
+              appliedSomething = true
+            }
+
+            if (fileActions.length > 0) {
               get().addTerminalEntry({
                 type: 'log',
                 content: `📂 File changes applied:\n${fileActions.join('\n')}`,
@@ -1046,7 +1327,7 @@ You can also upload images of physical circuits for recognition.`,
 
 
           // Apply generated circuit parts and connections to canvas
-          if (data.circuit_parts && Array.isArray(data.circuit_parts)) {
+          if (shouldApplyCircuit && data.circuit_parts && Array.isArray(data.circuit_parts)) {
             // Debug: Log raw AI response
             console.log('[AI Circuit Debug] Raw parts:', data.circuit_parts)
             console.log('[AI Circuit Debug] Raw connections:', data.connections)
@@ -1055,15 +1336,23 @@ You can also upload images of physical circuits for recognition.`,
             // This is critical for connections to work properly!
             const idMap = new Map<string, string>()
 
+            // Also keep a mapping from AI part id -> normalized part type, for pin normalization.
+            const aiTypeMap = new Map<string, string>()
+
             const newParts: CircuitPart[] = data.circuit_parts.map((p: { id: string; type: string; x: number; y: number; attrs?: Record<string, string> }) => {
               const newId = nanoid()
               // Map the AI's ID (e.g., "arduino1") to our generated ID
               if (p.id) {
                 idMap.set(p.id, newId)
               }
+
+              const normalizedType = normalizeFundiPartType(p.type)
+              if (p.id) {
+                aiTypeMap.set(p.id, normalizedType)
+              }
               return {
                 id: newId,
-                type: p.type,
+                type: normalizedType,
                 position: { x: p.x || 0, y: p.y || 0 },
                 rotate: 0,
                 attrs: p.attrs || {},
@@ -1349,8 +1638,7 @@ You can also upload images of physical circuits for recognition.`,
 
             // Get part type from AI parts for normalization
             const getPartTypeFromAIParts = (aiPartId: string): string => {
-              const part = data.circuit_parts.find((p: { id: string; type: string }) => p.id === aiPartId)
-              return part?.type || ''
+              return aiTypeMap.get(aiPartId) || ''
             }
 
             const newConnections: Connection[] = (data.connections || []).map((c: { source_part: string; source_pin: string; target_part: string; target_pin: string; color?: string; signal_type?: string; label?: string }) => {
@@ -1393,6 +1681,16 @@ You can also upload images of physical circuits for recognition.`,
               type: 'log',
               content: `✨ Applied ${newParts.length} components and ${newConnections.length} connections to canvas`,
             })
+
+            appliedSomething = true
+          }
+
+          // If anything was applied, save the snapshot so the user can keep/undo like Copilot.
+          if (appliedSomething && undoSnapshot) {
+            set({ lastAiAppliedEntryId: aiEntryId, lastAiUndoSnapshot: undoSnapshot })
+          } else {
+            // No changes were applied; clear any previous AI checkpoint to avoid confusing UI.
+            set({ lastAiAppliedEntryId: null, lastAiUndoSnapshot: null })
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -1437,6 +1735,9 @@ const getTrackableState = (): Partial<AppState> => {
     circuitParts: [...state.circuitParts],
     connections: [...state.connections],
     code: state.code,
+    files: state.files.map((f) => ({ ...f })),
+    activeFilePath: state.activeFilePath,
+    openFilePaths: [...state.openFilePaths],
   }
 }
 
@@ -1445,7 +1746,10 @@ const statesEqual = (a: Partial<AppState>, b: Partial<AppState>): boolean => {
   return (
     JSON.stringify(a.circuitParts) === JSON.stringify(b.circuitParts) &&
     JSON.stringify(a.connections) === JSON.stringify(b.connections) &&
-    a.code === b.code
+    a.code === b.code &&
+    JSON.stringify(a.files) === JSON.stringify(b.files) &&
+    a.activeFilePath === b.activeFilePath &&
+    JSON.stringify(a.openFilePaths) === JSON.stringify(b.openFilePaths)
   )
 }
 
@@ -1456,6 +1760,9 @@ useAppStore.subscribe((state) => {
     circuitParts: state.circuitParts,
     connections: state.connections,
     code: state.code,
+    files: state.files,
+    activeFilePath: state.activeFilePath,
+    openFilePaths: state.openFilePaths,
   }
 
   if (!statesEqual(lastTrackedState, currentTrackable)) {
@@ -1479,6 +1786,9 @@ export const undo = (): void => {
     circuitParts: previousState.circuitParts || [],
     connections: previousState.connections || [],
     code: previousState.code || '',
+    files: (previousState.files as ProjectFile[] | undefined) || [],
+    activeFilePath: (previousState.activeFilePath as string | null | undefined) ?? null,
+    openFilePaths: (previousState.openFilePaths as string[] | undefined) || [],
   })
   lastTrackedState = { ...previousState }
 }
@@ -1494,6 +1804,9 @@ export const redo = (): void => {
     circuitParts: nextState.circuitParts || [],
     connections: nextState.connections || [],
     code: nextState.code || '',
+    files: (nextState.files as ProjectFile[] | undefined) || [],
+    activeFilePath: (nextState.activeFilePath as string | null | undefined) ?? null,
+    openFilePaths: (nextState.openFilePaths as string[] | undefined) || [],
   })
   lastTrackedState = { ...nextState }
 }
@@ -1503,6 +1816,67 @@ export const canUndo = (): boolean => temporalHistory.past.length > 0
 
 // Check if redo is available
 export const canRedo = (): boolean => temporalHistory.future.length > 0
+
+type TrackableSnapshot = {
+  circuitParts: CircuitPart[]
+  connections: Connection[]
+  code: string
+}
+
+const summarizeDiff = (from: TrackableSnapshot, to: TrackableSnapshot): string => {
+  const aLines = String(from.code || '').split(/\r?\n/)
+  const bLines = String(to.code || '').split(/\r?\n/)
+
+  let start = 0
+  while (start < aLines.length && start < bLines.length && aLines[start] === bLines[start]) {
+    start++
+  }
+
+  let endA = aLines.length - 1
+  let endB = bLines.length - 1
+  while (endA >= start && endB >= start && aLines[endA] === bLines[endB]) {
+    endA--
+    endB--
+  }
+
+  const removedLines = endA >= start ? (endA - start + 1) : 0
+  const addedLines = endB >= start ? (endB - start + 1) : 0
+
+  const fromPartIds = new Set((from.circuitParts || []).map(p => p.id))
+  const toPartIds = new Set((to.circuitParts || []).map(p => p.id))
+  let partsRemoved = 0
+  let partsAdded = 0
+  for (const id of fromPartIds) if (!toPartIds.has(id)) partsRemoved++
+  for (const id of toPartIds) if (!fromPartIds.has(id)) partsAdded++
+
+  const fromConnIds = new Set((from.connections || []).map(c => c.id))
+  const toConnIds = new Set((to.connections || []).map(c => c.id))
+  let wiresRemoved = 0
+  let wiresAdded = 0
+  for (const id of fromConnIds) if (!toConnIds.has(id)) wiresRemoved++
+  for (const id of toConnIds) if (!fromConnIds.has(id)) wiresAdded++
+
+  const codeChanged = (addedLines + removedLines) > 0
+  const circuitChanged = (partsAdded + partsRemoved + wiresAdded + wiresRemoved) > 0
+
+  const pieces: string[] = []
+  if (codeChanged) pieces.push(`Code +${addedLines}/-${removedLines} lines`)
+  if (circuitChanged) pieces.push(`Canvas parts +${partsAdded}/-${partsRemoved}, wires +${wiresAdded}/-${wiresRemoved}`)
+  if (pieces.length === 0) return 'No changes'
+  return pieces.join(' • ')
+}
+
+export const getUndoPreview = (): string | null => {
+  if (temporalHistory.past.length === 0) return null
+  const previousState = temporalHistory.past[temporalHistory.past.length - 1] as TrackableSnapshot
+  return summarizeDiff(getTrackableState() as TrackableSnapshot, previousState)
+}
+
+export const getRedoPreview = (): string | null => {
+  if (temporalHistory.future.length === 0) return null
+  const nextState = temporalHistory.future[temporalHistory.future.length - 1] as TrackableSnapshot
+  return summarizeDiff(getTrackableState() as TrackableSnapshot, nextState)
+}
 
 // Clear history
 export const clearHistory = (): void => {

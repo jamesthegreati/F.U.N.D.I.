@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException
@@ -57,12 +58,18 @@ def generate(req: GenerateRequest) -> AIResponse:
     try:
         # Get or use conversation history
         history = None
+        effective_current_circuit = req.current_circuit
         
         if req.session_id:
             # Use persistent session memory
             memory = get_session(req.session_id)
             memory.add_message("user", req.prompt)
             history = memory.get_conversation_for_api()
+
+            if effective_current_circuit is None:
+                latest = memory.get_latest_circuit_state()
+                if latest is not None:
+                    effective_current_circuit = json.dumps(latest)
         elif req.conversation_history:
             # Use provided conversation history
             history = [{"role": msg.role, "content": msg.content} for msg in req.conversation_history]
@@ -71,7 +78,7 @@ def generate(req: GenerateRequest) -> AIResponse:
             prompt=req.prompt,
             teacher_mode=req.teacher_mode,
             image_data=req.image_data,
-            current_circuit=req.current_circuit,
+            current_circuit=effective_current_circuit,
             conversation_history=history,
         )
         

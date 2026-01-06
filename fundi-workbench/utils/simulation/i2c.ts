@@ -1,5 +1,3 @@
-'use client';
-
 /**
  * I2C Bus Emulation for FUNDI Workbench
  * 
@@ -43,6 +41,7 @@ class I2CBus {
     private devices: Map<number, I2CDevice> = new Map();
     private currentAddress: number | null = null;
     private currentBuffer: number[] = [];
+    private currentReadBuffer: number[] = [];
     private transactionLog: I2CTransaction[] = [];
     private isReading: boolean = false;
     private listeners: Set<(tx: I2CTransaction) => void> = new Set();
@@ -83,10 +82,20 @@ class I2CBus {
      * Start condition - begin a new transaction
      */
     start(): void {
+        // Repeated-start: if we were writing data and haven't seen STOP yet,
+        // flush the buffered write before starting the next transaction.
+        if (this.currentAddress !== null && !this.isReading && this.currentBuffer.length > 0) {
+            const device = this.devices.get(this.currentAddress);
+            if (device?.write) {
+                device.write([...this.currentBuffer]);
+            }
+        }
+
         const tx: I2CTransaction = { type: 'start', timestamp: Date.now() };
         this.transactionLog.push(tx);
         this.notifyListeners(tx);
         this.currentBuffer = [];
+        this.currentReadBuffer = [];
         this.currentAddress = null;
         this.isReading = false;
     }
@@ -109,6 +118,7 @@ class I2CBus {
 
         this.currentAddress = null;
         this.currentBuffer = [];
+        this.currentReadBuffer = [];
         this.isReading = false;
     }
 
@@ -122,6 +132,7 @@ class I2CBus {
             const address = byte >> 1;  // 7-bit address
             this.isReading = (byte & 1) === 1;  // R/W bit
             this.currentAddress = address;
+            this.currentReadBuffer = [];
 
             const tx: I2CTransaction = {
                 type: 'write',
@@ -173,9 +184,14 @@ class I2CBus {
             return 0xFF;  // Device doesn't support reading
         }
 
-        // Get data from device
-        const data = device.read();
-        const byte = data.length > 0 ? data[0] : 0xFF;
+        // Buffer device read responses so multi-byte reads work correctly.
+        // If buffer is empty, fetch a fresh chunk from device.
+        if (this.currentReadBuffer.length === 0) {
+            const data = device.read();
+            this.currentReadBuffer = Array.isArray(data) ? [...data] : [];
+        }
+
+        const byte = this.currentReadBuffer.length > 0 ? (this.currentReadBuffer.shift() as number) : 0xFF;
 
         const tx: I2CTransaction = {
             type: 'read',
@@ -212,6 +228,7 @@ class I2CBus {
         }
         this.currentAddress = null;
         this.currentBuffer = [];
+        this.currentReadBuffer = [];
         this.isReading = false;
     }
 

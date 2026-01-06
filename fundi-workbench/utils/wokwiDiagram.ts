@@ -79,6 +79,7 @@ const WOKWI_TO_FUNDI_TYPE: Record<string, string> = {
     // LEDs
     'wokwi-led': 'led',
     'wokwi-led-ring': 'led-ring',
+    'wokwi-neopixel-ring': 'neopixel-ring',
     'wokwi-rgb-led': 'rgb-led',
     'wokwi-neopixel': 'neopixel',
     'wokwi-neopixel-matrix': 'neopixel-matrix',

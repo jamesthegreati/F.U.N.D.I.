@@ -1,5 +1,3 @@
-'use client';
-
 import { I2CDevice, getI2CBus } from './i2c';
 
 /**

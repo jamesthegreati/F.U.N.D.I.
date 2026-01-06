@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, Mic, MicOff, GraduationCap, Wrench, Send, ImagePlus, X, Sparkles } from 'lucide-react'
-import { useAppStore, type TerminalEntry } from '@/store/useAppStore'
+import { Loader2, Mic, MicOff, GraduationCap, Wrench, Send, ImagePlus, X, Sparkles, ArrowLeft, ArrowRight, Code } from 'lucide-react'
+import { useAppStore, type TerminalEntry, undo, redo, canUndo, canRedo, getUndoPreview, getRedoPreview } from '@/store/useAppStore'
 import { cn } from '@/utils/cn'
 
 function formatTimestamp(ts: number): string {
@@ -19,29 +19,51 @@ function ChatMessage({ entry }: { entry: TerminalEntry }) {
   const isAi = entry.type === 'ai'
   const isError = entry.type === 'error'
 
+  const lastAiAppliedEntryId = useAppStore((s) => s.lastAiAppliedEntryId)
+  const undoLastAiChanges = useAppStore((s) => s.undoLastAiChanges)
+  const keepLastAiChanges = useAppStore((s) => s.keepLastAiChanges)
+  const showAiControls = isAi && !!lastAiAppliedEntryId && entry.id === lastAiAppliedEntryId
+
+  function CollapsibleCodeBlock({ lang, code }: { lang?: string; code: string }) {
+    const [open, setOpen] = useState(false)
+    const trimmed = code.trim()
+    const lineCount = trimmed ? trimmed.split(/\r?\n/).length : 0
+    const label = lang && lang.trim() ? lang.trim() : 'code'
+
+    return (
+      <div className="my-2 rounded-lg overflow-hidden border border-ide-border">
+        <div className="flex items-center justify-between gap-2 px-3 py-1 bg-ide-panel-bg text-[10px] font-medium text-ide-text-muted border-b border-ide-border">
+          <div className="flex items-center gap-2">
+            <Code className="h-3 w-3" />
+            <span>{label}{lineCount ? ` • ${lineCount} lines` : ''}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="text-ide-accent hover:text-ide-accent/80"
+          >
+            {open ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {open && (
+          <pre className="p-3 overflow-x-auto bg-ide-panel-bg/50 text-xs text-ide-success">
+            <code>{trimmed}</code>
+          </pre>
+        )}
+      </div>
+    )
+  }
+
   // Simple markdown-like rendering for code blocks
   const renderContent = (content: string) => {
     const parts = content.split(/(```[\s\S]*?```)/g)
     return parts.map((part, i) => {
       if (part.startsWith('```') && part.endsWith('```')) {
-        // Extract language and code
         const match = part.match(/```(\w+)?\n?([\s\S]*?)```/)
         const lang = match?.[1] || ''
         const code = match?.[2] ?? part.slice(3, -3)
-        return (
-          <div key={i} className="my-2 rounded-lg overflow-hidden border border-ide-border">
-            {lang && (
-              <div className="px-3 py-1 bg-ide-panel-bg text-[10px] font-medium text-ide-text-muted border-b border-ide-border">
-                {lang}
-              </div>
-            )}
-            <pre className="p-3 overflow-x-auto bg-ide-panel-bg/50 text-xs text-ide-success">
-              <code>{code.trim()}</code>
-            </pre>
-          </div>
-        )
+        return <CollapsibleCodeBlock key={i} lang={lang} code={code} />
       }
-      // Regular text - preserve newlines
       return (
         <span key={i} className="whitespace-pre-wrap">
           {part}
@@ -77,6 +99,34 @@ function ChatMessage({ entry }: { entry: TerminalEntry }) {
         </div>
         {/* Content */}
         <div className="text-sm leading-relaxed">{renderContent(entry.content)}</div>
+
+        {showAiControls && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => undoLastAiChanges()}
+              className={cn(
+                'rounded-md px-2 py-1 text-[10px] font-medium btn-press transition-colors',
+                'bg-ide-panel-bg text-ide-text hover:bg-ide-panel-hover'
+              )}
+              title="Undo the changes applied by this AI response"
+            >
+              Undo AI changes
+            </button>
+            <button
+              type="button"
+              onClick={() => keepLastAiChanges()}
+              className={cn(
+                'rounded-md px-2 py-1 text-[10px] font-medium btn-press transition-colors',
+                'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+              )}
+              title="Keep the changes and hide this prompt"
+            >
+              Keep
+            </button>
+            <span className="text-[10px] text-ide-text-subtle">Test it, then keep or undo.</span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -102,6 +152,11 @@ export function CommandInterface() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
+
+  const undoEnabled = canUndo()
+  const redoEnabled = canRedo()
+  const undoPreview = getUndoPreview()
+  const redoPreview = getRedoPreview()
 
   // Get user command history (most recent first)
   const commandHistory = useMemo(() =>
@@ -274,9 +329,43 @@ export function CommandInterface() {
             Teacher
           </button>
         </div>
-        <span className="text-[10px] text-ide-text-subtle">
-          {teacherMode ? 'Explains concepts' : 'Builds circuits'}
-        </span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-lg bg-ide-panel-bg p-0.5">
+            <button
+              type="button"
+              onClick={() => undo()}
+              disabled={!undoEnabled}
+              title={undoPreview ?? 'No previous change'}
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-md transition-all',
+                undoEnabled
+                  ? 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+                  : 'text-ide-text-subtle opacity-50 cursor-not-allowed'
+              )}
+              aria-label="Back"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => redo()}
+              disabled={!redoEnabled}
+              title={redoPreview ?? 'No next change'}
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-md transition-all',
+                redoEnabled
+                  ? 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+                  : 'text-ide-text-subtle opacity-50 cursor-not-allowed'
+              )}
+              aria-label="Forward"
+            >
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+          <span className="text-[10px] text-ide-text-subtle">
+            {teacherMode ? 'Explains concepts' : 'Builds circuits'}
+          </span>
+        </div>
       </div>
 
       {/* Chat history area */}

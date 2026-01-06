@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     # Per spec: hardcode allowed origins
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
+    # Agentic guardrails: diff budget (tunable via backend/.env)
+    # These limit how much the model can rewrite existing sketches unless the user
+    # explicitly asks for a refactor/rewrite.
+    DIFF_BUDGET_MIN_OLD_LINES: int = 60
+    DIFF_BUDGET_MAX_CHANGED_LINES: int = 160
+    DIFF_BUDGET_MAX_CHANGED_RATIO: float = 0.45
+
+    # For larger/older projects, be stricter by default.
+    DIFF_BUDGET_LARGE_PROJECT_LINES: int = 200
+    DIFF_BUDGET_LARGE_PROJECT_MAX_CHANGED_LINES: int = 180
+    DIFF_BUDGET_LARGE_PROJECT_MAX_CHANGED_RATIO: float = 0.25
+
     def validate_api_key(self) -> bool:
         """Validate that the API key is set and not a placeholder."""
         if not self.GEMINI_API_KEY:

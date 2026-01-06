@@ -81,6 +81,30 @@ const SENSOR_CONFIG: Record<string, {
             { key: 'temperature', label: 'Temperature', icon: Thermometer, min: -40, max: 125, step: 1, unit: '°C', defaultValue: 25 },
         ],
     },
+
+    // Light sensors (ADC-style)
+    'photoresistor-sensor': {
+        fields: [
+            { key: 'value', label: 'Light', icon: Ruler, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+    'wokwi-photoresistor-sensor': {
+        fields: [
+            { key: 'value', label: 'Light', icon: Ruler, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+
+    // Motion sensors
+    'pir-motion-sensor': {
+        fields: [
+            { key: 'motion', label: 'Motion', icon: Ruler, min: 0, max: 1, step: 1, unit: '', defaultValue: 0 },
+        ],
+    },
+    'wokwi-pir-motion-sensor': {
+        fields: [
+            { key: 'motion', label: 'Motion', icon: Ruler, min: 0, max: 1, step: 1, unit: '', defaultValue: 0 },
+        ],
+    },
 };
 
 /**

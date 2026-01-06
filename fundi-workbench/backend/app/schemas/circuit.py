@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Literal
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -73,6 +74,13 @@ class FileChange(BaseModel):
 
 
 class AIResponse(BaseModel):
+    # Action metadata so the frontend can decide what to apply.
+    # Keep defaults "apply" for backward compatibility.
+    action: Literal["answer", "update_code", "update_circuit", "update_both"] = "update_both"
+    apply_code: bool = True
+    apply_circuit: bool = True
+    apply_files: bool = True
+
     code: str
     circuit_parts: List[Part]
     connections: List[Connection]

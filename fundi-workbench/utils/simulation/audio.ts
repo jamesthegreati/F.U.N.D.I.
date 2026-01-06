@@ -12,6 +12,7 @@ class AudioSimulation {
     private masterGain: GainNode | null = null;
     private muted: boolean = false;
     private volume: number = 0.3; // Default volume (0-1)
+    private unlockListenerInstalled: boolean = false;
 
     /**
      * Initialize the audio context (must be called after user interaction)
@@ -25,17 +26,42 @@ class AudioSimulation {
             this.masterGain.gain.value = this.volume;
             this.masterGain.connect(this.audioContext.destination);
             console.log('[AudioSimulation] Initialized');
+
+            // Browser autoplay policies often require a user gesture before audio can play.
+            // Install a one-time global unlock that resumes audio on first interaction.
+            this.installUnlockListener();
         } catch (e) {
             console.warn('[AudioSimulation] Web Audio API not supported:', e);
         }
+    }
+
+    private installUnlockListener(): void {
+        if (this.unlockListenerInstalled) return;
+        if (typeof window === 'undefined') return;
+        this.unlockListenerInstalled = true;
+
+        const unlock = () => {
+            // Fire-and-forget; resume() handles errors/logging.
+            void this.resume();
+            window.removeEventListener('pointerdown', unlock);
+            window.removeEventListener('keydown', unlock);
+        };
+
+        window.addEventListener('pointerdown', unlock, { once: true, capture: true });
+        window.addEventListener('keydown', unlock, { once: true, capture: true });
     }
 
     /**
      * Resume audio context if suspended (required by browser autoplay policies)
      */
     async resume(): Promise<void> {
-        if (this.audioContext?.state === 'suspended') {
+        if (!this.audioContext) return;
+        if (this.audioContext.state !== 'suspended') return;
+        try {
             await this.audioContext.resume();
+            console.log('[AudioSimulation] AudioContext resumed');
+        } catch (e) {
+            console.warn('[AudioSimulation] AudioContext resume blocked (needs user gesture):', e);
         }
     }
 

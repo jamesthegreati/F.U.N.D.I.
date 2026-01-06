@@ -1,5 +1,7 @@
 import type { Config } from 'tailwindcss'
 
+const withAlpha = (cssVarName: string) => `rgb(var(${cssVarName}) / <alpha-value>)`
+
 const config: Config = {
   content: [
     './app/**/*.{js,ts,jsx,tsx,mdx}',
@@ -15,51 +17,54 @@ const config: Config = {
       colors: {
         // IDE Semantic Color System
         ide: {
+          // Compatibility aliases (some components use these)
+          bg: withAlpha('--ide-panel-bg'),
+          panel: withAlpha('--ide-panel-surface'),
           // Canvas/Stage area
-          'canvas-bg': '#1a1a1a',
-          'canvas-surface': '#242424',
-          'canvas-grid': '#2d2d2d',
+          'canvas-bg': withAlpha('--ide-canvas-bg'),
+          'canvas-surface': withAlpha('--ide-canvas-surface'),
+          'canvas-grid': withAlpha('--ide-canvas-grid'),
           // Panel system
-          'panel-bg': '#0d0d0d',
-          'panel-surface': '#161616',
-          'panel-hover': '#1f1f1f',
+          'panel-bg': withAlpha('--ide-panel-bg'),
+          'panel-surface': withAlpha('--ide-panel-surface'),
+          'panel-hover': withAlpha('--ide-panel-hover'),
           // Borders with hierarchy
-          'border': '#2a2a2a',
-          'border-subtle': '#222222',
-          'border-focus': '#404040',
+          'border': withAlpha('--ide-border'),
+          'border-subtle': withAlpha('--ide-border-subtle'),
+          'border-focus': withAlpha('--ide-border-focus'),
           // Text hierarchy
-          'text': '#e5e5e5',
-          'text-muted': '#a3a3a3',
-          'text-subtle': '#737373',
+          'text': withAlpha('--ide-text'),
+          'text-muted': withAlpha('--ide-text-muted'),
+          'text-subtle': withAlpha('--ide-text-subtle'),
           // Accent - Electric Amber
-          'accent': '#f59e0b',
-          'accent-hover': '#fbbf24',
-          'accent-dim': '#b45309',
-          'accent-glow': 'rgba(245, 158, 11, 0.25)',
+          'accent': withAlpha('--ide-accent'),
+          'accent-hover': withAlpha('--ide-accent-hover'),
+          'accent-dim': withAlpha('--ide-accent-dim'),
+          'accent-glow': `rgb(var(--ide-accent) / 0.25)`,
           // Status
-          'success': '#22c55e',
-          'success-dim': '#166534',
-          'error': '#ef4444',
-          'error-dim': '#991b1b',
-          'warning': '#eab308',
-          'info': '#3b82f6',
+          'success': withAlpha('--ide-success'),
+          'success-dim': withAlpha('--ide-success-dim'),
+          'error': withAlpha('--ide-error'),
+          'error-dim': withAlpha('--ide-error-dim'),
+          'warning': withAlpha('--ide-warning'),
+          'info': withAlpha('--ide-info'),
         },
         // Refined Minimalist "Pro" Palette (light mode compat)
         pro: {
-          bg: '#FAFAFA',
-          'bg-subtle': '#F4F4F5',
-          surface: '#FFFFFF',
-          border: '#E4E4E7',
-          'border-subtle': '#F4F4F5',
-          text: '#18181B',
-          'text-muted': '#71717A',
-          'text-subtle': '#A1A1AA',
-          accent: '#F59E0B',
-          'accent-hover': '#D97706',
-          'accent-subtle': 'rgba(245, 158, 11, 0.1)',
-          success: '#10B981',
-          error: '#EF4444',
-          warning: '#F59E0B',
+          bg: withAlpha('--pro-bg'),
+          'bg-subtle': withAlpha('--pro-bg-subtle'),
+          surface: withAlpha('--pro-surface'),
+          border: withAlpha('--pro-border'),
+          'border-subtle': withAlpha('--pro-border-subtle'),
+          text: withAlpha('--pro-text'),
+          'text-muted': withAlpha('--pro-text-muted'),
+          'text-subtle': withAlpha('--pro-text-subtle'),
+          accent: withAlpha('--pro-accent'),
+          'accent-hover': withAlpha('--pro-accent-hover'),
+          'accent-subtle': `rgb(var(--pro-accent) / 0.1)`,
+          success: withAlpha('--pro-success'),
+          error: withAlpha('--pro-error'),
+          warning: withAlpha('--pro-accent'),
         },
         // Legacy colors for backward compatibility
         void: '#0B0F19',

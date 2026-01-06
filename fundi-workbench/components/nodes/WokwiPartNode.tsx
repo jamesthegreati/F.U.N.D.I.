@@ -1,7 +1,9 @@
 'use client';
 
 import '@wokwi/elements';
-import { memo, useEffect, useRef, useState, useCallback } from 'react';
+import '@wokwi/elements/dist/esm/pir-motion-sensor-element';
+import '@wokwi/elements/dist/esm/photoresistor-sensor-element';
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { ElementType } from 'react';
 import { Trash2 } from 'lucide-react';
 import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
@@ -10,6 +12,9 @@ import type { WirePoint } from '@/types/wire';
 import { getAudioSimulation, pwmToFrequency } from '@/utils/simulation/audio';
 import { getLCD1602 } from '@/utils/simulation/lcd1602';
 import { getSSD1306 } from '@/utils/simulation/ssd1306';
+import { getILI9341 } from '@/utils/simulation/ili9341';
+import { SensorValuePopup, isSensorWithPopup } from '@/components/SensorValuePopup';
+import { getInteractiveComponentManager } from '@/utils/simulation/interactiveComponents';
 
 interface PinData {
     id: string;
@@ -46,6 +51,15 @@ interface WokwiPartNodeData {
     onSwitchToggle?: (partId: string, isOn: boolean) => void;
     /** Current switch state (for display) */
     switchState?: boolean;
+
+    /** DIP switch (8) values change callback */
+    onDipSwitchChange?: (partId: string, values: number[]) => void;
+
+    /** Rotary encoder (KY-040) rotation callback */
+    onEncoderRotate?: (partId: string, direction: 'cw' | 'ccw') => void;
+
+    /** Analog joystick move callback (ADC values 0-1023) */
+    onJoystickMove?: (partId: string, horz: number, vert: number) => void;
 }
 
 interface WokwiPartNodeProps {
@@ -85,6 +99,13 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const containerRef = useRef<HTMLDivElement>(null);
     const elementRef = useRef<HTMLElement | null>(null);
 
+    // elementRef is initialized asynchronously after customElements.whenDefined.
+    // Use a state tick so effects can re-run once the element is available.
+    const [elementReadyTick, setElementReadyTick] = useState(0);
+
+    const [sensorPopupOpen, setSensorPopupOpen] = useState(false);
+    const [sensorPopupPos, setSensorPopupPos] = useState<{ x: number; y: number } | undefined>(undefined);
+
     const partConfig = WOKWI_PARTS[partType];
     const partElementTag = partConfig?.element;
     const PartElement = (partElementTag ?? null) as ElementType | null;
@@ -103,6 +124,11 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 continue;
             }
 
+            // NeoPixel frames are applied via element APIs, not attributes.
+            if ((partType.toLowerCase().includes('neopixel') || partType.toLowerCase().includes('ws2812') || partType.toLowerCase().includes('led-ring')) && key === 'pixelColors') {
+                continue;
+            }
+
             try {
                 element.setAttribute(key, String(value));
             } catch {
@@ -116,6 +142,24 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         }
     }, [data?.attrs, partType]);
 
+    const isHcsr04 = useMemo(() => {
+        const t = partType.toLowerCase();
+        return t.includes('hc-sr04') || t.includes('hcsr04');
+    }, [partType]);
+
+    const supportsSensorPopup = useMemo(() => isSensorWithPopup(partType), [partType]);
+
+    const openSensorPopup = useCallback(() => {
+        if (!containerRef.current) {
+            setSensorPopupPos(undefined);
+            setSensorPopupOpen(true);
+            return;
+        }
+        const r = containerRef.current.getBoundingClientRect();
+        setSensorPopupPos({ x: r.left + r.width / 2, y: r.top - 8 });
+        setSensorPopupOpen(true);
+    }, []);
+
     // Handle click to select/deselect component
     const handleClick = useCallback(
         (e: React.MouseEvent) => {
@@ -126,10 +170,64 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             e.stopPropagation();
             if (nodeId === 'preview') return;
 
-            setIsSelected(prev => !prev);
+            // Sensor UX: clicking the sensor opens its value popup.
+            if (supportsSensorPopup) {
+                setIsSelected(true);
+                openSensorPopup();
+                return;
+            }
+
+            setIsSelected((prev) => !prev);
         },
-        [nodeId]
+        [nodeId, openSensorPopup, supportsSensorPopup]
     );
+
+    const sensorValues = useMemo(() => {
+        const attrs = (data?.attrs ?? {}) as Record<string, unknown>;
+        const parseNum = (v: unknown, fallback: number) => {
+            const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? ''));
+            return Number.isFinite(n) ? n : fallback;
+        };
+
+        // Provide a superset of common sensor keys; the popup will only render fields
+        // for the current partType config.
+        return {
+            distance: parseNum(attrs.distance, 100),
+            temperature: parseNum(attrs.temperature, 25),
+            humidity: parseNum(attrs.humidity, 50),
+            value: parseNum(attrs.value, 512),
+            motion: parseNum(attrs.motion, 0),
+        };
+    }, [data?.attrs]);
+
+    const handleSensorValueChange = useCallback((partId: string, key: string, value: number) => {
+        if (partId !== nodeId) return;
+
+        // Persist on the part attrs so it survives reload / project switches.
+        const state = useAppStore.getState();
+        const parts = state.circuitParts || [];
+        const partIndex = parts.findIndex((p: CircuitPart) => p.id === nodeId);
+        if (partIndex !== -1) {
+            const part = parts[partIndex];
+
+            // PIR expects boolean-ish; store a real boolean for clarity.
+            const persistedValue = key === 'motion' ? value >= 0.5 : value;
+            state.updatePartAttrs(nodeId, { ...part.attrs, [key]: persistedValue });
+        }
+
+        // Also update the interactive simulation value when relevant.
+        // HC-SR04 uses onValueChange to push into InteractiveComponentManager.
+        if (key === 'distance' && typeof data?.onValueChange === 'function') {
+            data.onValueChange(nodeId, value);
+            return;
+        }
+
+        // Photoresistor (and other analog-style interactive sensors) read from InteractiveComponentManager.
+        if (key === 'value' || key === 'temperature') {
+            const interactiveManager = getInteractiveComponentManager();
+            interactiveManager.setValue(nodeId, value);
+        }
+    }, [data, nodeId]);
 
     // Handle delete button click
     const handleDelete = useCallback(
@@ -270,6 +368,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             if (!element) return;
 
             elementRef.current = element as HTMLElement;
+            setElementReadyTick((t) => t + 1);
             applyStaticAttrs();
 
             requestAnimationFrame(() => {
@@ -368,7 +467,6 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             // RGB LED has pins: R.A, R.C, G.A, G.C, B.A, B.C (common anode/cathode)
             // For common cathode: individual anodes HIGH = that color on
             // Supports both boolean and PWM values
-            const GAMMA = 2.8;
             const element_rgb = element as HTMLElement & {
                 redValue?: boolean;
                 greenValue?: boolean;
@@ -500,6 +598,68 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             }
         }
 
+        // NeoPixel / WS2812 visual updates (driven by decoded frames stored in attrs)
+        {
+            const typeLower = partType.toLowerCase();
+            const attrs = (data?.attrs ?? {}) as Record<string, unknown>;
+
+            // Single NeoPixel element supports r/g/b properties
+            if (typeLower.includes('neopixel') && !typeLower.includes('matrix') && !typeLower.includes('ring') && !typeLower.includes('led-ring')) {
+                const r = attrs.r;
+                const g = attrs.g;
+                const b = attrs.b;
+                if (typeof r === 'number' && typeof g === 'number' && typeof b === 'number') {
+                    const neoEl = element as unknown as { r?: number; g?: number; b?: number; requestUpdate?: () => void };
+                    neoEl.r = r;
+                    neoEl.g = g;
+                    neoEl.b = b;
+                    if (typeof neoEl.requestUpdate === 'function') neoEl.requestUpdate();
+                }
+            }
+
+            const pixelColors = attrs.pixelColors;
+            if (Array.isArray(pixelColors) && pixelColors.length) {
+                // NeoPixel matrix
+                if (typeLower.includes('matrix')) {
+                    const rows = typeof attrs.rows === 'number' ? attrs.rows : Number.parseInt(String(attrs.rows ?? ''), 10);
+                    const cols = typeof attrs.cols === 'number' ? attrs.cols : Number.parseInt(String(attrs.cols ?? ''), 10);
+                    if (Number.isFinite(rows) && Number.isFinite(cols) && rows > 0 && cols > 0) {
+                        const matrixEl = element as unknown as { setPixel?: (row: number, col: number, rgb: { r: number; g: number; b: number }) => unknown; reset?: () => void; requestUpdate?: () => void };
+                        if (typeof matrixEl.reset === 'function') matrixEl.reset();
+                        if (typeof matrixEl.setPixel === 'function') {
+                            for (let i = 0; i < pixelColors.length; i++) {
+                                const v = Number(pixelColors[i]) >>> 0;
+                                const r = (v >> 16) & 0xff;
+                                const g = (v >> 8) & 0xff;
+                                const b = v & 0xff;
+                                const row = Math.floor(i / cols);
+                                const col = i % cols;
+                                if (row >= rows) break;
+                                matrixEl.setPixel(row, col, { r, g, b });
+                            }
+                        }
+                        if (typeof matrixEl.requestUpdate === 'function') matrixEl.requestUpdate();
+                    }
+                }
+
+                // LED ring (wokwi-led-ring)
+                if (typeLower.includes('ring') || typeLower.includes('led-ring')) {
+                    const ringEl = element as unknown as { setPixel?: (pixel: number, rgb: { r: number; g: number; b: number }) => void; reset?: () => void; requestUpdate?: () => void };
+                    if (typeof ringEl.reset === 'function') ringEl.reset();
+                    if (typeof ringEl.setPixel === 'function') {
+                        for (let i = 0; i < pixelColors.length; i++) {
+                            const v = Number(pixelColors[i]) >>> 0;
+                            const r = (v >> 16) & 0xff;
+                            const g = (v >> 8) & 0xff;
+                            const b = v & 0xff;
+                            ringEl.setPixel(i, { r, g, b });
+                        }
+                    }
+                    if (typeof ringEl.requestUpdate === 'function') ringEl.requestUpdate();
+                }
+            }
+        }
+
     }, [simulationPinStates, pwmValue, partType, nodeId, data?.attrs]);
 
     // Bind simulated LCD devices to their Wokwi visual elements (text/cursor/backlight).
@@ -512,7 +672,8 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         if (!partTypeLower.includes('lcd1602') && !partTypeLower.includes('lcd2004')) return;
 
         const attrs = data?.attrs ?? {};
-        const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x27);
+        const attrsRecord = attrs as Record<string, unknown>;
+        const addr = parseI2CAddress(attrsRecord.i2cAddress ?? attrsRecord.address, 0x27);
         const lcdDevice = getLCD1602(addr);
 
         const lcdEl = element as unknown as {
@@ -546,7 +707,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         return () => {
             unsubscribe?.();
         };
-    }, [data?.attrs, partType]);
+    }, [data?.attrs, partType, elementReadyTick]);
 
     // Bind simulated SSD1306 OLED displays to their Wokwi visual elements
     useEffect(() => {
@@ -558,7 +719,8 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         if (!partTypeLower.includes('ssd1306') && !partTypeLower.includes('oled')) return;
 
         const attrs = data?.attrs ?? {};
-        const addr = parseI2CAddress((attrs as any).i2cAddress ?? (attrs as any).address, 0x3c);
+        const attrsRecord = attrs as Record<string, unknown>;
+        const addr = parseI2CAddress(attrsRecord.i2cAddress ?? attrsRecord.address, 0x3c);
         const oledDevice = getSSD1306(addr);
 
         // SSD1306 Wokwi element expects pixel data
@@ -602,7 +764,76 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         return () => {
             unsubscribe?.();
         };
-    }, [data?.attrs, partType]);
+    }, [data?.attrs, partType, elementReadyTick]);
+
+    // Bind simulated ILI9341 framebuffer to the Wokwi canvas
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const typeLower = partType.toLowerCase();
+        if (!typeLower.includes('ili9341')) return;
+
+        let canvas: HTMLCanvasElement | null = null;
+
+        const resolveCanvas = () => {
+            const anyEl = element as unknown as { canvas?: HTMLCanvasElement | null; shadowRoot?: ShadowRoot | null };
+            canvas = anyEl.canvas ?? anyEl.shadowRoot?.querySelector('canvas') ?? null;
+        };
+
+        const onReady = () => {
+            resolveCanvas();
+        };
+
+        element.addEventListener('canvas-ready', onReady);
+        resolveCanvas();
+
+        const dev = getILI9341(nodeId);
+        if (!dev) {
+            return () => {
+                element.removeEventListener('canvas-ready', onReady);
+            };
+        }
+
+        const unsubscribe = dev.subscribe((frame) => {
+            try {
+                if (!canvas) resolveCanvas();
+                if (!canvas) return;
+
+                if (canvas.width !== frame.width) canvas.width = frame.width;
+                if (canvas.height !== frame.height) canvas.height = frame.height;
+
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+
+                const img = ctx.createImageData(frame.width, frame.height);
+                const out = img.data;
+                const pix = frame.pixels;
+                for (let i = 0; i < pix.length; i++) {
+                    const v = pix[i];
+                    const r5 = (v >> 11) & 0x1f;
+                    const g6 = (v >> 5) & 0x3f;
+                    const b5 = v & 0x1f;
+                    const r = (r5 * 255) / 31;
+                    const g = (g6 * 255) / 63;
+                    const b = (b5 * 255) / 31;
+                    const o = i * 4;
+                    out[o] = r;
+                    out[o + 1] = g;
+                    out[o + 2] = b;
+                    out[o + 3] = 255;
+                }
+                ctx.putImageData(img, 0, 0);
+            } catch {
+                // Ignore UI binding errors
+            }
+        });
+
+        return () => {
+            element.removeEventListener('canvas-ready', onReady);
+            unsubscribe?.();
+        };
+    }, [partType, elementReadyTick, nodeId]);
 
     // Listen for button press/release events
     useEffect(() => {
@@ -614,8 +845,21 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
 
         if (!onButtonPress || !onButtonRelease) return;
 
-        // Only attach listeners if this is a button component
-        if (partType.toLowerCase().includes('pushbutton') || partType.toLowerCase().includes('button')) {
+        const typeLower = partType.toLowerCase();
+        const isKeypad = typeLower.includes('keypad') || typeLower.includes('membrane');
+
+        // Only attach listeners if this is a pressable component (and not the keypad which handles keys separately)
+        const isPressable =
+            !isKeypad &&
+            (typeLower.includes('pushbutton') ||
+                typeLower.includes('button') ||
+                typeLower.includes('ky-040') ||
+                typeLower.includes('rotary-encoder') ||
+                typeLower.includes('encoder') ||
+                typeLower.includes('analog-joystick') ||
+                typeLower.includes('joystick'));
+
+        if (isPressable) {
             const handlePress = () => {
                 console.log('[WokwiPartNode] Button press detected:', nodeId);
                 onButtonPress(nodeId);
@@ -634,7 +878,113 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 element.removeEventListener('button-release', handleRelease);
             };
         }
-    }, [data, nodeId, partType]);
+    }, [data, nodeId, partType, elementReadyTick]);
+
+    // Handle slide switch changes via native Wokwi element events
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const onSwitchToggle = data?.onSwitchToggle;
+        if (!onSwitchToggle) return;
+
+        const typeLower = partType.toLowerCase();
+        const isSlideSwitch = typeLower.includes('slide-switch');
+        if (!isSlideSwitch) return;
+
+        const handleInput = () => {
+            const switchEl = element as unknown as { value?: number };
+            const newState = (switchEl.value ?? 0) === 1;
+            console.log('[WokwiPartNode] Slide switch input:', nodeId, '->', newState);
+            onSwitchToggle(nodeId, newState);
+        };
+
+        element.addEventListener('input', handleInput, { capture: true });
+        const shadowRoot = element.shadowRoot;
+        if (shadowRoot) shadowRoot.addEventListener('input', handleInput, { capture: true });
+
+        return () => {
+            element.removeEventListener('input', handleInput, { capture: true });
+            if (shadowRoot) shadowRoot.removeEventListener('input', handleInput, { capture: true });
+        };
+    }, [data?.onSwitchToggle, nodeId, partType, elementReadyTick]);
+
+    // Handle DIP switch (8) changes via native Wokwi element events
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const onDipSwitchChange = data?.onDipSwitchChange;
+        if (!onDipSwitchChange) return;
+
+        const typeLower = partType.toLowerCase();
+        const isDipSwitch = typeLower.includes('dip-switch');
+        if (!isDipSwitch) return;
+
+        const handleSwitchChange = () => {
+            const dipEl = element as unknown as { values?: number[] };
+            const values = Array.isArray(dipEl.values) ? dipEl.values.slice(0, 8) : [0, 0, 0, 0, 0, 0, 0, 0];
+            console.log('[WokwiPartNode] DIP switch change:', nodeId, values);
+            onDipSwitchChange(nodeId, values);
+        };
+
+        element.addEventListener('switch-change', handleSwitchChange, { capture: true });
+        return () => {
+            element.removeEventListener('switch-change', handleSwitchChange, { capture: true });
+        };
+    }, [data?.onDipSwitchChange, nodeId, partType, elementReadyTick]);
+
+    // Handle rotary encoder rotation via native Wokwi element events
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const onEncoderRotate = data?.onEncoderRotate;
+        if (!onEncoderRotate) return;
+
+        const typeLower = partType.toLowerCase();
+        const isEncoder = typeLower.includes('ky-040') || typeLower.includes('rotary-encoder') || typeLower.includes('encoder');
+        if (!isEncoder) return;
+
+        const handleCw = () => onEncoderRotate(nodeId, 'cw');
+        const handleCcw = () => onEncoderRotate(nodeId, 'ccw');
+
+        element.addEventListener('rotate-cw', handleCw);
+        element.addEventListener('rotate-ccw', handleCcw);
+
+        return () => {
+            element.removeEventListener('rotate-cw', handleCw);
+            element.removeEventListener('rotate-ccw', handleCcw);
+        };
+    }, [data?.onEncoderRotate, nodeId, partType, elementReadyTick]);
+
+    // Handle analog joystick movement via native Wokwi element events
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const onJoystickMove = data?.onJoystickMove;
+        if (!onJoystickMove) return;
+
+        const typeLower = partType.toLowerCase();
+        const isJoystick = typeLower.includes('analog-joystick') || typeLower.includes('joystick');
+        if (!isJoystick) return;
+
+        const handleInput = () => {
+            const joyEl = element as unknown as { xValue?: number; yValue?: number };
+            const x = typeof joyEl.xValue === 'number' ? joyEl.xValue : 0;
+            const y = typeof joyEl.yValue === 'number' ? joyEl.yValue : 0;
+            // Wokwi joystick uses -1..1 range; map to 0..1023 with center ~512
+            const horz = Math.max(0, Math.min(1023, Math.round(((x + 1) / 2) * 1023)));
+            const vert = Math.max(0, Math.min(1023, Math.round(((y + 1) / 2) * 1023)));
+            onJoystickMove(nodeId, horz, vert);
+        };
+
+        element.addEventListener('input', handleInput, { capture: true });
+        return () => {
+            element.removeEventListener('input', handleInput, { capture: true });
+        };
+    }, [data?.onJoystickMove, nodeId, partType, elementReadyTick]);
 
     // Listen for keypad button press/release events
     useEffect(() => {
@@ -685,7 +1035,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             element.removeEventListener('button-press', handleKeypadPress);
             element.removeEventListener('button-release', handleKeypadRelease);
         };
-    }, [nodeId, partType]);
+    }, [nodeId, partType, elementReadyTick]);
 
     // Handle potentiometer/slider value changes via native Wokwi element events
     useEffect(() => {
@@ -713,7 +1063,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         // Listen for the native 'input' event from Wokwi potentiometer element
         // Wokwi potentiometer default: min=0, max=1023, value=0
         // The element dispatches InputEvent with detail containing the value
-        const handleInput = (e: Event) => {
+        const handleInput = () => {
             const potElement = element as HTMLElement & { value?: number; min?: number; max?: number };
             // Wokwi potentiometer defaults: min=0, max=1023
             const min = potElement.min ?? 0;
@@ -754,35 +1104,9 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 shadowRoot.removeEventListener('input', handleInput, { capture: true });
             }
         };
-    }, [data?.onValueChange, nodeId, partType]);
+    }, [data?.onValueChange, nodeId, partType, elementReadyTick]);
 
-    // Handle slide switch click-to-toggle
-    useEffect(() => {
-        const element = elementRef.current;
-        if (!element) return;
-
-        const onSwitchToggle = data?.onSwitchToggle;
-        if (!onSwitchToggle) return;
-
-        const isSwitch = partType.toLowerCase().includes('slide-switch') ||
-            partType.toLowerCase().includes('switch') &&
-            !partType.toLowerCase().includes('push');
-
-        if (!isSwitch) return;
-
-        const handleClick = () => {
-            const currentState = data?.switchState ?? false;
-            const newState = !currentState;
-            console.log('[WokwiPartNode] Switch toggle:', nodeId, '-> ', newState);
-            onSwitchToggle(nodeId, newState);
-        };
-
-        element.addEventListener('click', handleClick);
-
-        return () => {
-            element.removeEventListener('click', handleClick);
-        };
-    }, [data, nodeId, partType]);
+    // NOTE: slide-switch interaction is handled via native `input` event above.
 
     if (isUnknownPart) {
         console.warn(`[WokwiPartNode] Unknown part type: ${partType}`);
@@ -829,6 +1153,21 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 </button>
             )}
 
+            {/* HC-SR04 distance control (minimal) */}
+            {isSelected && isHcsr04 && nodeId !== 'preview' && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        openSensorPopup();
+                    }}
+                    className="absolute -top-3 left-0 z-50 px-2 py-1 bg-ide-panel-hover text-ide-text text-[10px] rounded shadow-lg border border-ide-border hover:bg-ide-panel-surface transition-colors"
+                    title="Adjust distance"
+                >
+                    Distance
+                </button>
+            )}
+
             {/* Selection indicator label */}
             {isSelected && (
                 <div className="absolute -top-6 left-0 right-0 flex justify-center pointer-events-none z-40">
@@ -837,6 +1176,16 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                     </span>
                 </div>
             )}
+
+            <SensorValuePopup
+                partId={nodeId}
+                partType={partType}
+                isOpen={sensorPopupOpen}
+                onClose={() => setSensorPopupOpen(false)}
+                values={sensorValues}
+                onValueChange={handleSensorValueChange}
+                position={sensorPopupPos}
+            />
 
             {/* Render the Wokwi custom element */}
             {PartElement ? (

@@ -95,7 +95,7 @@ export function SerialMonitor({ serialOutput, onClear, isRunning, onSendInput }:
   return (
     <div className="flex h-full flex-col bg-ide-panel-bg">
       {/* Header toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-ide-border px-3 py-1.5">
+      <div className="flex shrink-0 items-center justify-between border-b border-ide-border bg-ide-panel-surface px-3 py-1.5">
         <div className="flex items-center gap-3">
           {/* Status indicator */}
           <div className="flex items-center gap-1.5">
@@ -114,7 +114,7 @@ export function SerialMonitor({ serialOutput, onClear, isRunning, onSendInput }:
           <select
             value={baudRate}
             onChange={(e) => setBaudRate(Number(e.target.value))}
-            className="h-6 rounded border border-ide-border bg-ide-panel-surface px-1.5 text-[10px] text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent"
+            className="h-6 rounded border border-ide-border bg-ide-panel-bg px-1.5 text-[10px] text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent"
           >
             <option value={9600}>9600 baud</option>
             <option value={19200}>19200 baud</option>
@@ -127,7 +127,7 @@ export function SerialMonitor({ serialOutput, onClear, isRunning, onSendInput }:
           <select
             value={lineEnding}
             onChange={(e) => setLineEnding(e.target.value as typeof lineEnding)}
-            className="h-6 rounded border border-ide-border bg-ide-panel-surface px-1.5 text-[10px] text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent"
+            className="h-6 rounded border border-ide-border bg-ide-panel-bg px-1.5 text-[10px] text-ide-text-muted outline-none hover:border-ide-border-focus focus:border-ide-accent"
             title="Line ending"
           >
             <option value="none">No line ending</option>

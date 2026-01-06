@@ -124,7 +124,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
   const zoom = useStore((s) => s.transform[2]);
   // Subscribe to node changes so wire endpoints update in real-time while parts move.
   // Using the store's nodes array reference is enough to invalidate memos during drags.
-  const flowNodes = useStore((s) => (s as any).nodes as unknown[]);
+  const flowNodes = useStore((s) => (s as unknown as { nodes: unknown[] }).nodes);
   const gridSize = useMemo(() => getGridSizeForZoom(zoom), [zoom]);
 
   const modeRef = useRef<Mode>('idle');

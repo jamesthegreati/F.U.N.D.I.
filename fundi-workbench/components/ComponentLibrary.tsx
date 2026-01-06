@@ -60,20 +60,16 @@ function WokwiElementPreview({
   fallbackIcon: React.ComponentType<{ className?: string }>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [svgContent, setSvgContent] = useState<string | null>(null);
-  const [usesFallback, setUsesFallback] = useState(false);
+  const [svgState, setSvgState] = useState<{ partId: string; svg: string } | null>(null);
+  const [fallbackPartId, setFallbackPartId] = useState<string | null>(null);
+
+  const cached = svgCache.get(partId);
+  const effectiveSvg = typeof cached === 'string' ? cached : svgState?.partId === partId ? svgState.svg : null;
+  const usesFallback = cached === null || fallbackPartId === partId;
 
   useEffect(() => {
-    // Check cache first
-    if (svgCache.has(partId)) {
-      const cached = svgCache.get(partId);
-      if (cached) {
-        setSvgContent(cached);
-      } else {
-        setUsesFallback(true);
-      }
-      return;
-    }
+    // Cache hit: render directly from `cached`.
+    if (svgCache.has(partId)) return;
 
     const container = containerRef.current;
     if (!container) return;
@@ -99,6 +95,14 @@ function WokwiElementPreview({
         element.setAttribute('r', '255');
         element.setAttribute('g', '100');
         element.setAttribute('b', '0');
+      } else if (elementTag === 'wokwi-led-ring') {
+        element.setAttribute('pixels', '16');
+      } else if (elementTag === 'wokwi-neopixel-matrix') {
+        element.setAttribute('rows', '8');
+        element.setAttribute('cols', '8');
+      } else if (elementTag === 'wokwi-lcd1602' || elementTag === 'wokwi-lcd2004') {
+        // Without this, these sometimes render empty in previews.
+        element.setAttribute('pins', 'i2c');
       }
 
       container.appendChild(element);
@@ -108,11 +112,12 @@ function WokwiElementPreview({
         const svg = extractSvgFromElement(element);
         if (svg) {
           svgCache.set(partId, svg);
-          setSvgContent(svg);
+          setSvgState({ partId, svg });
+          setFallbackPartId(null);
         } else {
           // Mark as fallback needed if no SVG after delay
           svgCache.set(partId, null);
-          setUsesFallback(true);
+          setFallbackPartId(partId);
         }
       };
 
@@ -127,16 +132,17 @@ function WokwiElementPreview({
     } catch (error) {
       console.error(`Failed to create wokwi element: ${elementTag}`, error);
       svgCache.set(partId, null);
-      setUsesFallback(true);
+      // Avoid synchronous setState directly in the effect body.
+      queueMicrotask(() => setFallbackPartId(partId));
     }
   }, [elementTag, partId]);
 
   // If we have extracted SVG, render it directly
-  if (svgContent) {
+  if (effectiveSvg) {
     return (
       <div 
         className="relative h-10 w-10 flex items-center justify-center overflow-hidden [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto"
-        dangerouslySetInnerHTML={{ __html: svgContent }}
+        dangerouslySetInnerHTML={{ __html: effectiveSvg }}
         style={{
           transform: 'scale(0.6)',
           transformOrigin: 'center',

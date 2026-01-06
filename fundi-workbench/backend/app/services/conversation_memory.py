@@ -203,6 +203,18 @@ class ConversationMemory:
         components = ", ".join(f"{count}x {name}" for name, count in type_counts.items())
         
         return f"Current circuit: {components}; {len(curr.connections)} connections"
+
+    def get_latest_circuit_state(self) -> Optional[Dict[str, Any]]:
+        """Return the most recent circuit state snapshot, if any."""
+        if not self.circuit_snapshots:
+            return None
+
+        curr = self.circuit_snapshots[-1]
+        return {
+            "parts": curr.parts,
+            "connections": curr.connections,
+            "code": curr.code,
+        }
     
     def clear(self) -> None:
         """Clear all conversation history and snapshots."""

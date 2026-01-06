@@ -131,7 +131,7 @@ function ProjectPreview({ project }: { project: FeaturedProject }) {
   const [showCode, setShowCode] = useState(false);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Preview header */}
       <div className="p-4 border-b border-ide-border">
         <h3 className="font-semibold text-ide-text">{project.name}</h3>
@@ -167,7 +167,7 @@ function ProjectPreview({ project }: { project: FeaturedProject }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 min-h-0 overflow-auto p-4">
         {showCode ? (
           <pre className="text-xs font-mono text-ide-text whitespace-pre-wrap bg-ide-bg p-3 rounded-lg border border-ide-border overflow-auto max-h-[400px]">
             {project.code}
@@ -409,7 +409,7 @@ export function FeaturedProjectsPanel({ isOpen, onClose }: FeaturedProjectsPanel
           </div>
 
           {/* Right panel - Preview */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-h-0">
             {selectedProject ? (
               <>
                 <ProjectPreview project={selectedProject} />

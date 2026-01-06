@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.services.runtime_state import get_state, update_state
+
 router = APIRouter()
 
 
@@ -108,26 +110,6 @@ class ToolResult(BaseModel):
 
 
 # ============================================================================
-# In-memory state (will be synced from frontend)
-# ============================================================================
-
-# This is a simple in-memory store for the current session
-# In a production system, this would be persisted or use session management
-_current_state: Dict[str, Any] = {
-    "files": [],
-    "components": [],
-    "connections": [],
-    "compilation": {
-        "is_compiling": False,
-        "error": None,
-        "hex": None,
-        "board": None,
-    },
-    "serial_output": [],
-}
-
-
-# ============================================================================
 # State Sync Endpoint (for frontend to push state to backend)
 # ============================================================================
 
@@ -144,18 +126,14 @@ class StateSyncRequest(BaseModel):
 @router.post("/api/v1/ai-tools/sync-state")
 def sync_state(req: StateSyncRequest) -> ToolResult:
     """Sync state from frontend to backend for AI inspection."""
-    global _current_state
-    
-    if req.files is not None:
-        _current_state["files"] = req.files
-    if req.components is not None:
-        _current_state["components"] = req.components
-    if req.connections is not None:
-        _current_state["connections"] = req.connections
-    if req.compilation is not None:
-        _current_state["compilation"] = req.compilation
-    if req.serial_output is not None:
-        _current_state["serial_output"] = req.serial_output
+
+    update_state(
+        files=req.files,
+        components=req.components,
+        connections=req.connections,
+        compilation=req.compilation,
+        serial_output=req.serial_output,
+    )
     
     return ToolResult(success=True, message="State synced successfully")
 
@@ -168,6 +146,7 @@ def sync_state(req: StateSyncRequest) -> ToolResult:
 @router.get("/api/v1/ai-tools/files", response_model=FileListResponse)
 def list_files() -> FileListResponse:
     """List all project files."""
+    state = get_state()
     files = [
         FileInfo(
             path=f.get("path", ""),
@@ -175,7 +154,7 @@ def list_files() -> FileListResponse:
             is_main=f.get("isMain", False),
             include_in_simulation=f.get("includeInSimulation", True),
         )
-        for f in _current_state.get("files", [])
+        for f in state.files
     ]
     return FileListResponse(files=files)
 
@@ -183,7 +162,8 @@ def list_files() -> FileListResponse:
 @router.post("/api/v1/ai-tools/files/read")
 def read_file(req: FileReadRequest) -> ToolResult:
     """Read a specific file's content."""
-    for f in _current_state.get("files", []):
+    state = get_state()
+    for f in state.files:
         if f.get("path") == req.path:
             return ToolResult(
                 success=True,
@@ -198,7 +178,8 @@ def read_file(req: FileReadRequest) -> ToolResult:
 def create_file(req: FileCreateRequest) -> ToolResult:
     """Create a new file (returns instruction for frontend to execute)."""
     # Check if file already exists
-    for f in _current_state.get("files", []):
+    state = get_state()
+    for f in state.files:
         if f.get("path") == req.path:
             raise HTTPException(status_code=409, detail=f"File '{req.path}' already exists")
     
@@ -219,7 +200,8 @@ def update_file(req: FileUpdateRequest) -> ToolResult:
     """Update an existing file (returns instruction for frontend to execute)."""
     # Check if file exists
     found = False
-    for f in _current_state.get("files", []):
+    state = get_state()
+    for f in state.files:
         if f.get("path") == req.path:
             found = True
             break
@@ -243,7 +225,8 @@ def delete_file(req: FileDeleteRequest) -> ToolResult:
     """Delete a file (returns instruction for frontend to execute)."""
     # Check if file exists
     found = False
-    for f in _current_state.get("files", []):
+    state = get_state()
+    for f in state.files:
         if f.get("path") == req.path:
             found = True
             break
@@ -269,6 +252,7 @@ def delete_file(req: FileDeleteRequest) -> ToolResult:
 @router.get("/api/v1/ai-tools/components", response_model=CircuitStateResponse)
 def get_components() -> CircuitStateResponse:
     """Get all circuit components and connections."""
+    state = get_state()
     components = [
         ComponentInfo(
             id=c.get("id", ""),
@@ -277,7 +261,7 @@ def get_components() -> CircuitStateResponse:
             y=c.get("position", {}).get("y", c.get("y", 0)),
             attrs=c.get("attrs", {}),
         )
-        for c in _current_state.get("components", [])
+        for c in state.components
     ]
     
     connections = [
@@ -289,7 +273,7 @@ def get_components() -> CircuitStateResponse:
             toPin=conn.get("to", {}).get("pinId", ""),
             color=conn.get("color", "#B87333"),
         )
-        for conn in _current_state.get("connections", [])
+        for conn in state.connections
     ]
     
     return CircuitStateResponse(
@@ -303,6 +287,7 @@ def get_components() -> CircuitStateResponse:
 @router.get("/api/v1/ai-tools/code", response_model=CodeStateResponse)
 def get_code() -> CodeStateResponse:
     """Get current code state."""
+    state = get_state()
     files = [
         FileInfo(
             path=f.get("path", ""),
@@ -310,7 +295,7 @@ def get_code() -> CodeStateResponse:
             is_main=f.get("isMain", False),
             include_in_simulation=f.get("includeInSimulation", True),
         )
-        for f in _current_state.get("files", [])
+        for f in state.files
     ]
     
     main_content = None
@@ -325,7 +310,8 @@ def get_code() -> CodeStateResponse:
 @router.get("/api/v1/ai-tools/compilation", response_model=CompilationStatusResponse)
 def get_compilation_status() -> CompilationStatusResponse:
     """Get current compilation status."""
-    comp = _current_state.get("compilation", {})
+    state = get_state()
+    comp = state.compilation or {}
     return CompilationStatusResponse(
         is_compiling=comp.get("is_compiling", False),
         has_error=comp.get("error") is not None,
@@ -338,7 +324,8 @@ def get_compilation_status() -> CompilationStatusResponse:
 @router.get("/api/v1/ai-tools/serial")
 def get_serial_output() -> ToolResult:
     """Get recent serial output."""
-    output = _current_state.get("serial_output", [])
+    state = get_state()
+    output = state.serial_output or []
     return ToolResult(
         success=True,
         message=f"Retrieved {len(output)} lines of serial output",
@@ -653,8 +640,9 @@ def recommend_components() -> ComponentRecommendationResponse:
     """
     Recommend additional components based on current circuit and code.
     """
-    components = _current_state.get("components", [])
-    files = _current_state.get("files", [])
+    state = get_state()
+    components = state.components
+    files = state.files
     
     # Get main code content
     main_code = ""
@@ -761,8 +749,9 @@ def validate_wiring() -> WiringValidationResponse:
     """
     Validate circuit wiring for common mistakes and issues.
     """
-    components = _current_state.get("components", [])
-    connections = _current_state.get("connections", [])
+    state = get_state()
+    components = state.components
+    connections = state.connections
     
     issues = []
     

@@ -40,6 +40,10 @@
     {
       "id": "keypad-password",
       "file": "keypad-password.json"
+    },
+    {
+      "id": "smart-facility-guardian",
+      "file": "smart-facility-guardian.json"
     }
   ]
 }

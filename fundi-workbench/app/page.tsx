@@ -5,11 +5,14 @@ import Link from 'next/link'
 import {
   ChevronDown,
   ChevronUp,
+  Moon,
+  Pause,
   FileCode,
   FolderOpen,
   FolderTree,
   Layers,
   Maximize2,
+  Sun,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
@@ -34,8 +37,6 @@ import {
 } from 'react-resizable-panels'
 import {
   addEdge,
-  Background,
-  BackgroundVariant,
   Controls,
   ReactFlow,
   ReactFlowProvider,
@@ -63,6 +64,8 @@ import { useAppStore, type ProjectFile } from '@/store/useAppStore'
 import type { WirePoint } from '@/types/wire'
 import { cn } from '@/utils/cn'
 import { getInteractiveComponentManager } from '@/utils/simulation/interactiveComponents'
+import { useTheme } from '@/components/ThemeProvider'
+import { FundiCodeEditor } from '@/components/editor/FundiCodeEditor'
 
 const nodeTypes = {
   arduino: ArduinoNode,
@@ -133,37 +136,68 @@ function CanvasToolbar({
 function UnifiedActionBar({
   isCompiling,
   compilationError,
-  onRun,
   hasProgram,
+  hasSession,
   isRunning,
+  isPaused,
+  onRun,
+  onPause,
   onStop,
 }: {
   isCompiling: boolean
   compilationError: string | null
-  onRun: () => void
   hasProgram: boolean
+  hasSession: boolean
   isRunning: boolean
+  isPaused: boolean
+  onRun: () => void
+  onPause: () => void
   onStop: () => void
 }) {
+  const { theme, toggleTheme } = useTheme()
+  const [isHydrated, setIsHydrated] = useState(false)
+
+  useEffect(() => {
+    // Defer state update to avoid synchronous setState inside effect.
+    queueMicrotask(() => setIsHydrated(true))
+  }, [])
+
+  const canRun = !isCompiling && !compilationError
+  const canStop = hasSession
+
   return (
     <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2 animate-slide-up">
       <div className="floating-bar flex items-center gap-2 px-3 py-2">
         {/* Primary Run Button */}
         <button
           type="button"
-          onClick={onRun}
-          disabled={isCompiling}
+          onClick={isRunning ? onPause : onRun}
+          disabled={!canRun}
           className={cn(
             'group relative flex items-center gap-2 rounded-lg px-4 py-2',
             'text-sm font-semibold transition-all duration-200',
             'btn-press',
-            isCompiling
+            !canRun
               ? 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
               : isRunning
-                ? 'bg-ide-success/20 text-ide-success cursor-not-allowed'
-                : 'bg-ide-success text-white hover:bg-ide-success/90 shadow-lg shadow-ide-success/20',
+                ? 'bg-ide-warning/15 text-ide-warning hover:bg-ide-warning/20'
+                : isPaused
+                  ? 'bg-ide-success/15 text-ide-success hover:bg-ide-success/20'
+                  : 'bg-ide-success text-white hover:bg-ide-success/90 shadow-lg shadow-ide-success/20',
           )}
-          title={isRunning ? 'Simulation running' : 'Compile and run'}
+          title={
+            !canRun
+              ? compilationError
+                ? 'Fix compilation errors to run'
+                : 'Compiling…'
+              : isRunning
+                ? 'Pause simulation'
+                : isPaused
+                  ? 'Resume simulation'
+                  : hasProgram
+                    ? 'Run simulation'
+                    : 'Compile and run'
+          }
         >
           {isCompiling ? (
             <>
@@ -172,13 +206,18 @@ function UnifiedActionBar({
             </>
           ) : isRunning ? (
             <>
-              <div className="h-2 w-2 rounded-full bg-ide-success animate-pulse" />
-              <span>Running...</span>
+              <Pause className="h-4 w-4" />
+              <span>Pause</span>
+            </>
+          ) : isPaused ? (
+            <>
+              <Play className="h-4 w-4 fill-current" />
+              <span>Resume</span>
             </>
           ) : (
             <>
               <Play className="h-4 w-4 fill-current" />
-              <span>Run Simulation</span>
+              <span>{hasProgram ? 'Run Simulation' : 'Compile & Run'}</span>
             </>
           )}
         </button>
@@ -187,17 +226,51 @@ function UnifiedActionBar({
         <button
           type="button"
           onClick={onStop}
-          disabled={!hasProgram}
+          disabled={!canStop}
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-lg',
             'transition-all duration-200 btn-press',
-            !hasProgram
+            !canStop
               ? 'text-ide-text-subtle cursor-not-allowed'
               : 'text-ide-text-muted hover:bg-ide-error/20 hover:text-ide-error',
           )}
           title="Stop simulation"
         >
           <Square className="h-4 w-4" />
+        </button>
+
+        {/* Theme Toggle */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          suppressHydrationWarning
+          className={cn(
+            'flex h-9 w-9 items-center justify-center rounded-lg',
+            'transition-colors btn-press',
+            'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text',
+          )}
+          title={
+            !isHydrated
+              ? 'Toggle theme'
+              : theme === 'light'
+                ? 'Switch to dark mode'
+                : 'Switch to light mode'
+          }
+          aria-label={
+            !isHydrated
+              ? 'Toggle theme'
+              : theme === 'light'
+                ? 'Switch to dark mode'
+                : 'Switch to light mode'
+          }
+        >
+          {!isHydrated ? (
+            <Sun className="h-4 w-4" />
+          ) : theme === 'light' ? (
+            <Moon className="h-4 w-4" />
+          ) : (
+            <Sun className="h-4 w-4" />
+          )}
         </button>
 
         <div className="mx-1 h-6 w-px bg-ide-border" />
@@ -223,11 +296,13 @@ function UnifiedActionBar({
               ? 'Compiling'
               : compilationError
                 ? 'Error'
-                : hasProgram
+                : hasSession
                   ? isRunning
                     ? 'Running'
-                    : 'Ready'
-                  : 'Idle'}
+                    : 'Paused'
+                  : hasProgram
+                    ? 'Ready'
+                    : 'Idle'}
           </span>
         </div>
       </div>
@@ -245,6 +320,9 @@ function SimulationCanvasInner({
   componentPwmStates,
   setButtonStateRef,
   setAnalogValueRef,
+  setSwitchStateRef,
+  setDipSwitchStateRef,
+  rotateEncoderRef,
 }: {
   canvasRef: React.RefObject<HTMLDivElement | null>
   isRunning: boolean
@@ -252,6 +330,9 @@ function SimulationCanvasInner({
   componentPwmStates?: Record<string, number>
   setButtonStateRef: MutableRefObject<((partId: string, pressed: boolean) => void) | null>
   setAnalogValueRef: MutableRefObject<((partId: string, value: number) => void) | null>
+  setSwitchStateRef: MutableRefObject<((partId: string, isOn: boolean) => void) | null>
+  setDipSwitchStateRef: MutableRefObject<((partId: string, values: number[]) => void) | null>
+  rotateEncoderRef: MutableRefObject<((partId: string, direction: 'cw' | 'ccw') => void) | null>
 }) {
   const addPart = useAppStore((s) => s.addPart)
   const removePart = useAppStore((s) => s.removePart)
@@ -341,6 +422,40 @@ function SimulationCanvasInner({
     // Call simulation button state handler
     setButtonStateRef.current?.(partId, true)
   }, [])
+
+  // Handler for slide switch toggle
+  const handleSwitchToggle = useCallback((partId: string, isOn: boolean) => {
+    const state = useAppStore.getState()
+    const parts = state.circuitParts || []
+    const idx = parts.findIndex((p: { id: string }) => p.id === partId)
+    const currentAttrs = (idx !== -1 ? (parts[idx].attrs ?? {}) : {}) as Record<string, unknown>
+    state.updatePartAttrs(partId, { ...currentAttrs, value: isOn ? 1 : 0 })
+    setSwitchStateRef.current?.(partId, isOn)
+  }, [setSwitchStateRef])
+
+  // Handler for DIP switch changes
+  const handleDipSwitchChange = useCallback((partId: string, values: number[]) => {
+    const state = useAppStore.getState()
+    const parts = state.circuitParts || []
+    const idx = parts.findIndex((p: { id: string }) => p.id === partId)
+    const currentAttrs = (idx !== -1 ? (parts[idx].attrs ?? {}) : {}) as Record<string, unknown>
+    state.updatePartAttrs(partId, { ...currentAttrs, values })
+    setDipSwitchStateRef.current?.(partId, values)
+  }, [setDipSwitchStateRef])
+
+  // Handler for rotary encoder rotation
+  const handleEncoderRotate = useCallback((partId: string, direction: 'cw' | 'ccw') => {
+    rotateEncoderRef.current?.(partId, direction)
+  }, [rotateEncoderRef])
+
+  // Handler for analog joystick movement
+  const handleJoystickMove = useCallback((partId: string, horz: number, vert: number) => {
+    const state = useAppStore.getState()
+    const parts = state.circuitParts || []
+    const idx = parts.findIndex((p: { id: string }) => p.id === partId)
+    const currentAttrs = (idx !== -1 ? (parts[idx].attrs ?? {}) : {}) as Record<string, unknown>
+    state.updatePartAttrs(partId, { ...currentAttrs, horz, vert })
+  }, [])
   
   const handleButtonRelease = useCallback((partId: string) => {
     setPressedButtons(prev => {
@@ -396,6 +511,11 @@ function SimulationCanvasInner({
         interactiveValue: interactiveValues[part.id],
         onButtonPress: handleButtonPress,
         onButtonRelease: handleButtonRelease,
+        onSwitchToggle: handleSwitchToggle,
+        switchState: ((part.attrs as Record<string, unknown> | undefined)?.value as number | undefined) === 1,
+        onDipSwitchChange: handleDipSwitchChange,
+        onEncoderRotate: handleEncoderRotate,
+        onJoystickMove: handleJoystickMove,
       },
       selected: selectedPartIds.includes(part.id),
     }))
@@ -417,13 +537,14 @@ function SimulationCanvasInner({
       })
       setNodes(newNodes)
     }
-  }, [circuitParts, getCanvasRect, handleButtonPress, handleButtonRelease, handleValueChange, interactiveValues, nodes, removePart, selectedPartIds, setNodes])
+  }, [circuitParts, getCanvasRect, handleButtonPress, handleButtonRelease, handleDipSwitchChange, handleEncoderRotate, handleJoystickMove, handleSwitchToggle, handleValueChange, interactiveValues, nodes, removePart, selectedPartIds, setNodes])
 
   // Update node data when handlers change
   useEffect(() => {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.type === 'arduino' || node.type === 'wokwi') {
+          const part = circuitParts.find((p) => p.id === node.id)
           return {
             ...node,
             data: {
@@ -434,13 +555,18 @@ function SimulationCanvasInner({
               interactiveValue: interactiveValues[node.id],
               onButtonPress: handleButtonPress,
               onButtonRelease: handleButtonRelease,
+              onSwitchToggle: handleSwitchToggle,
+              switchState: (((part?.attrs as Record<string, unknown> | undefined)?.value as number | undefined) ?? 0) === 1,
+              onDipSwitchChange: handleDipSwitchChange,
+              onEncoderRotate: handleEncoderRotate,
+              onJoystickMove: handleJoystickMove,
             },
           }
         }
         return node
       })
     )
-  }, [getCanvasRect, handleButtonPress, handleButtonRelease, handleValueChange, interactiveValues, removePart, setNodes])
+  }, [circuitParts, getCanvasRect, handleButtonPress, handleButtonRelease, handleDipSwitchChange, handleEncoderRotate, handleJoystickMove, handleSwitchToggle, handleValueChange, interactiveValues, removePart, setNodes])
 
   // Keep ReactFlow selection in sync with Zustand selection.
   useEffect(() => {
@@ -458,6 +584,10 @@ function SimulationCanvasInner({
           const simStates = componentPinStates?.[node.id]
           const pwmValue = componentPwmStates?.[node.id]
           const hasPwm = typeof pwmValue === 'number' && pwmValue > 0
+
+          // Keep node attrs in sync with store so simulation-driven attributes
+          // (e.g., servo angle, LCD text) update the rendered Wokwi elements.
+          const part = circuitParts.find((p) => p.id === node.id)
           return {
             ...node,
             // Force ReactFlow to detect changes by updating a top-level property
@@ -465,6 +595,7 @@ function SimulationCanvasInner({
               ...node.data,
               simulationPinStates: simStates,
               pwmValue: pwmValue,
+              attrs: part?.attrs ?? (node.data as unknown as { attrs?: Record<string, unknown> } | undefined)?.attrs ?? {},
               // Include update timestamp to force re-render when values change
               _simUpdateTime: hasPwm || simStates ? updateTime : undefined,
             },
@@ -473,7 +604,7 @@ function SimulationCanvasInner({
         return node
       })
     )
-  }, [componentPinStates, componentPwmStates, setNodes])
+  }, [circuitParts, componentPinStates, componentPwmStates, setNodes])
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
@@ -485,12 +616,25 @@ function SimulationCanvasInner({
             ...params,
             type: 'default',
             animated: false,
-            style: { stroke: 'var(--ide-accent)', strokeWidth: 2.5 },
+            style: { stroke: 'rgb(var(--ide-accent))', strokeWidth: 2.5 },
           },
           eds
         )
       ),
     [setEdges]
+  )
+
+  const styledEdges = useMemo(
+    () =>
+      edges.map((edge) => ({
+        ...edge,
+        style: {
+          ...edge.style,
+          stroke: 'rgb(var(--ide-text-muted))',
+          strokeWidth: edge.id === selectedEdge ? 3 : 2,
+        },
+      })),
+    [edges, selectedEdge]
   )
 
   const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
@@ -687,14 +831,7 @@ function SimulationCanvasInner({
 
       <ReactFlow
         nodes={nodes}
-        edges={edges.map((edge) => ({
-          ...edge,
-          style: {
-            ...edge.style,
-            stroke: 'var(--ide-text-muted)',
-            strokeWidth: edge.id === selectedEdge ? 3 : 2,
-          },
-        }))}
+        edges={styledEdges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -709,16 +846,22 @@ function SimulationCanvasInner({
         snapToGrid={true}
         snapGrid={[20, 20]}
         fitView
+        minZoom={0.15}
+        maxZoom={2.5}
+        onlyRenderVisibleElements={true}
+        zoomOnDoubleClick={false}
+        panOnScroll={true}
+        zoomOnScroll={false}
+        preventScrolling={true}
         className="h-full w-full"
         style={{ cursor: 'inherit', background: 'transparent' }}
         defaultEdgeOptions={{
           type: 'default',
           animated: false,
-          style: { stroke: 'var(--ide-text-muted)', strokeWidth: 2 },
+          style: { stroke: 'rgb(var(--ide-text-muted))', strokeWidth: 2 },
         }}
-        connectionLineStyle={{ stroke: 'var(--ide-accent)', strokeWidth: 2 }}
+        connectionLineStyle={{ stroke: 'rgb(var(--ide-accent))', strokeWidth: 2 }}
       >
-        <Background color="#333333" variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls className="!left-4 !bottom-20" />
 
         <WiringLayer
@@ -736,12 +879,18 @@ function SimulationCanvas({
   componentPwmStates,
   setButtonStateRef,
   setAnalogValueRef,
+  setSwitchStateRef,
+  setDipSwitchStateRef,
+  rotateEncoderRef,
 }: {
   isRunning: boolean
   componentPinStates?: Record<string, Record<string, boolean>>
   componentPwmStates?: Record<string, number>
   setButtonStateRef: MutableRefObject<((partId: string, pressed: boolean) => void) | null>
   setAnalogValueRef: MutableRefObject<((partId: string, value: number) => void) | null>
+  setSwitchStateRef: MutableRefObject<((partId: string, isOn: boolean) => void) | null>
+  setDipSwitchStateRef: MutableRefObject<((partId: string, values: number[]) => void) | null>
+  rotateEncoderRef: MutableRefObject<((partId: string, direction: 'cw' | 'ccw') => void) | null>
 }) {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   return (
@@ -753,6 +902,9 @@ function SimulationCanvas({
         componentPwmStates={componentPwmStates}
         setButtonStateRef={setButtonStateRef}
         setAnalogValueRef={setAnalogValueRef}
+        setSwitchStateRef={setSwitchStateRef}
+        setDipSwitchStateRef={setDipSwitchStateRef}
+        rotateEncoderRef={rotateEncoderRef}
       />
     </ReactFlowProvider>
   )
@@ -773,6 +925,12 @@ function CodeEditorPanel({
   const closeFile = useAppStore((s) => s.closeFile)
   const updateFileContent = useAppStore((s) => s.updateFileContent)
   const settings = useAppStore((s) => s.settings)
+
+  const compilationMissingHeader = useAppStore((s) => s.compilationMissingHeader)
+  const compilationLibrarySuggestions = useAppStore((s) => s.compilationLibrarySuggestions)
+  const isInstallingLibrary = useAppStore((s) => s.isInstallingLibrary)
+  const libraryInstallError = useAppStore((s) => s.libraryInstallError)
+  const installCompilationLibrary = useAppStore((s) => s.installCompilationLibrary)
 
   const activeFile = files.find(f => f.path === activeFilePath)
 
@@ -823,28 +981,59 @@ function CodeEditorPanel({
           <pre className="whitespace-pre-wrap break-words font-mono text-xs text-ide-error">
             {compilationError}
           </pre>
+
+          {compilationMissingHeader && compilationLibrarySuggestions.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-ide-text-muted">
+                Missing include: <span className="font-mono text-ide-text">{compilationMissingHeader}</span>
+              </span>
+              <span className="mx-1 h-4 w-px bg-ide-border" />
+              {compilationLibrarySuggestions.map((sug) => {
+                const disabled = isInstallingLibrary || sug.installed
+                return (
+                  <button
+                    key={sug.name}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => installCompilationLibrary(compilationMissingHeader, sug.name)}
+                    className={cn(
+                      'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium btn-press transition-colors',
+                      disabled
+                        ? 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
+                        : 'bg-ide-panel-bg text-ide-text hover:bg-ide-panel-hover'
+                    )}
+                    title={sug.installed ? 'Already installed' : `Install ${sug.name}`}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span className="max-w-[220px] truncate">{sug.name}</span>
+                    {sug.installed && <span className="text-ide-text-subtle">(installed)</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {libraryInstallError && (
+            <div className="mt-2 text-xs text-ide-error">
+              {libraryInstallError}
+            </div>
+          )}
         </div>
       )}
 
       {/* Editor content */}
       <div className="min-h-0 flex-1 p-2">
         {activeFile ? (
-          <textarea
-            value={activeFile.content}
-            onChange={(e) => updateFileContent(activeFile.path, e.target.value)}
-            spellCheck={false}
-            readOnly={activeFile.isReadOnly}
-            style={{ fontSize: `${settings.editorFontSize}px`, tabSize: settings.editorTabSize }}
-            className={cn(
-              'h-full w-full resize-none rounded-md bg-ide-panel-bg p-4',
-              'font-mono leading-6 text-ide-text',
-              'border border-ide-border',
-              'focus:outline-none focus:ring-1 focus:ring-ide-accent/50 focus:border-ide-accent/50',
-              'placeholder:text-ide-text-subtle',
-              activeFile.isReadOnly && 'opacity-75 cursor-not-allowed'
-            )}
-            placeholder="// Write your Arduino code here..."
-          />
+          <div className={cn('h-full', activeFile.isReadOnly && 'opacity-90')}>
+            <FundiCodeEditor
+              path={activeFile.path}
+              value={activeFile.content}
+              onChange={(next) => updateFileContent(activeFile.path, next)}
+              readOnly={activeFile.isReadOnly}
+              fontSize={settings.editorFontSize}
+              tabSize={settings.editorTabSize}
+            />
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center text-ide-text-subtle">
             <p className="text-sm">No file selected</p>
@@ -1141,31 +1330,49 @@ export default function Home() {
   const {
     run: simRun,
     stop: simStop,
+    pause: simPause,
     isRunning: simIsRunning,
+    hasRunner: simHasSession,
+    isPaused: simIsPaused,
     pinStates,
     pwmStates,
     serialOutput,
     clearSerialOutput,
     setButtonState,
     setAnalogValue,
+    setSwitchState,
+    setDipSwitchState,
+    rotateEncoder,
   } = useSimulation(hex, compiledBoard ?? '')
+
+  const hasProgram = Boolean(hex && compiledBoard)
+  const lastAutoRunHexRef = useRef<string | null>(null)
 
   // Refs used by the canvas handlers; populated from useSimulation outputs.
   const setButtonStateRef = useRef<((partId: string, pressed: boolean) => void) | null>(null)
   const setAnalogValueRef = useRef<((partId: string, value: number) => void) | null>(null)
+  const setSwitchStateRef = useRef<((partId: string, isOn: boolean) => void) | null>(null)
+  const setDipSwitchStateRef = useRef<((partId: string, values: number[]) => void) | null>(null)
+  const rotateEncoderRef = useRef<((partId: string, direction: 'cw' | 'ccw') => void) | null>(null)
 
   // Populate refs for simulation control functions so button handlers can use them
   useEffect(() => {
     setButtonStateRef.current = setButtonState
     setAnalogValueRef.current = setAnalogValue
-  }, [setButtonState, setAnalogValue])
+    setSwitchStateRef.current = setSwitchState
+    setDipSwitchStateRef.current = setDipSwitchState
+    rotateEncoderRef.current = rotateEncoder
+  }, [rotateEncoder, setAnalogValue, setButtonState, setDipSwitchState, setSwitchState])
 
   useEffect(() => {
     if (!hex || !compiledBoard) return
     if (isCompiling) return
     if (compilationError) return
     if (simIsRunning) return
-    console.log('[Page] Auto-starting simulation')
+
+    // Auto-run only when new hex arrives. This prevents a user pause from being immediately undone.
+    if (lastAutoRunHexRef.current === hex) return
+    lastAutoRunHexRef.current = hex
     simRun()
   }, [compiledBoard, compilationError, hex, isCompiling, simIsRunning, simRun])
 
@@ -1176,13 +1383,8 @@ export default function Home() {
 
     const mcuPart = circuitParts.find((p) => p.type.includes('arduino') || p.type.includes('esp32') || p.type.includes('pi-pico'))
     if (!mcuPart) {
-      console.log('[componentPinStates] No MCU part found in:', circuitParts.map(p => ({ id: p.id, type: p.type })))
       return states
     }
-
-    console.log('[componentPinStates] MCU:', mcuPart.id, 'type:', mcuPart.type)
-    console.log('[componentPinStates] Connections:', connections.length, connections)
-    console.log('[componentPinStates] Pin states from simulation:', pinStates)
 
     const keyOf = (partId: string, pinId: string) => `${partId}:${pinId}`
 
@@ -1197,7 +1399,6 @@ export default function Home() {
       adjacency.get(b)!.add(a)
     }
 
-    console.log('[componentPinStates] Adjacency graph:', [...adjacency.entries()].map(([k, v]) => `${k} -> [${[...v].join(', ')}]`))
 
     // For pass-through components (resistors, wires), treat all pins as electrically connected.
     // This allows signal propagation through these components.
@@ -1222,7 +1423,6 @@ export default function Home() {
       }
     }
 
-    console.log('[componentPinStates] Adjacency after pass-through:', [...adjacency.entries()].map(([k, v]) => `${k} -> [${[...v].join(', ')}]`))
 
     // Seed known net values from MCU pins + basic power/ground inference.
     const netValue = new Map<string, boolean>()
@@ -1296,7 +1496,6 @@ export default function Home() {
       states[partId][pinId] = v
     }
 
-    console.log('[componentPinStates] Final states:', states)
     return states
   }, [circuitParts, connections, pinStates])
 
@@ -1393,27 +1592,7 @@ export default function Home() {
     return states
   }, [circuitParts, connections, pwmStates])
 
-  // Debug: Log PWM states changes
-  useEffect(() => {
-    const activePwm = Object.entries(pwmStates).filter(([, v]) => v > 0)
-    if (activePwm.length > 0) {
-      console.log('[Page] Active PWM states:', Object.fromEntries(activePwm))
-    }
-  }, [pwmStates])
-
-  // Debug: Log componentPwmStates changes
-  useEffect(() => {
-    if (Object.keys(componentPwmStates).length > 0) {
-      console.log('[Page] componentPwmStates updated:', componentPwmStates)
-    }
-  }, [componentPwmStates])
-
-  // Debug: Log componentPinStates changes
-  useEffect(() => {
-    if (Object.keys(componentPinStates).length > 0) {
-      console.log('[Page] componentPinStates updated:', componentPinStates)
-    }
-  }, [componentPinStates])
+  // (removed noisy debug logging for smoother canvas performance)
 
   // Prepare project data for publishing
   const prepareProjectForPublish = useCallback(() => {
@@ -1605,15 +1784,31 @@ export default function Home() {
                     componentPwmStates={componentPwmStates}
                     setButtonStateRef={setButtonStateRef}
                     setAnalogValueRef={setAnalogValueRef}
+                    setSwitchStateRef={setSwitchStateRef}
+                    setDipSwitchStateRef={setDipSwitchStateRef}
+                    rotateEncoderRef={rotateEncoderRef}
                   />
 
                   {/* Unified Action Bar */}
                   <UnifiedActionBar
                     isCompiling={isCompiling}
                     compilationError={compilationError}
-                    onRun={() => void compileAndRun()}
-                    hasProgram={Boolean(hex && compiledBoard)}
+                    onRun={() => {
+                      if (simHasSession) {
+                        simRun()
+                        return
+                      }
+                      if (hasProgram) {
+                        simRun()
+                        return
+                      }
+                      void compileAndRun()
+                    }}
+                    onPause={simPause}
+                    hasProgram={hasProgram}
+                    hasSession={simHasSession}
                     isRunning={simIsRunning}
+                    isPaused={simIsPaused}
                     onStop={simStop}
                   />
 

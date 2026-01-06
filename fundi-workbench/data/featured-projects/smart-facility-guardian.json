@@ -1,0 +1,100 @@
+{
+  "id": "smart-facility-guardian",
+  "name": "Smart Facility Guardian",
+  "description": "Real-world style facility monitor: intrusion + environmental safety with I2C timekeeping, sensors, displays, and relay actuation",
+  "difficulty": "advanced",
+  "tags": [
+    "real-world",
+    "monitoring",
+    "security",
+    "i2c",
+    "ds1307",
+    "lcd",
+    "dht22",
+    "pir",
+    "hc-sr04",
+    "photoresistor",
+    "ntc",
+    "max7219",
+    "tm1637",
+    "74hc595",
+    "relay",
+    "state-machine"
+  ],
+  "estimatedTime": "45-60 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+      { "type": "wokwi-lcd1602", "id": "lcd1", "top": -240, "left": 60, "attrs": { "pins": "i2c" } },
+      { "type": "wokwi-ds1307", "id": "rtc1", "top": -240, "left": 280, "attrs": { "initTime": "0" } },
+      { "type": "wokwi-dht22", "id": "dht1", "top": -150, "left": 280, "attrs": { "temperature": "22", "humidity": "50" } },
+      { "type": "wokwi-pir-motion-sensor", "id": "pir1", "top": -70, "left": 280, "attrs": { "motion": "0" } },
+      { "type": "wokwi-hc-sr04", "id": "hcsr1", "top": 10, "left": 280, "attrs": { "distance": "100" } },
+      { "type": "wokwi-photoresistor-sensor", "id": "ldr1", "top": 100, "left": 280, "attrs": { "lux": "500" } },
+      { "type": "wokwi-ntc-temperature-sensor", "id": "ntc1", "top": 180, "left": 280, "attrs": { "temperature": "20" } },
+      { "type": "wokwi-relay-module", "id": "relay1", "top": 260, "left": 280, "attrs": { "transistor": "npn" } },
+      { "type": "wokwi-tm1637-7segment", "id": "tm1", "top": -80, "left": 540 },
+      { "type": "wokwi-max7219-matrix", "id": "mx1", "top": 40, "left": 540 },
+      { "type": "wokwi-74hc595", "id": "sr1", "top": 210, "left": 540 }
+    ],
+    "connections": [
+      ["lcd1:VCC", "uno:5V", "red", []],
+      ["lcd1:GND", "uno:GND.1", "black", []],
+      ["lcd1:SDA", "uno:A4", "green", []],
+      ["lcd1:SCL", "uno:A5", "blue", []],
+
+      ["rtc1:5V", "uno:5V", "red", []],
+      ["rtc1:GND", "uno:GND.2", "black", []],
+      ["rtc1:SDA", "uno:A4", "green", []],
+      ["rtc1:SCL", "uno:A5", "blue", []],
+
+      ["dht1:VCC", "uno:5V", "red", []],
+      ["dht1:GND", "uno:GND.3", "black", []],
+      ["dht1:SDA", "uno:2", "green", []],
+
+      ["pir1:VCC", "uno:5V", "red", []],
+      ["pir1:GND", "uno:GND.1", "black", []],
+      ["pir1:OUT", "uno:3", "orange", []],
+
+      ["hcsr1:VCC", "uno:5V", "red", []],
+      ["hcsr1:GND", "uno:GND.2", "black", []],
+      ["hcsr1:TRIG", "uno:4", "blue", []],
+      ["hcsr1:ECHO", "uno:5", "green", []],
+
+      ["ldr1:VCC", "uno:5V", "red", []],
+      ["ldr1:GND", "uno:GND.3", "black", []],
+      ["ldr1:AO", "uno:A0", "green", []],
+
+      ["ntc1:VCC", "uno:5V", "red", []],
+      ["ntc1:GND", "uno:GND.1", "black", []],
+      ["ntc1:OUT", "uno:A1", "green", []],
+
+      ["tm1:VCC", "uno:5V", "red", []],
+      ["tm1:GND", "uno:GND.2", "black", []],
+      ["tm1:CLK", "uno:6", "blue", []],
+      ["tm1:DIO", "uno:7", "green", []],
+
+      ["sr1:VCC", "uno:5V", "red", []],
+      ["sr1:GND", "uno:GND.3", "black", []],
+      ["sr1:DS", "uno:8", "green", []],
+      ["sr1:SHCP", "uno:9", "blue", []],
+      ["sr1:STCP", "uno:10", "purple", []],
+      ["sr1:OE", "uno:GND.1", "black", []],
+      ["sr1:MR", "uno:5V", "red", []],
+
+      ["mx1:VCC", "uno:5V", "red", []],
+      ["mx1:GND", "uno:GND.2", "black", []],
+      ["mx1:DIN", "uno:11", "green", []],
+      ["mx1:CS", "uno:12", "blue", []],
+      ["mx1:CLK", "uno:13", "purple", []],
+
+      ["relay1:VCC", "uno:5V", "red", []],
+      ["relay1:GND", "uno:GND.1", "black", []],
+      ["relay1:IN", "uno:A2", "orange", []]
+    ]
+  },
+  "code": "// Smart Facility Guardian (Advanced)\n// - Intrusion signal (PIR + distance) with night-mode based on light sensor\n// - Environmental monitoring (DHT22 + NTC thermistor)\n// - I2C peripherals (DS1307 RTC + LCD1602)\n// - Visual outputs (MAX7219 matrix + TM1637 4-digit)\n// - Actuation (relay) + status bus (74HC595)\n\n#include <Wire.h>\n#include <DHT.h>\n#include <LiquidCrystal_I2C.h>\n\n// ===== Pins =====\nconst int PIN_DHT = 2;\nconst int PIN_PIR = 3;\nconst int PIN_TRIG = 4;\nconst int PIN_ECHO = 5;\n\nconst int PIN_TM_CLK = 6;\nconst int PIN_TM_DIO = 7;\n\nconst int PIN_SR_DATA = 8;\nconst int PIN_SR_CLK = 9;\nconst int PIN_SR_LATCH = 10;\n\nconst int PIN_MX_DIN = 11;\nconst int PIN_MX_CS = 12;\nconst int PIN_MX_CLK = 13;\n\nconst int PIN_RELAY = A2; // relay IN (NPN module: LOW energizes)\n\nconst int PIN_LDR = A0;   // photoresistor AO\nconst int PIN_NTC = A1;   // thermistor OUT\n\n// ===== Devices =====\n#define DHT_TYPE DHT22\nDHT dht(PIN_DHT, DHT_TYPE);\nLiquidCrystal_I2C lcd(0x27, 16, 2);\n\n// ===== DS1307 helpers =====\nbyte bcdToDec(byte v) {\n  return (v >> 4) * 10 + (v & 0x0F);\n}\n\nbool readDS1307(byte &hh, byte &mm, byte &ss) {\n  Wire.beginTransmission(0x68);\n  Wire.write((byte)0x00);\n  if (Wire.endTransmission() != 0) return false;\n  Wire.requestFrom(0x68, 3);\n  if (Wire.available() < 3) return false;\n  ss = bcdToDec(Wire.read() & 0x7F);\n  mm = bcdToDec(Wire.read());\n  hh = bcdToDec(Wire.read() & 0x3F);\n  return true;\n}\n\n// ===== TM1637 bit-bang =====\nvoid tmDelay() { delayMicroseconds(5); }\n\nvoid tmStart() {\n  pinMode(PIN_TM_DIO, OUTPUT);\n  digitalWrite(PIN_TM_DIO, HIGH);\n  digitalWrite(PIN_TM_CLK, HIGH);\n  tmDelay();\n  digitalWrite(PIN_TM_DIO, LOW);\n  tmDelay();\n  digitalWrite(PIN_TM_CLK, LOW);\n}\n\nvoid tmStop() {\n  pinMode(PIN_TM_DIO, OUTPUT);\n  digitalWrite(PIN_TM_CLK, LOW);\n  digitalWrite(PIN_TM_DIO, LOW);\n  tmDelay();\n  digitalWrite(PIN_TM_CLK, HIGH);\n  tmDelay();\n  digitalWrite(PIN_TM_DIO, HIGH);\n  tmDelay();\n}\n\nbool tmWriteByte(byte b) {\n  for (int i = 0; i < 8; i++) {\n    digitalWrite(PIN_TM_CLK, LOW);\n    tmDelay();\n    digitalWrite(PIN_TM_DIO, (b >> i) & 1);\n    tmDelay();\n    digitalWrite(PIN_TM_CLK, HIGH);\n    tmDelay();\n  }\n\n  // ACK\n  digitalWrite(PIN_TM_CLK, LOW);\n  pinMode(PIN_TM_DIO, INPUT);\n  tmDelay();\n  digitalWrite(PIN_TM_CLK, HIGH);\n  tmDelay();\n  bool ack = (digitalRead(PIN_TM_DIO) == 0);\n  digitalWrite(PIN_TM_CLK, LOW);\n  pinMode(PIN_TM_DIO, OUTPUT);\n  return ack;\n}\n\nconst byte SEG_DIGITS[10] = {\n  0x3F, // 0\n  0x06, // 1\n  0x5B, // 2\n  0x4F, // 3\n  0x66, // 4\n  0x6D, // 5\n  0x7D, // 6\n  0x07, // 7\n  0x7F, // 8\n  0x6F  // 9\n};\n\nvoid tmDisplaySegments(byte s0, byte s1, byte s2, byte s3) {\n  // Data command: auto-increment\n  tmStart();\n  tmWriteByte(0x40);\n  tmStop();\n\n  // Address command: start at 0\n  tmStart();\n  tmWriteByte(0xC0);\n  tmWriteByte(s0);\n  tmWriteByte(s1);\n  tmWriteByte(s2);\n  tmWriteByte(s3);\n  tmStop();\n\n  // Display control: on + brightness 7\n  tmStart();\n  tmWriteByte(0x8F);\n  tmStop();\n}\n\nvoid tmDisplayNumber(int value) {\n  value = constrain(value, 0, 9999);\n  int d0 = (value / 1000) % 10;\n  int d1 = (value / 100) % 10;\n  int d2 = (value / 10) % 10;\n  int d3 = value % 10;\n  tmDisplaySegments(SEG_DIGITS[d0], SEG_DIGITS[d1], SEG_DIGITS[d2], SEG_DIGITS[d3]);\n}\n\n// ===== MAX7219 bit-bang (DIN/CLK/CS) =====\nvoid mxPulseClk() {\n  digitalWrite(PIN_MX_CLK, HIGH);\n  delayMicroseconds(2);\n  digitalWrite(PIN_MX_CLK, LOW);\n  delayMicroseconds(2);\n}\n\nvoid mxWrite16(byte reg, byte value) {\n  digitalWrite(PIN_MX_CS, LOW);\n  for (int i = 7; i >= 0; i--) {\n    digitalWrite(PIN_MX_DIN, (reg >> i) & 1);\n    mxPulseClk();\n  }\n  for (int i = 7; i >= 0; i--) {\n    digitalWrite(PIN_MX_DIN, (value >> i) & 1);\n    mxPulseClk();\n  }\n  digitalWrite(PIN_MX_CS, HIGH);\n  delayMicroseconds(10);\n}\n\nvoid mxInit() {\n  mxWrite16(0x0F, 0x00); // display test off\n  mxWrite16(0x0C, 0x01); // normal operation\n  mxWrite16(0x09, 0x00); // no decode\n  mxWrite16(0x0B, 0x07); // scan limit\n  mxWrite16(0x0A, 0x08); // intensity\n}\n\nvoid mxShowPattern(const byte rows[8]) {\n  for (int r = 0; r < 8; r++) {\n    mxWrite16((byte)(r + 1), rows[r]);\n  }\n}\n\nconst byte MX_OK[8] = {\n  0x00,\n  0x00,\n  0x01,\n  0x03,\n  0x86,\n  0xCC,\n  0x78,\n  0x30,\n};\n\nconst byte MX_ALARM[8] = {\n  0x81,\n  0x42,\n  0x24,\n  0x18,\n  0x18,\n  0x24,\n  0x42,\n  0x81,\n};\n\n// ===== 74HC595 status bus =====\nvoid srWrite(byte value) {\n  digitalWrite(PIN_SR_LATCH, LOW);\n  shiftOut(PIN_SR_DATA, PIN_SR_CLK, MSBFIRST, value);\n  digitalWrite(PIN_SR_LATCH, HIGH);\n}\n\n// ===== Sensors =====\nfloat readNtcCelsius() {\n  // Matches Wokwi thermistor example formula.\n  const float BETA = 3950.0;\n  int analogValue = analogRead(PIN_NTC);\n  if (analogValue <= 0) return -273.15;\n  float celsius = 1.0 / (log(1.0 / (1023.0 / analogValue - 1.0)) / BETA + 1.0 / 298.15) - 273.15;\n  return celsius;\n}\n\nfloat measureDistanceCm() {\n  digitalWrite(PIN_TRIG, LOW);\n  delayMicroseconds(2);\n  digitalWrite(PIN_TRIG, HIGH);\n  delayMicroseconds(10);\n  digitalWrite(PIN_TRIG, LOW);\n\n  long duration = pulseIn(PIN_ECHO, HIGH, 30000);\n  float distance = duration * 0.0343 / 2.0;\n  return distance;\n}\n\n// ===== State =====\nunsigned long lastFast = 0;\nunsigned long lastSlow = 0;\n\nbool nightMode = false;\nbool alarmActive = false;\n\nfloat dhtTempC = 0;\nfloat dhtHum = 0;\nfloat ntcTempC = 0;\nfloat distanceCm = 0;\nint ldrAdc = 0;\nbool pirMotion = false;\n\nvoid setup() {\n  Serial.begin(9600);\n  Serial.println(\"SMART FACILITY GUARDIAN\");\n  Serial.println(\"BOOT\");\n\n  pinMode(PIN_PIR, INPUT);\n  pinMode(PIN_TRIG, OUTPUT);\n  pinMode(PIN_ECHO, INPUT);\n\n  pinMode(PIN_TM_CLK, OUTPUT);\n  pinMode(PIN_TM_DIO, OUTPUT);\n  digitalWrite(PIN_TM_CLK, HIGH);\n  digitalWrite(PIN_TM_DIO, HIGH);\n\n  pinMode(PIN_SR_DATA, OUTPUT);\n  pinMode(PIN_SR_CLK, OUTPUT);\n  pinMode(PIN_SR_LATCH, OUTPUT);\n\n  pinMode(PIN_MX_DIN, OUTPUT);\n  pinMode(PIN_MX_CLK, OUTPUT);\n  pinMode(PIN_MX_CS, OUTPUT);\n  digitalWrite(PIN_MX_CS, HIGH);\n  digitalWrite(PIN_MX_CLK, LOW);\n\n  pinMode(PIN_RELAY, OUTPUT);\n  digitalWrite(PIN_RELAY, HIGH); // NPN relay: HIGH = de-energized\n\n  Wire.begin();\n  dht.begin();\n\n  lcd.init();\n  lcd.backlight();\n  lcd.clear();\n  lcd.setCursor(0, 0);\n  lcd.print(\"Facility Guard\");\n  lcd.setCursor(0, 1);\n  lcd.print(\"Initializing\");\n\n  mxInit();\n  mxShowPattern(MX_OK);\n  tmDisplayNumber(0);\n  srWrite(0);\n\n  delay(300);\n}\n\nvoid loop() {\n  unsigned long now = millis();\n\n  // Fast loop (~10Hz): motion + distance + analog\n  if (now - lastFast >= 100) {\n    lastFast = now;\n\n    pirMotion = (digitalRead(PIN_PIR) == HIGH);\n    distanceCm = measureDistanceCm();\n    ldrAdc = analogRead(PIN_LDR);\n    ntcTempC = readNtcCelsius();\n\n    // Photoresistor: dark -> high ADC\n    nightMode = (ldrAdc > 800);\n\n    bool closePresence = (distanceCm > 0 && distanceCm < 35);\n    bool tempAlarm = (ntcTempC < 5.0 || ntcTempC > 30.0);\n\n    alarmActive = (nightMode && (pirMotion || closePresence)) || tempAlarm;\n\n    // Relay (NPN module): LOW energizes\n    digitalWrite(PIN_RELAY, alarmActive ? LOW : HIGH);\n\n    // Status bus bits: 0=alarm, 1=night, 2=pir, 3=presence\n    byte status = 0;\n    if (alarmActive) status |= 0x01;\n    if (nightMode) status |= 0x02;\n    if (pirMotion) status |= 0x04;\n    if (closePresence) status |= 0x08;\n    srWrite(status);\n\n    // Displays\n    if (alarmActive) {\n      mxShowPattern(MX_ALARM);\n      tmDisplaySegments(SEG_DIGITS[9], SEG_DIGITS[9], SEG_DIGITS[9], SEG_DIGITS[9]);\n    } else {\n      mxShowPattern(MX_OK);\n      int t10 = (int)round(ntcTempC * 10.0);\n      if (t10 < 0) t10 = 0;\n      tmDisplayNumber(t10);\n    }\n  }\n\n  // Slow loop (~1Hz): DHT + LCD + serial log\n  if (now - lastSlow >= 1000) {\n    lastSlow = now;\n\n    float t = dht.readTemperature();\n    float h = dht.readHumidity();\n    if (!isnan(t)) dhtTempC = t;\n    if (!isnan(h)) dhtHum = h;\n\n    byte hh = 0, mm = 0, ss = 0;\n    bool rtcOk = readDS1307(hh, mm, ss);\n\n    // LCD\n    lcd.clear();\n    lcd.setCursor(0, 0);\n    if (rtcOk) {\n      if (hh < 10) lcd.print('0');\n      lcd.print(hh);\n      lcd.print(':');\n      if (mm < 10) lcd.print('0');\n      lcd.print(mm);\n      lcd.print(' ');\n    } else {\n      lcd.print(\"--:-- \");\n    }\n    lcd.print(\"T\");\n    lcd.print((int)round(ntcTempC));\n    lcd.print(\"C \");\n    lcd.print(nightMode ? \"N\" : \"D\");\n\n    lcd.setCursor(0, 1);\n    lcd.print(\"D\");\n    lcd.print((int)round(distanceCm));\n    lcd.print(\"cm \");\n    lcd.print(alarmActive ? \"ALARM\" : \"OK\");\n\n    // Serial log\n    Serial.print(\"[T=\");\n    Serial.print(dhtTempC, 1);\n    Serial.print(\"C H=\");\n    Serial.print(dhtHum, 0);\n    Serial.print(\"% NTC=\");\n    Serial.print(ntcTempC, 1);\n    Serial.print(\"C LDR=\");\n    Serial.print(ldrAdc);\n    Serial.print(\" PIR=\");\n    Serial.print(pirMotion ? 1 : 0);\n    Serial.print(\" D=\");\n    Serial.print(distanceCm, 0);\n    Serial.print(\"cm MODE=\");\n    Serial.print(nightMode ? \"NIGHT\" : \"DAY\");\n    Serial.print(\" ALARM=\");\n    Serial.println(alarmActive ? \"1\" : \"0\");\n  }\n}\n"
+}

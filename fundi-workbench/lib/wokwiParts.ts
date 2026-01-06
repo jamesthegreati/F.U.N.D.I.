@@ -128,6 +128,14 @@ export const WOKWI_PARTS: Record<string, WokwiPartConfig> = {
         category: 'leds',
     },
 
+    // Alias: some diagrams use wokwi-neopixel-ring for the same element
+    'neopixel-ring': {
+        name: 'NeoPixel Ring',
+        element: 'wokwi-led-ring',
+        description: 'Addressable NeoPixel ring (WS2812)',
+        category: 'leds',
+    },
+
     // Sensors
     'dht22': {
         name: 'DHT22',
@@ -147,7 +155,21 @@ export const WOKWI_PARTS: Record<string, WokwiPartConfig> = {
         description: 'Passive infrared motion sensor',
         category: 'input',
     },
+    // Alias: some pipelines strip the `wokwi-` prefix and keep the `-sensor` suffix
+    'pir-motion-sensor': {
+        name: 'PIR Motion Sensor',
+        element: 'wokwi-pir-motion-sensor',
+        description: 'Passive infrared motion sensor',
+        category: 'input',
+    },
     'photoresistor': {
+        name: 'Photoresistor (LDR)',
+        element: 'wokwi-photoresistor-sensor',
+        description: 'Light-dependent resistor sensor',
+        category: 'input',
+    },
+    // Alias: some pipelines strip the `wokwi-` prefix and keep the `-sensor` suffix
+    'photoresistor-sensor': {
         name: 'Photoresistor (LDR)',
         element: 'wokwi-photoresistor-sensor',
         description: 'Light-dependent resistor sensor',

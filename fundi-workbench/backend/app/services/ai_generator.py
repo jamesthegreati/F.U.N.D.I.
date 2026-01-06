@@ -8,6 +8,10 @@ from google import genai
 
 from app.core.config import settings
 from app.schemas.circuit import AIResponse
+from app.services.agentic.context_builder import build_llm_context_block
+from app.services.agentic.output_validator import issues_to_repair_prompt, normalize_validate
+from app.services.agentic.planner import plan_generation
+from app.services.runtime_state import get_state_snapshot
 
 # Import the new prompt manager (with fallback to embedded prompts)
 try:
@@ -299,6 +303,14 @@ def _extract_json_object(text: str) -> str:
     return cleaned[start : end + 1]
 
 
+def _coerce_json_text(model_text: str) -> str:
+    """Return JSON text from a model response (defensive parsing)."""
+    json_text = _extract_json_object(model_text)
+    # Ensure it's at least valid JSON.
+    json.loads(json_text)
+    return json_text
+
+
 def _schema_rejected_by_gemini(exc: Exception) -> bool:
     msg = str(exc)
     return "additionalProperties" in msg or "response_schema" in msg
@@ -358,7 +370,7 @@ def generate_circuit(
             system_prompt = _SYSTEM_PROMPT_BUILDER
     
     # Build conversation contents with history for iterative development
-    contents = []
+    contents: list[dict] = []
     
     # Add conversation history (last 5 exchanges for context)
     if conversation_history:
@@ -373,12 +385,21 @@ def generate_circuit(
     
     # Build current request parts
     parts: list[dict] = []
-    
-    # Add context about current circuit if available
-    if current_circuit:
+
+    # Add deterministic workspace/circuit context (helps surgical iteration).
+    context_block = build_llm_context_block(
+        current_circuit_json=current_circuit,
+        include_runtime_state=True,
+    )
+    if context_block:
         parts.append({
-            "text": f"CURRENT CIRCUIT STATE (for context - user may want to modify this):\n{current_circuit}\n\n"
+            "text": (
+                "CONTEXT (use for accuracy; preserve existing IDs/positions unless asked):\n"
+                f"{context_block}\n\n"
+            )
         })
+    
+    # (current_circuit is already included in the context block above)
     
     # Add image if provided
     if image_data:
@@ -439,75 +460,129 @@ def generate_circuit(
             models_to_try.append(name)
 
     last_error: Exception | None = None
+
+    # Grab a best-effort prior sketch so validator can enforce small-diff edits.
+    prior_code: str | None = None
+    try:
+        snap = get_state_snapshot()
+        for f in snap.get("files", []) or []:
+            if f.get("isMain"):
+                prior_code = str(f.get("content") or "")
+                break
+        if prior_code is None and (snap.get("files") or []):
+            prior_code = str((snap.get("files") or [])[0].get("content") or "")
+    except Exception:
+        prior_code = None
+
     for model_name in models_to_try:
         try:
-            # 1) Try structured output (per requirements).
-            try:
-                response = client.models.generate_content(
+            # Decide intent first (answer-only vs which parts to apply).
+            plan = plan_generation(client=client, model=model_name, user_prompt=prompt)
+
+            # If it's answer-only, don't ask for a full circuit JSON. Just answer,
+            # and return current state with apply flags disabled so the UI won't overwrite.
+            if plan.action == "answer":
+                snapshot = get_state_snapshot()
+
+                # Extract best-effort current code + circuit from synced state.
+                current_code = ""
+                for f in snapshot.get("files", []) or []:
+                    if f.get("isMain"):
+                        current_code = str(f.get("content") or "")
+                        break
+
+                curr_parts = []
+                curr_conns = []
+                try:
+                    # If frontend sent current_circuit_json, prefer that (may be richer).
+                    if current_circuit:
+                        parsed_circuit = json.loads(current_circuit)
+                        curr_parts = parsed_circuit.get("parts", []) or []
+                        curr_conns = parsed_circuit.get("connections", []) or []
+                    else:
+                        curr_parts = snapshot.get("components", []) or []
+                        curr_conns = snapshot.get("connections", []) or []
+                except Exception:
+                    curr_parts = snapshot.get("components", []) or []
+                    curr_conns = snapshot.get("connections", []) or []
+
+                answer_resp = client.models.generate_content(
                     model=model_name,
-                    contents=contents,
+                    contents=[
+                        {
+                            "role": "user",
+                            "parts": [{"text": f"Answer the user clearly and concisely.\n\nUser: {prompt}"}],
+                        }
+                    ],
                     config={
                         "system_instruction": system_prompt,
-                        "response_schema": AIResponse,
+                        "temperature": 0.3,
+                    },
+                )
+                answer_text = getattr(answer_resp, "text", None)
+                if not isinstance(answer_text, str):
+                    answer_text = ""
+
+                return AIResponse(
+                    action="answer",
+                    apply_code=False,
+                    apply_circuit=False,
+                    apply_files=False,
+                    code=current_code,
+                    circuit_parts=curr_parts,
+                    connections=curr_conns,
+                    explanation=answer_text.strip() or "(No response)",
+                    file_changes=None,
+                )
+
+            # Agentic loop:
+            # - Always request JSON-only output.
+            # - Validate (Pydantic + extra rules).
+            # - Repair with targeted feedback up to 2 times.
+            attempt_contents = contents
+            last_issues: list[str] = []
+
+            for _attempt in range(3):
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=attempt_contents,
+                    config={
+                        "system_instruction": system_prompt,
+                        "response_mime_type": "application/json",
+                        "temperature": 0.2,
                     },
                 )
 
-                # google-genai returns structured output in multiple possible places depending
-                # on SDK version; try the most common ones.
-                parsed = getattr(response, "parsed", None)
-                if parsed is not None:
-                    if isinstance(parsed, AIResponse):
-                        return parsed
-                    return AIResponse.model_validate(parsed)
-
-                output = getattr(response, "output", None)
-                if output is not None:
-                    return AIResponse.model_validate(output)
-
                 text = getattr(response, "text", None)
-                if isinstance(text, str) and text.strip():
-                    return AIResponse.model_validate_json(_extract_json_object(text))
+                if not isinstance(text, str) or not text.strip():
+                    raise RuntimeError("Model returned empty output")
 
-                raise RuntimeError("Model returned no parsable structured output")
-            except Exception as schema_exc:  # noqa: BLE001
-                # Gemini Structured Output doesn't support JSON Schema features emitted by
-                # Dict fields (e.g., additionalProperties). Fall back to JSON-only text.
-                if not _schema_rejected_by_gemini(schema_exc):
-                    raise
+                json_text = _coerce_json_text(text)
+                parsed = AIResponse.model_validate_json(json_text)
 
-            # 2) Fallback: ask for pure JSON, then validate with Pydantic.
-            fallback_prompt = (
-                "Return ONLY valid JSON (no markdown) matching this shape:\n"
-                "{\n"
-                '  "code": string,\n'
-                '  "circuit_parts": [ {"id": string, "type": string, "x": number, "y": number, "attrs": object} ],\n'
-                '  "connections": [ {"source_part": string, "source_pin": string, "target_part": string, "target_pin": string} ],\n'
-                '  "explanation": string\n'
-                "}\n\n"
-                "LAYOUT RULES:\n"
-                "- Place microcontroller at (0, 0)\n"
-                "- Place other components at x=300-400 with 100px vertical spacing\n"
-                "- Never stack components at same coordinates\n\n"
-                f"User prompt: {prompt}"
-            )
+                # Enforce planner-derived apply flags unless the model is more restrictive.
+                parsed.action = plan.action
+                parsed.apply_code = bool(parsed.apply_code and plan.apply_code)
+                parsed.apply_circuit = bool(parsed.apply_circuit and plan.apply_circuit)
+                parsed.apply_files = bool(parsed.apply_files and plan.apply_files)
 
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[{"role": "user", "parts": [{"text": fallback_prompt}]}],
-                config={
-                    "system_instruction": system_prompt,
-                    "response_mime_type": "application/json",
-                },
-            )
+                normalized, issues = normalize_validate(parsed, prior_code=prior_code, user_prompt=prompt)
+                if not issues:
+                    return normalized
 
-            text = getattr(response, "text", None)
-            if not isinstance(text, str) or not text.strip():
-                raise RuntimeError("Model returned empty output")
+                last_issues = issues
 
-            json_text = _extract_json_object(text)
-            # Quick sanity check the model returned JSON at all.
-            json.loads(json_text)
-            return AIResponse.model_validate_json(json_text)
+                repair_prefix = issues_to_repair_prompt(issues)
+                repair_prompt = (
+                    f"{repair_prefix}\n"
+                    "Here is the previous JSON to fix:\n"
+                    f"{json_text}\n\n"
+                    "User request (do not ignore):\n"
+                    f"{prompt}"
+                )
+                attempt_contents = [{"role": "user", "parts": [{"text": repair_prompt}]}]
+
+            raise RuntimeError(f"Validation failed after retries: {last_issues}")
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             continue
