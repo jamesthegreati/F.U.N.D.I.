@@ -29,6 +29,7 @@ class GenerateRequest(BaseModel):
         description="Previous messages in the conversation for iterative development context"
     )
     session_id: Optional[str] = Field(default=None, description="Session ID for persistent conversation memory")
+    api_key_override: Optional[str] = Field(default=None, description="Optional Gemini API key override for this request")
 
     @field_validator("prompt")
     @classmethod
@@ -80,6 +81,7 @@ def generate(req: GenerateRequest) -> AIResponse:
             image_data=req.image_data,
             current_circuit=effective_current_circuit,
             conversation_history=history,
+            api_key_override=req.api_key_override,
         )
         
         # Store assistant response in session memory

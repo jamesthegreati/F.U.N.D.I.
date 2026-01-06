@@ -224,12 +224,15 @@ STRICT TECHNICAL REQUIREMENTS:
    - NEVER stack components at the same coordinates
 
 7. WIRE CONNECTIONS - CRITICAL for visual appeal:
-   - Route wires with clean, logical colors (Standard Wokwi/Electronic colors):
-     * VCC/5V/3.3V/Power: color="#ff0000" (Red)
-     * GND/Ground: color="#000000" (Black)
-     * Digital Signals: color="#0000ff" (Blue) or "#008000" (Green)
-     * Analog Signals: color="#purple" (Purple) or "#orange" (Orange)
-     * Clock/Data (I2C/SPI): color="#ff00ff" (Magenta) or "#a52a2a" (Brown)
+     - Route wires with clean, logical colors (use hex codes):
+         * Power (VCC/5V/3.3V): color="#ef4444" (red), signal_type="power"
+         * Ground (GND): color="#000000" (black), signal_type="ground"
+         * Digital: color="#3b82f6" (blue), signal_type="digital"
+         * Analog: color="#22c55e" (green), signal_type="analog"
+         * PWM: color="#eab308" (yellow), signal_type="pwm"
+         * I2C: color="#8b5cf6" (purple), signal_type="i2c"
+         * SPI: color="#f97316" (orange), signal_type="spi"
+         * UART: color="#06b6d4" (cyan), signal_type="uart"
    - Always include proper labels like "D13", "A0"
    - Try to use orthagonal routing suggestions by avoiding crossing the MCU body
 
@@ -267,21 +270,22 @@ OUTPUT REQUIREMENTS:
 
 
 
-def _client() -> genai.Client:
-    if not settings.GEMINI_API_KEY:
+def _client(api_key_override: str | None = None) -> genai.Client:
+    api_key = (api_key_override or settings.GEMINI_API_KEY or "").strip()
+    if not api_key:
         raise RuntimeError(
             "GEMINI_API_KEY is not set. "
             "Please configure your Google Gemini API key in the environment or .env file. "
             "Get your API key from: https://makersuite.google.com/app/apikey"
         )
-    if settings.GEMINI_API_KEY in ["your_api_key_here", "None", "null", ""]:
+    if api_key in ["your_api_key_here", "None", "null", ""]:
         raise RuntimeError(
             "GEMINI_API_KEY is set to a placeholder value. "
             "Please replace it with a valid Google Gemini API key. "
             "Get your API key from: https://makersuite.google.com/app/apikey"
         )
     try:
-        return genai.Client(api_key=settings.GEMINI_API_KEY)
+        return genai.Client(api_key=api_key)
     except Exception as exc:
         raise RuntimeError(
             f"Failed to initialize Gemini AI client: {exc}. "
@@ -316,12 +320,82 @@ def _schema_rejected_by_gemini(exc: Exception) -> bool:
     return "additionalProperties" in msg or "response_schema" in msg
 
 
+def _normalize_model_name(name: str) -> str:
+    """Normalize a Gemini model name.
+
+    The backend accepts either "models/<name>" or "gemini-...". We normalize
+    common forms so .env can specify either style.
+    """
+    n = (name or "").strip()
+    if not n:
+        return n
+    if n.startswith("models/"):
+        return n
+    if n.startswith("gemini-"):
+        return f"models/{n}"
+    return n
+
+
+def _models_to_try_from_env() -> list[str]:
+    configured = (settings.GEMINI_MODEL or "").strip()
+    if not configured:
+        return []
+    # Allow comma-separated list in case the user wants to provide multiple.
+    models = [m.strip() for m in configured.split(",") if m.strip()]
+    return [_normalize_model_name(m) for m in models if _normalize_model_name(m)]
+
+
+def _generate_json_ai_response(
+    *,
+    client: genai.Client,
+    model: str,
+    contents: list[dict],
+    system_prompt: str,
+    temperature: float,
+) -> str:
+    """Generate AIResponse JSON reliably (Teacher and Builder share this path).
+
+    Uses response_schema when supported by the backend Gemini API, and
+    falls back to schema-less JSON mode if rejected.
+    """
+    base_config: dict = {
+        "system_instruction": system_prompt,
+        "response_mime_type": "application/json",
+        "temperature": temperature,
+    }
+
+    # Pydantic v2 schema is JSON-serializable.
+    schema = AIResponse.model_json_schema()
+
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config={**base_config, "response_schema": schema},
+        )
+    except Exception as exc:  # noqa: BLE001
+        if _schema_rejected_by_gemini(exc):
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=base_config,
+            )
+        else:
+            raise
+
+    text = getattr(response, "text", None)
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("Model returned empty output")
+    return text
+
+
 def generate_circuit(
     prompt: str,
     teacher_mode: bool = False,
     image_data: Optional[str] = None,
     current_circuit: Optional[str] = None,
     conversation_history: Optional[List[dict]] = None,
+    api_key_override: Optional[str] = None,
 ) -> AIResponse:
     """Generate Arduino code + Wokwi circuit description from a user prompt.
     
@@ -332,7 +406,7 @@ def generate_circuit(
         current_circuit: Optional JSON string of current circuit state for context
         conversation_history: Optional list of previous messages for iterative development
     """
-    client = _client()
+    client = _client(api_key_override=api_key_override)
     
     # Select system prompt based on mode - try modular prompts first
     if USE_MODULAR_PROMPTS:
@@ -434,30 +508,16 @@ def generate_circuit(
     contents.append({"role": "user", "parts": parts})
 
 
-    # Prefer a model configured via backend/.env (GEMINI_MODEL), then fall back.
-    # Note: some API versions require the "models/" prefix.
-    configured = (settings.GEMINI_MODEL or "").strip()
-    configured_models: list[str] = []
-    if configured:
-        # Allow comma-separated list in case the user wants to provide multiple.
-        configured_models = [m.strip() for m in configured.split(",") if m.strip()]
-
+    # Use the model(s) from backend/.env if provided; otherwise fall back.
+    # This keeps Teacher and Builder behavior identical and predictable.
+    configured_models = _models_to_try_from_env()
     fallback_models = [
         "models/gemini-flash-lite-latest",
-        "gemini-flash-lite-latest",
         "models/gemini-2.0-flash-exp",
-        "gemini-2.0-flash-exp",
         "models/gemini-1.5-flash",
-        "gemini-1.5-flash",
     ]
 
-    # Deduplicate while preserving order.
-    seen: set[str] = set()
-    models_to_try: list[str] = []
-    for name in configured_models + fallback_models:
-        if name and name not in seen:
-            seen.add(name)
-            models_to_try.append(name)
+    models_to_try = configured_models if configured_models else fallback_models
 
     last_error: Exception | None = None
 
@@ -543,19 +603,13 @@ def generate_circuit(
             last_issues: list[str] = []
 
             for _attempt in range(3):
-                response = client.models.generate_content(
+                text = _generate_json_ai_response(
+                    client=client,
                     model=model_name,
                     contents=attempt_contents,
-                    config={
-                        "system_instruction": system_prompt,
-                        "response_mime_type": "application/json",
-                        "temperature": 0.2,
-                    },
+                    system_prompt=system_prompt,
+                    temperature=0.2,
                 )
-
-                text = getattr(response, "text", None)
-                if not isinstance(text, str) or not text.strip():
-                    raise RuntimeError("Model returned empty output")
 
                 json_text = _coerce_json_text(text)
                 parsed = AIResponse.model_validate_json(json_text)

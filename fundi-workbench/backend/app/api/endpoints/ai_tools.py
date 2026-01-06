@@ -343,6 +343,7 @@ class ErrorDiagnosisRequest(BaseModel):
     error_message: str = Field(..., description="The compilation error message")
     code: str = Field(..., description="The code that caused the error")
     board: str = Field(default="arduino-uno", description="Target board type")
+    api_key_override: Optional[str] = None
 
 
 class ErrorDiagnosisResponse(BaseModel):
@@ -406,8 +407,19 @@ def diagnose_error(req: ErrorDiagnosisRequest) -> ErrorDiagnosisResponse:
     Uses AI to understand the error and suggest corrections.
     """
     from app.services.ai_generator import _client
+    from app.core.config import settings
+
+    def _normalized_model_name(name: str) -> str:
+        n = (name or "").strip()
+        if not n:
+            return "models/gemini-flash-lite-latest"
+        if n.startswith("models/"):
+            return n
+        if n.startswith("gemini-"):
+            return f"models/{n}"
+        return n
     
-    client = _client()
+    client = _client(api_key_override=req.api_key_override)
     
     diagnosis_prompt = f"""Analyze this Arduino compilation error and provide helpful diagnosis.
 
@@ -432,9 +444,9 @@ Return ONLY valid JSON, no markdown formatting."""
 
     try:
         response = client.models.generate_content(
-            model="gemini-flash-lite-latest",
+            model=_normalized_model_name(settings.GEMINI_MODEL),
             contents=[{"role": "user", "parts": [{"text": diagnosis_prompt}]}],
-            config={"response_mime_type": "application/json"},
+            config={"response_mime_type": "application/json", "temperature": 0.2},
         )
         
         import json

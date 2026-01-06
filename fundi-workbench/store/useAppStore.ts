@@ -174,7 +174,7 @@ export type AppState = {
   updateWire: (id: string, points: { x: number; y: number }[] | undefined) => void
 
   // Terminal/AI Chat actions
-  submitCommand: (text: string, imageData?: string) => Promise<void>
+  submitCommand: (text: string, imageData?: string, opts?: { teacherModeOverride?: boolean }) => Promise<void>
   addTerminalEntry: (entry: Omit<TerminalEntry, 'id' | 'timestamp'>) => string
   clearTerminalHistory: () => void
   setTeacherMode: (enabled: boolean) => void
@@ -1083,7 +1083,7 @@ export const useAppStore = create<AppState>()(
         }))
       },
 
-      submitCommand: async (text, imageData) => {
+      submitCommand: async (text, imageData, opts) => {
         const trimmed = text.trim()
         const finalImageData = imageData ?? get().stagedImageData
 
@@ -1195,14 +1195,18 @@ You can also upload images of physical circuits for recognition.`,
             connections: get().connections,
           })
 
+          const effectiveTeacherMode =
+            typeof opts?.teacherModeOverride === 'boolean' ? opts.teacherModeOverride : get().teacherMode
+
           const res = await fetch(`${baseUrl}/api/v1/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               prompt: trimmed || 'Analyze this circuit image and recreate it',
-              teacher_mode: get().teacherMode,
+              teacher_mode: effectiveTeacherMode,
               image_data: finalImageData || null,
               current_circuit: get().circuitParts.length > 0 ? currentCircuit : null,
+              api_key_override: get().settings.geminiApiKeyOverride,
             }),
           })
 

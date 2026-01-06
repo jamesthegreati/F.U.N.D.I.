@@ -138,6 +138,7 @@ export function CommandInterface() {
   const submitCommand = useAppStore((s) => s.submitCommand)
   const teacherMode = useAppStore((s) => s.teacherMode)
   const setTeacherMode = useAppStore((s) => s.setTeacherMode)
+
   const stagedImageData = useAppStore((s) => s.stagedImageData)
   const stageImage = useAppStore((s) => s.stageImage)
   const clearStagedImage = useAppStore((s) => s.clearStagedImage)
@@ -157,6 +158,7 @@ export function CommandInterface() {
   const redoEnabled = canRedo()
   const undoPreview = getUndoPreview()
   const redoPreview = getRedoPreview()
+
 
   // Get user command history (most recent first)
   const commandHistory = useMemo(() =>
@@ -209,6 +211,16 @@ export function CommandInterface() {
       e.preventDefault()
       if (!input.trim() || isAiLoading) return
       void submitCommand(input)
+      setInput('')
+    },
+    [input, isAiLoading, submitCommand]
+  )
+
+  const handleSubmitToBuilder = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      if (!input.trim() || isAiLoading) return
+      void submitCommand(input, undefined, { teacherModeOverride: false })
       setInput('')
     },
     [input, isAiLoading, submitCommand]
@@ -515,19 +527,39 @@ export function CommandInterface() {
               </div>
 
               {/* Submit button */}
-              <button
-                type="submit"
-                disabled={isAiLoading || (!input.trim() && !stagedImageData)}
-                className={cn(
-                  'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-all btn-press',
-                  (input.trim() || stagedImageData) && !isAiLoading
-                    ? 'bg-ide-accent text-white hover:bg-ide-accent-hover'
-                    : 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
+              <div className="flex items-center gap-1">
+                {teacherMode && (
+                  <button
+                    type="button"
+                    onClick={handleSubmitToBuilder}
+                    disabled={isAiLoading || !input.trim()}
+                    className={cn(
+                      'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-all btn-press',
+                      input.trim() && !isAiLoading
+                        ? 'bg-ide-success text-white hover:bg-ide-success/80'
+                        : 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
+                    )}
+                    title="Delegate this prompt to Builder (applies changes)"
+                  >
+                    <Wrench className="h-3.5 w-3.5" />
+                    <span>Builder</span>
+                  </button>
                 )}
-              >
-                <Send className="h-3.5 w-3.5" />
-                <span>Send</span>
-              </button>
+
+                <button
+                  type="submit"
+                  disabled={isAiLoading || (!input.trim() && !stagedImageData)}
+                  className={cn(
+                    'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-all btn-press',
+                    (input.trim() || stagedImageData) && !isAiLoading
+                      ? 'bg-ide-accent text-white hover:bg-ide-accent-hover'
+                      : 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
+                  )}
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Send</span>
+                </button>
+              </div>
             </div>
           </div>
         </form>
