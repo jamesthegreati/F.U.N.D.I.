@@ -30,7 +30,7 @@ export default function FloatingControlBar({
       className="absolute bottom-6 left-1/2 z-50 -translate-x-1/2 animate-slide-up"
       style={{ pointerEvents: 'auto' }}
     >
-      <div className="floating-bar flex items-center gap-1 p-1.5">
+      <div className="floating-bar flex items-center gap-1.5 p-2">
         {/* Compile/Run Button */}
         <button
           type="button"
@@ -38,7 +38,7 @@ export default function FloatingControlBar({
           disabled={isCompiling}
           className={cn(
             'group relative flex items-center gap-2 rounded-full px-5 py-2.5',
-            'text-sm font-medium transition-all duration-200',
+            'text-sm font-medium transition-all duration-200 interactive-elevate',
             'btn-press',
             isCompiling
               ? 'bg-pro-bg-subtle text-pro-text-subtle cursor-not-allowed'
@@ -48,12 +48,12 @@ export default function FloatingControlBar({
         >
           {isCompiling ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden={true} />
+              <Loader2 className="icon-balanced h-4 w-4 animate-spin" aria-hidden={true} />
               <span>Compiling...</span>
             </>
           ) : (
             <>
-              <Zap className="h-4 w-4" aria-hidden={true} />
+              <Zap className="icon-balanced h-4 w-4" aria-hidden={true} />
               <span>Run</span>
             </>
           )}
@@ -83,7 +83,7 @@ export default function FloatingControlBar({
               <span className="absolute inset-0 rounded-full animate-glow-ring" />
             )}
             <Play
-              className={cn('h-4 w-4', isRunning && 'fill-current')}
+              className={cn('icon-balanced h-4 w-4', isRunning && 'fill-current')}
               aria-hidden={true}
             />
           </button>
@@ -102,7 +102,7 @@ export default function FloatingControlBar({
             )}
             title="Stop simulation"
           >
-            <Square className="h-4 w-4" aria-hidden={true} />
+            <Square className="icon-balanced h-4 w-4" aria-hidden={true} />
           </button>
         </div>
 

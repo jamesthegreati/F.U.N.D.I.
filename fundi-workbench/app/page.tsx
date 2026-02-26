@@ -37,7 +37,6 @@ import {
 } from 'react-resizable-panels'
 import {
   addEdge,
-  Controls,
   ReactFlow,
   ReactFlowProvider,
   useStore,
@@ -85,46 +84,51 @@ function CanvasToolbar({
   onZoomOut,
   onFitView,
   onResetView,
+  zoomPercent,
 }: {
   onZoomIn: () => void
   onZoomOut: () => void
   onFitView: () => void
   onResetView: () => void
+  zoomPercent: number
 }) {
   return (
-    <div className="absolute top-4 right-4 z-40 flex items-center gap-1 glass-panel rounded-lg p-1">
+    <div className="absolute right-4 top-4 z-40 flex items-center gap-1.5 rounded-xl p-1.5 glass-panel animate-in">
       <button
         type="button"
         onClick={onZoomIn}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="btn-press flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
         title="Zoom In"
       >
-        <ZoomIn className="h-4 w-4" />
+        <ZoomIn className="icon-balanced h-4 w-4" />
       </button>
+      <div className="min-w-[46px] select-none text-center text-[10px] font-semibold text-ide-text-muted">
+        {zoomPercent}%
+      </div>
       <button
         type="button"
         onClick={onZoomOut}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="btn-press flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
         title="Zoom Out"
       >
-        <ZoomOut className="h-4 w-4" />
+        <ZoomOut className="icon-balanced h-4 w-4" />
       </button>
       <div className="mx-1 h-5 w-px bg-ide-border" />
       <button
         type="button"
         onClick={onFitView}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="btn-press flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
         title="Fit View"
       >
-        <Maximize2 className="h-4 w-4" />
+        <Maximize2 className="icon-balanced h-4 w-4" />
       </button>
       <button
         type="button"
         onClick={onResetView}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+        className="btn-press flex h-8 w-8 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
         title="Reset View"
       >
-        <RotateCcw className="h-4 w-4" />
+        <RotateCcw className="icon-balanced h-4 w-4" />
       </button>
     </div>
   )
@@ -167,15 +171,15 @@ function UnifiedActionBar({
 
   return (
     <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2 animate-slide-up">
-      <div className="floating-bar flex items-center gap-2 px-3 py-2">
-        {/* Primary Run Button */}
+      <div className="floating-bar flex items-center gap-1.5 px-2 py-2">
+        {/* Compile / Run */}
         <button
           type="button"
           onClick={isRunning ? onPause : onRun}
           disabled={!canRun}
           className={cn(
-            'group relative flex items-center gap-2 rounded-lg px-4 py-2',
-            'text-sm font-semibold transition-all duration-200',
+            'group relative flex h-9 w-9 items-center justify-center rounded-xl',
+            'text-sm font-semibold transition-all duration-200 interactive-elevate',
             'btn-press',
             !canRun
               ? 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
@@ -188,37 +192,25 @@ function UnifiedActionBar({
           title={
             !canRun
               ? compilationError
-                ? 'Fix compilation errors to run'
+                ? 'Fix compile errors'
                 : 'Compiling…'
               : isRunning
                 ? 'Pause simulation'
                 : isPaused
                   ? 'Resume simulation'
                   : hasProgram
-                    ? 'Run simulation'
-                    : 'Compile and run'
+                    ? 'Run'
+                    : 'Compile & Run'
           }
         >
           {isCompiling ? (
-            <>
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              <span>Compiling...</span>
-            </>
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
           ) : isRunning ? (
-            <>
-              <Pause className="h-4 w-4" />
-              <span>Pause</span>
-            </>
+            <Pause className="icon-balanced h-4 w-4" />
           ) : isPaused ? (
-            <>
-              <Play className="h-4 w-4 fill-current" />
-              <span>Resume</span>
-            </>
+            <Play className="icon-balanced h-4 w-4 fill-current" />
           ) : (
-            <>
-              <Play className="h-4 w-4 fill-current" />
-              <span>{hasProgram ? 'Run Simulation' : 'Compile & Run'}</span>
-            </>
+            <Play className="icon-balanced h-4 w-4 fill-current" />
           )}
         </button>
 
@@ -228,7 +220,7 @@ function UnifiedActionBar({
           onClick={onStop}
           disabled={!canStop}
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-lg',
+            'flex h-9 w-9 items-center justify-center rounded-xl',
             'transition-all duration-200 btn-press',
             !canStop
               ? 'text-ide-text-subtle cursor-not-allowed'
@@ -236,7 +228,7 @@ function UnifiedActionBar({
           )}
           title="Stop simulation"
         >
-          <Square className="h-4 w-4" />
+          <Square className="icon-balanced h-4 w-4" />
         </button>
 
         {/* Theme Toggle */}
@@ -245,7 +237,7 @@ function UnifiedActionBar({
           onClick={toggleTheme}
           suppressHydrationWarning
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-lg',
+            'flex h-9 w-9 items-center justify-center rounded-xl',
             'transition-colors btn-press',
             'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text',
           )}
@@ -265,18 +257,18 @@ function UnifiedActionBar({
           }
         >
           {!isHydrated ? (
-            <Sun className="h-4 w-4" />
+            <Sun className="icon-balanced h-4 w-4" />
           ) : theme === 'light' ? (
-            <Moon className="h-4 w-4" />
+            <Moon className="icon-balanced h-4 w-4" />
           ) : (
-            <Sun className="h-4 w-4" />
+            <Sun className="icon-balanced h-4 w-4" />
           )}
         </button>
 
         <div className="mx-1 h-6 w-px bg-ide-border" />
 
         {/* Status Indicator */}
-        <div className="flex items-center gap-2 rounded-lg bg-ide-panel-bg/80 px-3 py-1.5">
+        <div className="flex min-w-[92px] items-center gap-2 rounded-xl bg-ide-panel-bg/80 px-2.5 py-1.5">
           <div
             className={cn(
               'h-2 w-2 rounded-full transition-colors duration-300',
@@ -291,7 +283,7 @@ function UnifiedActionBar({
                     : 'bg-ide-text-subtle',
             )}
           />
-          <span className="text-xs font-medium text-ide-text-muted">
+            <span className="text-[11px] font-semibold tracking-wide text-ide-text-muted">
             {isCompiling
               ? 'Compiling'
               : compilationError
@@ -775,14 +767,18 @@ function SimulationCanvasInner({
       const p = { x: e.clientX - rect.left, y: e.clientY - rect.top }
       const [tx, ty, zoom] = transform
       const flow = { x: (p.x - tx) / zoom, y: (p.y - ty) / zoom }
+      const snappedFlow = {
+        x: Math.round(flow.x / 12) * 12,
+        y: Math.round(flow.y / 12) * 12,
+      }
 
-      const id = addPart({ type: partType, position: { x: flow.x, y: flow.y } })
+      const id = addPart({ type: partType, position: { x: snappedFlow.x, y: snappedFlow.y } })
       setNodes((nds) => [
         ...nds,
         {
           id,
           type: 'wokwi',
-          position: flow,
+          position: snappedFlow,
           data: { 
             getCanvasRect, 
             partType,
@@ -810,6 +806,8 @@ function SimulationCanvasInner({
     setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 300 })
   }, [setViewport])
 
+  const zoomPercent = Math.max(10, Math.min(300, Math.round(transform[2] * 100)))
+
   return (
     <div
       ref={canvasRef}
@@ -821,10 +819,11 @@ function SimulationCanvasInner({
       onDragOver={handleDragOver}
     >
       <CanvasToolbar
-        onZoomIn={() => zoomIn({ duration: 200 })}
-        onZoomOut={() => zoomOut({ duration: 200 })}
-        onFitView={() => fitView({ duration: 300, padding: 0.2 })}
+        onZoomIn={() => zoomIn({ duration: 180 })}
+        onZoomOut={() => zoomOut({ duration: 180 })}
+        onFitView={() => fitView({ duration: 280, padding: 0.2 })}
         onResetView={handleResetView}
+        zoomPercent={zoomPercent}
       />
 
       <SelectionOverlay containerRef={canvasRef} />
@@ -844,14 +843,22 @@ function SimulationCanvasInner({
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         snapToGrid={true}
-        snapGrid={[20, 20]}
+        snapGrid={[12, 12]}
         fitView
-        minZoom={0.15}
-        maxZoom={2.5}
-        onlyRenderVisibleElements={true}
+        minZoom={0.1}
+        maxZoom={3}
+        onlyRenderVisibleElements={false}
         zoomOnDoubleClick={false}
         panOnScroll={true}
         zoomOnScroll={false}
+        panOnDrag={[1, 2]}
+        panActivationKeyCode="Space"
+        selectionOnDrag={true}
+        nodeDragThreshold={1}
+        connectionRadius={24}
+        selectNodesOnDrag={false}
+        elevateEdgesOnSelect={true}
+        elevateNodesOnSelect={true}
         preventScrolling={true}
         className="h-full w-full"
         style={{ cursor: 'inherit', background: 'transparent' }}
@@ -862,8 +869,6 @@ function SimulationCanvasInner({
         }}
         connectionLineStyle={{ stroke: 'rgb(var(--ide-accent))', strokeWidth: 2 }}
       >
-        <Controls className="!left-4 !bottom-20" />
-
         <WiringLayer
           containerRef={canvasRef}
           wirePointOverrides={wirePointOverrides ?? undefined}
@@ -1251,13 +1256,13 @@ function LeftPanel() {
               type="button"
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'flex h-full items-center gap-1.5 px-3 text-xs font-medium transition-colors',
+                'tab-pill flex h-full items-center gap-1.5 border-b-2 border-transparent px-3 text-xs font-medium transition-colors',
                 isActive
                   ? 'text-ide-accent border-b-2 border-ide-accent'
                   : 'text-ide-text-muted hover:text-ide-text'
               )}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="icon-balanced h-3.5 w-3.5" />
               <span>{tab.label}</span>
             </button>
           )
@@ -1292,7 +1297,7 @@ function ResizeHandle({
   return (
     <PanelResizeHandle
       className={cn(
-        'resize-handle group relative flex items-center justify-center',
+        'resize-handle group relative flex items-center justify-center transition-colors duration-200',
         direction === 'horizontal'
           ? 'w-1.5 cursor-col-resize'
           : 'h-1.5 cursor-row-resize',
@@ -1300,7 +1305,7 @@ function ResizeHandle({
       )}
     >
       <div className={cn(
-        'absolute rounded-full bg-ide-border opacity-0 group-hover:opacity-100 transition-opacity',
+        'absolute rounded-full bg-ide-border opacity-0 group-hover:opacity-100 transition-opacity duration-200',
         direction === 'horizontal'
           ? 'w-0.5 h-8'
           : 'h-0.5 w-8'
@@ -1608,24 +1613,24 @@ export default function Home() {
   return (
     <div className="relative h-screen overflow-hidden bg-ide-panel-bg text-ide-text">
       {/* Global Header - Compact Command Center (40px) */}
-      <header className="relative z-50 flex h-10 items-center justify-between border-b border-ide-border bg-ide-panel-surface px-3">
+      <header className="relative z-50 flex h-11 items-center justify-between border-b border-ide-border bg-ide-panel-surface/95 px-3 backdrop-blur-sm">
         {/* Left - Logo & Project */}
         <div className="flex items-center gap-3">
           {/* Collapse toggle */}
           <button
             type="button"
             onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+            className="btn-press flex h-7 w-7 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
             title={leftPanelCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {leftPanelCollapsed ? (
-              <PanelLeftOpen className="h-4 w-4" />
+              <PanelLeftOpen className="icon-balanced h-4 w-4" />
             ) : (
-              <PanelLeftClose className="h-4 w-4" />
+              <PanelLeftClose className="icon-balanced h-4 w-4" />
             )}
           </button>
 
-          <Link href="/workspace" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <Link href="/workspace" className="interactive-elevate flex items-center gap-2 rounded-lg px-1 hover:opacity-90">
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-ide-accent">
               <span className="text-xs font-bold text-white">F</span>
             </div>
@@ -1643,10 +1648,10 @@ export default function Home() {
 
           <Link
             href="/workspace"
-            className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+            className="btn-press flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
             title="Workspace"
           >
-            <FolderOpen className="h-3.5 w-3.5" />
+            <FolderOpen className="icon-balanced h-3.5 w-3.5" />
             <span className="hidden md:inline">Workspace</span>
           </Link>
         </div>
@@ -1659,27 +1664,27 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setShowFeaturedProjects(true)}
-            className="flex h-7 items-center gap-1.5 rounded-md bg-purple-500/10 px-3 text-xs font-medium text-purple-400 hover:bg-purple-500/20 transition-colors"
+            className="btn-press flex h-7 items-center gap-1.5 rounded-lg bg-purple-500/10 px-3 text-xs font-medium text-purple-400 hover:bg-purple-500/20"
             title="Load Featured Projects"
           >
-            <Sparkles className="h-3.5 w-3.5" />
+            <Sparkles className="icon-balanced h-3.5 w-3.5" />
             <span className="hidden sm:inline">Featured</span>
           </button>
           <button
             type="button"
             onClick={() => setShowPublishModal(true)}
-            className="flex h-7 items-center gap-1.5 rounded-md bg-ide-accent/10 px-3 text-xs font-medium text-ide-accent hover:bg-ide-accent/20 transition-colors"
+            className="btn-press flex h-7 items-center gap-1.5 rounded-lg bg-ide-accent/10 px-3 text-xs font-medium text-ide-accent hover:bg-ide-accent/20"
             title="Publish to Gallery"
           >
-            <Share2 className="h-3.5 w-3.5" />
+            <Share2 className="icon-balanced h-3.5 w-3.5" />
             <span className="hidden sm:inline">Publish</span>
           </button>
           <Link
             href="/settings"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+            className="btn-press flex h-7 w-7 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
             title="Settings"
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="icon-balanced h-4 w-4" />
           </Link>
         </div>
       </header>
@@ -1687,15 +1692,15 @@ export default function Home() {
       {/* Publish Modal */}
       {showPublishModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-ide-border bg-ide-panel-surface p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-2xl border border-ide-border bg-ide-panel-surface p-6 shadow-2xl animate-in">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold">Publish Project</h3>
               <button
                 type="button"
                 onClick={() => setShowPublishModal(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+                className="btn-press flex h-7 w-7 items-center justify-center rounded-lg text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
               >
-                <X className="h-4 w-4" />
+                <X className="icon-balanced h-4 w-4" />
               </button>
             </div>
             <div className="space-y-3">
@@ -1706,9 +1711,9 @@ export default function Home() {
                   console.log('Ready to publish to GitHub:', data)
                   // TODO: Implement GitHub OAuth and API integration
                 }}
-                className="flex w-full items-center gap-3 rounded-lg border border-ide-border bg-ide-panel-bg p-4 text-left transition-colors hover:border-ide-accent/50 hover:bg-ide-panel-hover"
+                className="interactive-elevate flex w-full items-center gap-3 rounded-xl border border-ide-border bg-ide-panel-bg p-4 text-left transition-colors hover:border-ide-accent/50 hover:bg-ide-panel-hover"
               >
-                <Github className="h-5 w-5 text-ide-accent" />
+                <Github className="icon-balanced h-5 w-5 text-ide-accent" />
                 <div>
                   <div className="text-sm font-medium">Publish to GitHub</div>
                   <div className="text-xs text-ide-text-muted">
@@ -1728,9 +1733,9 @@ export default function Home() {
                   a.click()
                   URL.revokeObjectURL(url)
                 }}
-                className="flex w-full items-center gap-3 rounded-lg border border-ide-border bg-ide-panel-bg p-4 text-left transition-colors hover:border-ide-accent/50 hover:bg-ide-panel-hover"
+                className="interactive-elevate flex w-full items-center gap-3 rounded-xl border border-ide-border bg-ide-panel-bg p-4 text-left transition-colors hover:border-ide-accent/50 hover:bg-ide-panel-hover"
               >
-                <Share2 className="h-5 w-5 text-ide-accent" />
+                <Share2 className="icon-balanced h-5 w-5 text-ide-accent" />
                 <div>
                   <div className="text-sm font-medium">Download Project</div>
                   <div className="text-xs text-ide-text-muted">
@@ -1817,10 +1822,10 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setBottomPanelCollapsed(false)}
-                      className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-lg bg-ide-panel-surface/90 border border-ide-border px-3 py-1.5 text-xs text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover transition-colors backdrop-blur-sm"
+                      className="btn-press absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-ide-border bg-ide-panel-surface/90 px-3 py-1.5 text-xs text-ide-text-muted backdrop-blur-sm hover:bg-ide-panel-hover hover:text-ide-text"
                       title="Show Code Editor"
                     >
-                      <ChevronUp className="h-3.5 w-3.5" />
+                      <ChevronUp className="icon-balanced h-3.5 w-3.5" />
                       <span>Show Editor</span>
                     </button>
                   )}
@@ -1840,10 +1845,10 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => setBottomPanelCollapsed(true)}
-                          className="flex h-5 w-5 items-center justify-center rounded text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors"
+                          className="btn-press flex h-5 w-5 items-center justify-center rounded text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text"
                           title="Collapse Code Editor"
                         >
-                          <ChevronDown className="h-3.5 w-3.5" />
+                          <ChevronDown className="icon-balanced h-3.5 w-3.5" />
                         </button>
                       </div>
                       <div className="flex-1 min-h-0">

@@ -21,15 +21,15 @@ export default function StatusBadge({
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-2 rounded-md',
-        'bg-ide-panel-bg border border-ide-border',
-        'px-2.5 py-1',
-        'transition-all duration-200',
+        'inline-flex items-center gap-2.5 rounded-lg',
+        'bg-ide-panel-bg/80 border border-ide-border',
+        'px-3 py-1.5 shadow-ide-sm backdrop-blur-sm',
+        'interactive-elevate',
         className,
       )}
     >
       {/* Device Icon */}
-      <Cpu className="h-3.5 w-3.5 text-ide-text-muted" aria-hidden={true} />
+      <Cpu className="icon-balanced h-3.5 w-3.5 text-ide-text-muted" aria-hidden={true} />
 
       {/* Device Name */}
       <span className="text-xs font-medium text-ide-text">{deviceName}</span>
@@ -41,12 +41,12 @@ export default function StatusBadge({
       <div className="flex items-center gap-1.5">
         {isConnected ? (
           <>
-            <Wifi className="h-3 w-3 text-ide-success" aria-hidden={true} />
+            <Wifi className="icon-balanced h-3 w-3 text-ide-success" aria-hidden={true} />
             <span className="text-xs font-medium text-ide-success">Connected</span>
           </>
         ) : (
           <>
-            <WifiOff className="h-3 w-3 text-ide-text-subtle" aria-hidden={true} />
+            <WifiOff className="icon-balanced h-3 w-3 text-ide-text-subtle" aria-hidden={true} />
             <span className="text-xs font-medium text-ide-text-subtle">Disconnected</span>
           </>
         )}

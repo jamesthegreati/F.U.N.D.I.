@@ -68,6 +68,13 @@
   --fundi-shadow-panel-heavy: 0 8px 32px rgba(0, 0, 0, 0.5);
   --fundi-shadow-bar: 0 8px 32px rgba(0,  0, 0, 0.5);
   --fundi-shadow-controls: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  /* Motion tokens (iOS-inspired easing) */
+  --fundi-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fundi-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --fundi-duration-fast: 160ms;
+  --fundi-duration-normal: 240ms;
+  --fundi-duration-slow: 360ms;
 }
 
 html {
@@ -124,6 +131,8 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Remove body::before pattern - using canvas grid instead */
@@ -210,10 +219,39 @@ body {
 
 /* Button Press Effect */
 .btn-press {
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition: transform var(--fundi-duration-fast) var(--fundi-ease-standard), box-shadow var(--fundi-duration-fast) var(--fundi-ease-standard), background-color var(--fundi-duration-fast) var(--fundi-ease-standard), color var(--fundi-duration-fast) var(--fundi-ease-standard), border-color var(--fundi-duration-fast) var(--fundi-ease-standard);
+}
+.btn-press:hover {
+  transform: translateY(-1px);
 }
 .btn-press:active {
-  transform: scale(0.97);
+  transform: translateY(0) scale(0.98);
+}
+
+.interactive-elevate {
+  transition: transform var(--fundi-duration-normal) var(--fundi-ease-standard), box-shadow var(--fundi-duration-normal) var(--fundi-ease-standard), background-color var(--fundi-duration-fast) var(--fundi-ease-standard), border-color var(--fundi-duration-fast) var(--fundi-ease-standard), color var(--fundi-duration-fast) var(--fundi-ease-standard);
+}
+
+.interactive-elevate:hover {
+  transform: translateY(-1px);
+}
+
+.interactive-elevate:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.icon-balanced {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.tab-pill {
+  border-radius: 10px;
+  transition: transform var(--fundi-duration-fast) var(--fundi-ease-standard), background-color var(--fundi-duration-fast) var(--fundi-ease-standard), color var(--fundi-duration-fast) var(--fundi-ease-standard), border-color var(--fundi-duration-fast) var(--fundi-ease-standard);
+}
+
+.tab-pill:hover {
+  transform: translateY(-1px);
 }
 
 /* Accent Glow for Active States */
@@ -445,4 +483,21 @@ html.theme-light .fundi-monaco .monaco-editor .view-overlays .fundi-active-line 
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .btn-press:hover,
+  .interactive-elevate:hover,
+  .tab-pill:hover {
+    transform: none !important;
+  }
 }

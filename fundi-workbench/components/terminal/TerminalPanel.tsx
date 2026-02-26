@@ -383,7 +383,7 @@ export function TerminalPanel({
       <div
         role="tablist"
         aria-label="Right panel"
-        className="scrollbar-hide flex h-9 shrink-0 items-center gap-1 border-b border-ide-border bg-ide-panel-surface px-1.5 overflow-x-auto"
+        className="scrollbar-hide flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-ide-border bg-ide-panel-surface px-2"
       >
         <button
           type="button"
@@ -391,13 +391,13 @@ export function TerminalPanel({
           aria-selected={activeTab === 'serial'}
           onClick={() => activateTab('serial')}
           className={cn(
-            'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors whitespace-nowrap',
+            'tab-pill flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium',
             activeTab === 'serial'
-              ? 'bg-ide-success/10 text-ide-success'
-              : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+              ? 'border-ide-success/30 bg-ide-success/10 text-ide-success'
+              : 'border-transparent text-ide-text-muted hover:border-ide-border-subtle hover:bg-ide-panel-hover hover:text-ide-text'
           )}
         >
-          <Terminal className="h-3.5 w-3.5" />
+          <Terminal className="icon-balanced h-3.5 w-3.5" />
           <span>Serial</span>
           {isSimulationRunning && (
             <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-ide-success" />
@@ -409,13 +409,13 @@ export function TerminalPanel({
           aria-selected={activeTab === 'upload'}
           onClick={() => activateTab('upload')}
           className={cn(
-            'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors whitespace-nowrap',
+            'tab-pill flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium',
             activeTab === 'upload'
-              ? 'bg-ide-success/10 text-ide-success'
-              : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+              ? 'border-ide-success/30 bg-ide-success/10 text-ide-success'
+              : 'border-transparent text-ide-text-muted hover:border-ide-border-subtle hover:bg-ide-panel-hover hover:text-ide-text'
           )}
         >
-          <Upload className="h-3.5 w-3.5" />
+          <Upload className="icon-balanced h-3.5 w-3.5" />
           <span>Upload</span>
         </button>
         <button
@@ -424,13 +424,13 @@ export function TerminalPanel({
           aria-selected={activeTab === 'assistant'}
           onClick={() => activateTab('assistant')}
           className={cn(
-            'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors whitespace-nowrap',
+            'tab-pill flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium',
             activeTab === 'assistant'
-              ? 'bg-ide-accent/10 text-ide-accent'
-              : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+              ? 'border-ide-accent/30 bg-ide-accent/10 text-ide-accent'
+              : 'border-transparent text-ide-text-muted hover:border-ide-border-subtle hover:bg-ide-panel-hover hover:text-ide-text'
           )}
         >
-          <Bot className="h-3.5 w-3.5" />
+          <Bot className="icon-balanced h-3.5 w-3.5" />
           <span>AI Assistant ✨</span>
         </button>
         <button
@@ -439,13 +439,13 @@ export function TerminalPanel({
           aria-selected={activeTab === 'logic'}
           onClick={() => activateTab('logic')}
           className={cn(
-            'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors whitespace-nowrap',
+            'tab-pill flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium',
             activeTab === 'logic'
-              ? 'bg-ide-warning/10 text-ide-warning'
-              : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+              ? 'border-ide-warning/30 bg-ide-warning/10 text-ide-warning'
+              : 'border-transparent text-ide-text-muted hover:border-ide-border-subtle hover:bg-ide-panel-hover hover:text-ide-text'
           )}
         >
-          <Activity className="h-3.5 w-3.5" />
+          <Activity className="icon-balanced h-3.5 w-3.5" />
           <span>Logic Analyzer</span>
         </button>
         {isESP32 && (
@@ -455,13 +455,13 @@ export function TerminalPanel({
             aria-selected={activeTab === 'network'}
             onClick={() => activateTab('network')}
             className={cn(
-              'flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors whitespace-nowrap',
+              'tab-pill flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium',
               activeTab === 'network'
-                ? 'bg-ide-info/10 text-ide-info'
-                : 'text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text'
+                ? 'border-ide-info/30 bg-ide-info/10 text-ide-info'
+                : 'border-transparent text-ide-text-muted hover:border-ide-border-subtle hover:bg-ide-panel-hover hover:text-ide-text'
             )}
           >
-            <Wifi className="h-3.5 w-3.5" />
+            <Wifi className="icon-balanced h-3.5 w-3.5" />
             <span>Network</span>
           </button>
         )}

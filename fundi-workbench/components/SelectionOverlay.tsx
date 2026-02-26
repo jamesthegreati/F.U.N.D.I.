@@ -150,7 +150,7 @@ function SelectionOverlay({ containerRef }: SelectionOverlayProps) {
           width: box.width,
           height: box.height,
         }}
-        className="rounded border border-electric/70 bg-electric/10 ring-1 ring-electric/20"
+        className="rounded-lg border border-ide-accent/60 bg-ide-accent/10 ring-1 ring-ide-accent/25 backdrop-blur-[1px]"
       />
     </div>
   );

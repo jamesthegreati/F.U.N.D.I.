@@ -31,7 +31,7 @@ export default function ControlDeck({
       className="absolute left-1/2 top-8 z-40 -translate-x-1/2"
       style={{ pointerEvents: 'auto' }}
     >
-      <div className="glass-panel-heavy rounded-2xl px-6 py-4 shadow-[0_0_40px_rgba(0,0,0,0.4)] border-alchemist">
+      <div className="glass-panel-heavy rounded-2xl border-alchemist px-6 py-4 shadow-[0_0_40px_rgba(0,0,0,0.4)] animate-in">
         <div className="flex items-center gap-6">
           {/* Compilation Status */}
           <div className="flex items-center gap-3 border-r border-brass/20 pr-6">
@@ -74,7 +74,7 @@ export default function ControlDeck({
               className={cn(
                 'group relative flex items-center gap-3 rounded-xl border-2 px-6 py-3',
                 'font-heading text-xs font-bold uppercase tracking-[0.2em]',
-                'transition-all duration-300 overflow-hidden',
+                'transition-all duration-300 overflow-hidden interactive-elevate',
                 isCompiling
                   ? 'border-brass-dim/20 bg-panel/40 text-brass-dim/40 cursor-not-allowed'
                   : 'border-brass/40 bg-void hover:border-brass hover:text-brass text-brass-dim',
@@ -84,7 +84,7 @@ export default function ControlDeck({
             >
               <div className="absolute inset-0 bg-brass/5 opacity-0 group-hover:opacity-100 transition-opacity" />
               <Play className={cn(
-                "h-4 w-4 transition-transform duration-300",
+                "icon-balanced h-4 w-4 transition-transform duration-300",
                 !isCompiling && "group-hover:scale-110 group-hover:text-brass"
               )} aria-hidden={true} fill="currentColor" />
               <span>Manifest</span>
@@ -97,7 +97,7 @@ export default function ControlDeck({
                 onClick={isRunning ? onPause : () => {}}
                 disabled={!hasProgram}
                 className={cn(
-                  'group relative flex h-10 w-10 items-center justify-center rounded-lg transition-all duration-300',
+                  'group relative flex h-10 w-10 items-center justify-center rounded-lg transition-all duration-300 btn-press',
                   !hasProgram
                     ? 'text-brass-dim/20 cursor-not-allowed'
                     : isRunning
@@ -106,7 +106,7 @@ export default function ControlDeck({
                 )}
                 title={!hasProgram ? 'Compile first' : isRunning ? 'Running' : 'Start simulation'}
               >
-                <Play className="h-4 w-4" aria-hidden={true} fill={isRunning ? 'currentColor' : 'none'} />
+                <Play className="icon-balanced h-4 w-4" aria-hidden={true} fill={isRunning ? 'currentColor' : 'none'} />
               </button>
 
               <button
@@ -114,14 +114,14 @@ export default function ControlDeck({
                 onClick={onStop}
                 disabled={!hasProgram}
                 className={cn(
-                  'group relative flex h-10 w-10 items-center justify-center rounded-lg transition-all duration-300',
+                  'group relative flex h-10 w-10 items-center justify-center rounded-lg transition-all duration-300 btn-press',
                   !hasProgram
                     ? 'text-brass-dim/20 cursor-not-allowed'
                     : 'text-brass-dim hover:bg-error/10 hover:text-error'
                 )}
                 title="Stop simulation"
               >
-                <Square className="h-4 w-4" aria-hidden={true} fill="none" />
+                <Square className="icon-balanced h-4 w-4" aria-hidden={true} fill="none" />
               </button>
             </div>
           </div>

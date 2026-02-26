@@ -33,7 +33,7 @@ function WireToolbar({ position }: WireToolbarProps) {
 
     return (
         <div
-            className="absolute z-50 flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/95 p-1.5 shadow-xl backdrop-blur-sm"
+            className="absolute z-50 flex items-center gap-1.5 rounded-xl border border-ide-border bg-ide-panel-surface/95 p-2 shadow-ide-lg backdrop-blur-md animate-in"
             style={{
                 left: position.x,
                 top: position.y,
@@ -47,9 +47,9 @@ function WireToolbar({ position }: WireToolbarProps) {
                         key={color}
                         type="button"
                         onClick={() => handleColorClick(color)}
-                        className={`h-5 w-5 rounded border-2 transition-transform hover:scale-110 ${selectedWire.color === color
-                                ? 'border-white'
-                                : 'border-transparent hover:border-slate-500'
+                        className={`h-5 w-5 rounded-full border-2 transition-all duration-200 ${selectedWire.color === color
+                                ? 'border-ide-text scale-110'
+                                : 'border-transparent hover:border-ide-border-focus hover:scale-105'
                             }`}
                         style={{ backgroundColor: color }}
                         title={`Change color to ${color}`}
@@ -58,26 +58,26 @@ function WireToolbar({ position }: WireToolbarProps) {
             </div>
 
             {/* Divider */}
-            <div className="mx-1 h-5 w-px bg-slate-700" />
+            <div className="mx-1 h-5 w-px bg-ide-border" />
 
             {/* Delete button */}
             <button
                 type="button"
                 onClick={handleDelete}
-                className="flex h-6 w-6 items-center justify-center rounded text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300"
+                className="btn-press flex h-7 w-7 items-center justify-center rounded-lg text-ide-error transition-colors hover:bg-ide-error/20"
                 title="Delete wire"
             >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="icon-balanced h-4 w-4" />
             </button>
 
             {/* Close button */}
             <button
                 type="button"
                 onClick={handleClose}
-                className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-700 hover:text-slate-200"
+                className="btn-press flex h-7 w-7 items-center justify-center rounded-lg text-ide-text-muted transition-colors hover:bg-ide-panel-hover hover:text-ide-text"
                 title="Close"
             >
-                <X className="h-4 w-4" />
+                <X className="icon-balanced h-4 w-4" />
             </button>
         </div>
     );

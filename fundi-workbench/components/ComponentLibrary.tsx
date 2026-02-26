@@ -141,7 +141,7 @@ function WokwiElementPreview({
   if (effectiveSvg) {
     return (
       <div 
-        className="relative h-10 w-10 flex items-center justify-center overflow-hidden [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:h-auto"
+        className="relative flex h-10 w-10 items-center justify-center overflow-hidden [&_svg]:h-auto [&_svg]:max-h-full [&_svg]:max-w-full [&_svg]:w-auto"
         dangerouslySetInnerHTML={{ __html: effectiveSvg }}
         style={{
           transform: 'scale(0.6)',
@@ -153,11 +153,11 @@ function WokwiElementPreview({
 
   // Render the actual element (for elements that don't expose SVG or while loading)
   return (
-    <div className="relative h-10 w-10 flex items-center justify-center overflow-hidden">
+    <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden">
       {/* Wokwi element container - scaled down */}
       <div
         ref={containerRef}
-        className="transition-all group-hover:scale-110"
+        className="transition-transform duration-300 ease-out group-hover:scale-110"
         style={{
           transform: 'scale(0.5)',
           transformOrigin: 'center',
@@ -165,7 +165,7 @@ function WokwiElementPreview({
       />
       {/* Fallback icon if element fails to load */}
       {usesFallback && (
-        <FallbackIcon className="absolute h-8 w-8 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
+        <FallbackIcon className="icon-balanced absolute h-7 w-7 text-ide-text-muted transition-colors group-hover:text-ide-accent" />
       )}
     </div>
   );
@@ -250,24 +250,24 @@ function ComponentLibrary() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Category Tabs - Horizontal Scrollable */}
-      <div className="shrink-0 border-b border-ide-border pb-3 mb-3">
+      <div className="mb-3 shrink-0 border-b border-ide-border pb-3">
         <div className="relative flex items-center">
           {/* Left scroll arrow */}
           {canScrollLeft && (
             <button
               type="button"
               onClick={() => scroll('left')}
-              className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-ide-panel-bg via-ide-panel-bg to-transparent"
+              className="absolute left-0 z-10 flex h-full items-center rounded-l-lg bg-gradient-to-r from-ide-panel-bg via-ide-panel-bg to-transparent px-1"
               aria-label="Scroll left"
             >
-              <ChevronLeft className="h-4 w-4 text-ide-text-muted hover:text-ide-accent transition-colors" />
+              <ChevronLeft className="icon-balanced h-4 w-4 text-ide-text-muted transition-colors hover:text-ide-accent" />
             </button>
           )}
           
           {/* Scrollable tabs container */}
           <div
             ref={scrollContainerRef}
-            className="flex gap-1 overflow-x-auto scrollbar-hide scroll-smooth snap-x snap-mandatory px-1"
+            className="scrollbar-hide flex snap-x snap-mandatory gap-1 overflow-x-auto scroll-smooth px-1"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {categories.map((cat) => {
@@ -280,15 +280,15 @@ function ComponentLibrary() {
                   type="button"
                   onClick={() => setActive(cat.key)}
                   className={cn(
-                    'snap-start shrink-0 min-w-[60px] flex flex-col items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all',
+                    'tab-pill snap-start flex min-w-[64px] shrink-0 flex-col items-center gap-1.5 border px-2.5 py-2 text-xs font-medium',
                     isActive
-                      ? 'bg-ide-accent/20 text-ide-accent border-b-2 border-ide-accent'
-                      : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover'
+                      ? 'border-ide-accent/50 bg-ide-accent/20 text-ide-accent'
+                      : 'border-transparent text-ide-text-muted hover:border-ide-border-subtle hover:bg-ide-panel-hover hover:text-ide-text'
                   )}
                   title={cat.title}
                 >
-                  <Icon className="h-4 w-4" />
-                  <span className="text-[10px] leading-tight">{cat.title}</span>
+                  <Icon className="icon-balanced h-4 w-4" />
+                  <span className="text-[10px] leading-none">{cat.title}</span>
                 </button>
               );
             })}
@@ -299,10 +299,10 @@ function ComponentLibrary() {
             <button
               type="button"
               onClick={() => scroll('right')}
-              className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-ide-panel-bg via-ide-panel-bg to-transparent"
+              className="absolute right-0 z-10 flex h-full items-center rounded-r-lg bg-gradient-to-l from-ide-panel-bg via-ide-panel-bg to-transparent px-1"
               aria-label="Scroll right"
             >
-              <ChevronRight className="h-4 w-4 text-ide-text-muted hover:text-ide-accent transition-colors" />
+              <ChevronRight className="icon-balanced h-4 w-4 text-ide-text-muted transition-colors hover:text-ide-accent" />
             </button>
           )}
         </div>
@@ -315,7 +315,7 @@ function ComponentLibrary() {
             No components in this category yet.
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-2">
             {activeCategory.items.map((item) => {
               const wokwiConfig = WOKWI_PARTS[item.id];
               const Icon = activeCategory.icon;
@@ -341,11 +341,11 @@ function ComponentLibrary() {
                   }}
                   className={cn(
                     'group relative flex cursor-grab flex-col items-center justify-center',
-                    'rounded-lg border p-2 transition-all duration-200',
+                    'interactive-elevate rounded-xl border p-2.5 transition-all duration-200',
                     'bg-ide-panel-surface border-ide-border',
                     'hover:border-ide-accent/50 hover:bg-ide-panel-hover',
                     'focus:outline-none focus:ring-2 focus:ring-ide-accent focus:ring-offset-2 focus:ring-offset-ide-panel-bg',
-                    'active:cursor-grabbing active:scale-95'
+                    'active:cursor-grabbing active:scale-95 active:translate-y-0'
                   )}
                   title={item.description ?? item.name}
                 >

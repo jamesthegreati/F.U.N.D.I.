@@ -24,7 +24,7 @@ interface WiringLayerProps {
 
 type Mode = 'idle' | 'creating' | 'dragging-segment';
 
-const HIT_STROKE = 15;
+const HIT_STROKE = 18;
 
 // Wokwi-like keyboard palette (0-9) + Copper default.
 const WOKWI_COLOR_BY_DIGIT: Record<string, string> = {
@@ -60,7 +60,7 @@ function getRelativePoint(e: PointerEvent, container: HTMLElement): WirePoint {
   return clampToContainer({ x: e.clientX - rect.left, y: e.clientY - rect.top }, rect);
 }
 
-function isEventInsideContainer(e: PointerEvent, container: HTMLElement): boolean {
+function isEventInsideContainer(e: MouseEvent | PointerEvent, container: HTMLElement): boolean {
   const t = e.target as Node | null;
   if (!t) return false;
   return container.contains(t);
@@ -104,6 +104,17 @@ function normalizePointsForStore(points: WirePoint[]): WirePoint[] | undefined {
   return inner.length ? inner : undefined;
 }
 
+function getSegmentMidpoints(points: WirePoint[]): WirePoint[] {
+  if (points.length < 2) return [];
+  const mids: WirePoint[] = [];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    mids.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  }
+  return mids;
+}
+
 function getGridSizeForZoom(zoom: number): number {
   // Simple heuristic: coarser grid when zoomed out.
   return zoom < 0.75 ? 20 : 10;
@@ -126,6 +137,20 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
   // Using the store's nodes array reference is enough to invalidate memos during drags.
   const flowNodes = useStore((s) => (s as unknown as { nodes: unknown[] }).nodes);
   const gridSize = useMemo(() => getGridSizeForZoom(zoom), [zoom]);
+
+  const renderMetrics = useMemo(() => {
+    const visualScale = Math.min(1.75, Math.max(0.9, Math.sqrt(Math.max(0.1, zoom))));
+    return {
+      baseStroke: 1.8 * visualScale,
+      selectedStroke: 3.0 * visualScale,
+      glowExtra: 2.8 * visualScale,
+      hoverExtra: 1.2 * visualScale,
+      endpointRadius: Math.min(5, Math.max(2.2, 2.6 * visualScale)),
+      handleRadius: Math.min(4.5, Math.max(2.4, 2.75 * visualScale)),
+      hitStroke: Math.min(28, Math.max(16, HIT_STROKE * (0.88 + visualScale * 0.32))),
+      dashPattern: visualScale > 1.2 ? '7 5' : '6 6',
+    };
+  }, [zoom]);
 
   const modeRef = useRef<Mode>('idle');
 
@@ -232,6 +257,8 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
   );
 
   const wireGeometry = useMemo(() => {
+    const routingGrid = Math.max(12, gridSize);
+
     const base = connections
       .map((c) => {
         const start = getPinPoint(c.from);
@@ -246,9 +273,9 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           : c.points ?? [];
 
         const points = calculateOrthogonalPoints(start, end, waypoints, {
-          firstLeg: 'horizontal',
+          firstLeg: 'auto',
           obstacles: componentBounds,
-          gridSize,
+          gridSize: routingGrid,
         });
         return { id: c.id, color: c.color, points };
       })
@@ -257,14 +284,14 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     // Prevent PARALLEL overlaps between different wires (perpendicular crossings OK).
     const adjusted = avoidParallelOverlaps(
       base.map((w) => ({ id: w.id, points: w.points })),
-      { gridSize }
+      { gridSize: routingGrid, maxLanes: 10 }
     );
 
     return base.map((w) => {
       const points = adjusted.get(w.id) ?? w.points;
       return { ...w, points, d: pointsToPathD(points) };
     });
-  }, [connections, getPinPoint, wirePointOverrides, gridSize, pinCenters, componentBounds]);
+  }, [connections, getPinPoint, wirePointOverrides, gridSize, componentBounds]);
 
   const selectedWire = useMemo(() => {
     if (!selectedId) return null;
@@ -283,6 +310,15 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    const onContextMenuCapture = (e: MouseEvent) => {
+      if (!isEventInsideContainer(e, container)) return;
+      if (modeRef.current !== 'creating') return;
+      e.preventDefault();
+      creatingRef.current = null;
+      modeRef.current = 'idle';
+      forceTick((n) => n + 1);
+    };
 
     const onPointerMoveCapture = (e: PointerEvent) => {
       if (!container) return;
@@ -431,6 +467,31 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
         if (selectedId) setSelectedId(null);
       }
 
+      if (e.key === 'Backspace' && modeRef.current === 'creating' && creatingRef.current) {
+        e.preventDefault();
+        const nextWaypoints = creatingRef.current.waypoints.slice(0, -1);
+        creatingRef.current = {
+          ...creatingRef.current,
+          waypoints: nextWaypoints,
+        };
+        forceTick((n) => n + 1);
+        return;
+      }
+
+      if (e.key === 'Enter' && modeRef.current === 'creating' && creatingRef.current?.hoveredPin) {
+        e.preventDefault();
+        addConnection({
+          from: creatingRef.current.from,
+          to: creatingRef.current.hoveredPin,
+          color: creatingRef.current.color,
+          points: creatingRef.current.waypoints.length ? creatingRef.current.waypoints : undefined,
+        });
+        creatingRef.current = null;
+        modeRef.current = 'idle';
+        forceTick((n) => n + 1);
+        return;
+      }
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         removeConnection(selectedId);
         setSelectedId(null);
@@ -450,27 +511,29 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     window.addEventListener('pointerdown', onPointerDownCapture, { capture: true });
     window.addEventListener('pointermove', onPointerMoveCapture, { capture: true });
     window.addEventListener('pointerup', onPointerUpCapture, { capture: true });
+    window.addEventListener('contextmenu', onContextMenuCapture, { capture: true });
     window.addEventListener('keydown', onKeyDown);
 
     return () => {
       window.removeEventListener('pointerdown', onPointerDownCapture, true);
       window.removeEventListener('pointermove', onPointerMoveCapture, true);
       window.removeEventListener('pointerup', onPointerUpCapture, true);
+      window.removeEventListener('contextmenu', onContextMenuCapture, true);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [addConnection, allocateNextWireColor, containerRef, gridSize, removeConnection, selectedId, updateWire, updateWireColor]);
+  }, [addConnection, allocateNextWireColor, containerRef, gridSize, removeConnection, selectedId, updateWire, updateWireColor, renderMetrics]);
 
   const creating = creatingRef.current;
   const preview = useMemo(() => {
     if (!creating) return null;
     const end = creating.hoveredPoint ?? creating.cursor;
     const points = calculateOrthogonalPoints(creating.fromPoint, end, creating.waypoints, {
-      firstLeg: 'vertical',
+      firstLeg: 'auto',
       obstacles: componentBounds,
       gridSize,
     });
     return { d: pointsToPathD(points), color: creating.color };
-  }, [creating, forceTick, componentBounds, gridSize]);
+  }, [creating, componentBounds, gridSize]);
 
   if (dimensions.width === 0 || dimensions.height === 0) return null;
 
@@ -501,8 +564,14 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           {wireGeometry.map((w) => {
             const isSelected = selectedId === w.id;
             const isHovered = hoveredId === w.id;
-            const strokeWidth = isSelected ? 3.5 : 2;
+            const isDraggingThis =
+              modeRef.current === 'dragging-segment' && segmentDragRef.current?.wireId === w.id;
+            const strokeWidth = isSelected ? renderMetrics.selectedStroke : renderMetrics.baseStroke;
             const displayColor = isSelected ? '#00F0FF' : w.color; // Electric cyan when selected
+            const segmentMids = isSelected ? getSegmentMidpoints(w.points) : [];
+            const startPoint = w.points[0];
+            const endPoint = w.points[w.points.length - 1];
+            const endpointRadius = renderMetrics.endpointRadius + (isSelected ? 0.75 : isHovered ? 0.35 : 0);
 
             return (
               <g key={w.id}>
@@ -513,8 +582,8 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                   data-wire-id={w.id}
                   fill="none"
                   stroke="transparent"
-                  strokeWidth={HIT_STROKE}
-                  style={{ cursor: isSelected ? 'grab' : 'pointer', pointerEvents: 'stroke' }}
+                  strokeWidth={renderMetrics.hitStroke}
+                  style={{ cursor: isDraggingThis ? 'grabbing' : isSelected ? 'grab' : 'pointer', pointerEvents: 'stroke' }}
                   onPointerEnter={() => setHoveredId(w.id)}
                   onPointerLeave={() => setHoveredId((prev) => (prev === w.id ? null : prev))}
                   onPointerDown={(e) => {
@@ -523,14 +592,13 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
 
                     setSelectedId(w.id);
 
-                    // Segment dragging only when selected.
+                    // Segment dragging starts immediately on first click for precision editing.
                     const container = containerRef.current;
                     if (!container) return;
-                    if (selectedId !== w.id) return;
 
                     const rect = container.getBoundingClientRect();
                     const click: WirePoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-                    const segIdx = findSegmentIndex(w.points, click, HIT_STROKE / 2);
+                    const segIdx = findSegmentIndex(w.points, click, renderMetrics.hitStroke / 2);
                     if (segIdx === null) return;
 
                     segmentDragRef.current = {
@@ -556,7 +624,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                     d={w.d}
                     fill="none"
                     stroke="#00F0FF"
-                    strokeWidth={strokeWidth + 3}
+                    strokeWidth={strokeWidth + renderMetrics.glowExtra}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{
@@ -573,10 +641,10 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                     d={w.d}
                     fill="none"
                     stroke={isSelected ? '#00F0FF' : '#D4AF37'}
-                    strokeWidth={strokeWidth + 1.25}
+                    strokeWidth={strokeWidth + renderMetrics.hoverExtra}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    strokeDasharray="6 6"
+                    strokeDasharray={renderMetrics.dashPattern}
                     style={{
                       pointerEvents: 'none',
                       opacity: 0.4,
@@ -598,23 +666,81 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                     transition: 'all 0.2s ease',
                   }}
                 />
+
+                {/* Endpoint visibility dots for close-up precision */}
+                <circle
+                  cx={startPoint.x}
+                  cy={startPoint.y}
+                  r={endpointRadius}
+                  fill={displayColor}
+                  stroke="rgba(10, 10, 10, 0.95)"
+                  strokeWidth={1}
+                  style={{ pointerEvents: 'none', opacity: 0.95 }}
+                />
+                <circle
+                  cx={endPoint.x}
+                  cy={endPoint.y}
+                  r={endpointRadius}
+                  fill={displayColor}
+                  stroke="rgba(10, 10, 10, 0.95)"
+                  strokeWidth={1}
+                  style={{ pointerEvents: 'none', opacity: 0.95 }}
+                />
+
+                {/* Segment handles for selected wires */}
+                {segmentMids.map((mid, idx) => (
+                  <circle
+                    key={`${w.id}-mid-${idx}`}
+                    cx={mid.x}
+                    cy={mid.y}
+                    r={renderMetrics.handleRadius}
+                    fill={isDraggingThis ? '#00F0FF' : 'rgba(0, 240, 255, 0.92)'}
+                    stroke="rgba(13, 13, 13, 0.9)"
+                    strokeWidth={1}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                ))}
               </g>
             );
           })}
 
           {/* Preview (ghost) wire */}
           {preview && (
-            <path
-              d={preview.d}
-              fill="none"
-              stroke={preview.color}
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="6 6"
-              opacity={0.9}
-              style={{ pointerEvents: 'none' }}
-            />
+            <g>
+              <path
+                d={preview.d}
+                fill="none"
+                stroke={preview.color}
+                strokeWidth={renderMetrics.baseStroke + 0.4}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={renderMetrics.dashPattern}
+                opacity={0.9}
+                style={{ pointerEvents: 'none' }}
+              />
+              {creating?.fromPoint && (
+                <circle
+                  cx={creating.fromPoint.x}
+                  cy={creating.fromPoint.y}
+                  r={renderMetrics.endpointRadius}
+                  fill={preview.color}
+                  opacity={0.95}
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
+              {creating?.hoveredPoint && (
+                <circle
+                  cx={creating.hoveredPoint.x}
+                  cy={creating.hoveredPoint.y}
+                  r={renderMetrics.endpointRadius + 1}
+                  fill="none"
+                  stroke={preview.color}
+                  strokeWidth={2}
+                  opacity={0.9}
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
+            </g>
           )}
         </g>
       </svg>
@@ -623,7 +749,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
       {selectedWire && selectedMidpoint && (
         <div
           data-wire-toolbar="true"
-          className="absolute z-30 flex items-center gap-1 glass-panel rounded-lg p-2 shadow-2xl"
+          className="absolute z-30 flex items-center gap-1 rounded-lg p-2 glass-panel shadow-2xl"
           style={{
             left: selectedMidpoint.x,
             top: selectedMidpoint.y,
@@ -642,7 +768,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                 type="button"
                 onClick={() => updateWireColor(selectedWire.id, c.color)}
                 className={
-                  'h-5 w-5 rounded border-2 transition-all ' +
+                  'h-5 w-5 rounded-full border-2 transition-all ' +
                   (selectedWire.color.toLowerCase() === c.color.toLowerCase()
                     ? 'border-electric scale-110 shadow-lg shadow-electric/50'
                     : 'border-transparent hover:border-brass hover:scale-105')
@@ -662,10 +788,26 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
               setSelectedId(null);
             }}
             className="rounded px-2 py-1 font-mono text-[11px] font-medium text-error hover:bg-error/15 transition-colors"
-            title="Delete wire (also: Delete key or double-click)"
+            title="Delete wire (Delete / Backspace / double-click)"
           >
             Delete
           </button>
+        </div>
+      )}
+
+      {/* Wire creation helper */}
+      {creating && (
+        <div
+          className="pointer-events-none absolute z-40"
+          style={{
+            left: creating.cursor.x,
+            top: creating.cursor.y,
+            transform: 'translate(12px, -8px)',
+          }}
+        >
+          <div className="rounded-md border border-ide-border bg-ide-panel-bg/95 px-2 py-1 text-[10px] font-medium text-ide-text-muted backdrop-blur-sm">
+            Click: waypoint · Enter/click pin: finish · Backspace: undo · Esc/right-click: cancel
+          </div>
         </div>
       )}
 

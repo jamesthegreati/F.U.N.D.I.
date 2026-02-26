@@ -10,7 +10,7 @@
 
 import type { WirePoint } from '@/types/wire';
 
-type FirstLeg = 'horizontal' | 'vertical';
+type FirstLeg = 'horizontal' | 'vertical' | 'auto';
 
 /**
  * Bounding box of a component for obstacle avoidance
@@ -587,11 +587,45 @@ export function calculateOrthogonalPoints(
     waypoints: WirePoint[] = [],
     options: { firstLeg?: FirstLeg; obstacles?: ComponentBounds[]; gridSize?: number } = {}
 ): WirePoint[] {
-    const firstLeg = options.firstLeg ?? 'horizontal';
+    const firstLeg = options.firstLeg ?? 'auto';
     const obstacles = options.obstacles ?? [];
     const gridSize = options.gridSize ?? 10;
     const all = [start, ...waypoints, end];
     const out: WirePoint[] = [start];
+
+    const resolveFirstLeg = (a: WirePoint, b: WirePoint): 'horizontal' | 'vertical' => {
+        if (firstLeg !== 'auto') return firstLeg;
+
+        const dx = Math.abs(b.x - a.x);
+        const dy = Math.abs(b.y - a.y);
+
+        // If directly aligned, bias to the axis with movement.
+        if (a.x === b.x) return 'vertical';
+        if (a.y === b.y) return 'horizontal';
+
+        // Without obstacles, use dominant direction.
+        if (obstacles.length === 0) return dx >= dy ? 'horizontal' : 'vertical';
+
+        const horizontalPath: WirePoint[] = [a, { x: b.x, y: a.y }, b];
+        const verticalPath: WirePoint[] = [a, { x: a.x, y: b.y }, b];
+
+        const countIntersections = (path: WirePoint[]): number => {
+            let intersections = 0;
+            for (let i = 0; i < path.length - 1; i++) {
+                intersections += findIntersectingBounds(path[i], path[i + 1], obstacles).length;
+            }
+            return intersections;
+        };
+
+        const hIntersections = countIntersections(horizontalPath);
+        const vIntersections = countIntersections(verticalPath);
+
+        if (hIntersections !== vIntersections) {
+            return hIntersections < vIntersections ? 'horizontal' : 'vertical';
+        }
+
+        return dx >= dy ? 'horizontal' : 'vertical';
+    };
 
     // If no obstacles, use the original simple routing
     if (obstacles.length === 0) {
@@ -600,7 +634,9 @@ export function calculateOrthogonalPoints(
             const b = all[i];
             if (a.x === b.x && a.y === b.y) continue;
 
-            if (firstLeg === 'horizontal') {
+            const leg = resolveFirstLeg(a, b);
+
+            if (leg === 'horizontal') {
                 const mid: WirePoint = { x: b.x, y: a.y };
                 if (mid.x !== a.x || mid.y !== a.y) out.push(mid);
             } else {
@@ -619,9 +655,11 @@ export function calculateOrthogonalPoints(
 
         if (a.x === b.x && a.y === b.y) continue;
 
+        const leg = resolveFirstLeg(a, b);
+
         // Build the initial path for this segment
         let segmentPath: WirePoint[];
-        if (firstLeg === 'horizontal') {
+        if (leg === 'horizontal') {
             const mid: WirePoint = { x: b.x, y: a.y };
             segmentPath = [a, mid, b];
         } else {
