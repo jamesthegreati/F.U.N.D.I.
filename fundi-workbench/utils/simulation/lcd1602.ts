@@ -30,7 +30,7 @@ const PCF8574_BL = 0x08;  // Backlight
 // High nibble (D4-D7) is in bits 4-7
 
 export interface LCD1602State {
-    /** Display RAM - 2 rows of 16 characters */
+    /** Display RAM represented as rows x columns */
     display: string[][];
     /** Current cursor row (0 or 1) */
     cursorRow: number;
@@ -60,8 +60,9 @@ class LCD1602Device implements I2CDevice {
     readonly streamingWrite = true;
 
     // Internal state
-    private rows: number = 2;
-    private cols: number = 16;
+    private rows: number;
+    private cols: number;
+    private rowAddressMap: number[];
     private ddram: number[][] = []; // Display Data RAM
     private cursorRow: number = 0;
     private cursorCol: number = 0;
@@ -81,8 +82,11 @@ class LCD1602Device implements I2CDevice {
     // State listeners
     private listeners: Set<LCD1602StateListener> = new Set();
 
-    constructor(address: number = 0x27) {
+    constructor(address: number = 0x27, rows: number = 2, cols: number = 16) {
         this.address = address;
+        this.rows = rows;
+        this.cols = cols;
+        this.rowAddressMap = rows >= 4 ? [0x00, 0x40, 0x14, 0x54] : [0x00, 0x40];
         this.reset();
     }
 
@@ -162,13 +166,7 @@ class LCD1602Device implements I2CDevice {
             // Set DDRAM address (cursor position)
             this.writingCgram = false;
             const addr = cmd & 0x7F;
-            if (addr >= 0x40) {
-                this.cursorRow = 1;
-                this.cursorCol = Math.min(addr - 0x40, this.cols - 1);
-            } else {
-                this.cursorRow = 0;
-                this.cursorCol = Math.min(addr, this.cols - 1);
-            }
+            this.setCursorFromDDRAMAddress(addr);
         } else if (cmd & LCD_SETCGRAMADDR) {
             // Set CGRAM address (custom character)
             this.writingCgram = true;
@@ -210,20 +208,42 @@ class LCD1602Device implements I2CDevice {
             // Writing to DDRAM (display)
             if (this.cursorRow < this.rows && this.cursorCol < this.cols) {
                 this.ddram[this.cursorRow][this.cursorCol] = data;
-                this.cursorCol++;
-                if (this.cursorCol >= this.cols) {
-                    // Wrap to next line or stay at end
-                    if (this.cursorRow < this.rows - 1) {
-                        this.cursorRow++;
-                        this.cursorCol = 0;
-                    } else {
-                        this.cursorCol = this.cols - 1;
-                    }
-                }
+                const nextAddress = this.getDDRAMAddress(this.cursorRow, this.cursorCol) + 1;
+                this.setCursorFromDDRAMAddress(nextAddress & 0x7F);
             }
         }
 
         this.notifyListeners();
+    }
+
+    private getDDRAMAddress(row: number, col: number): number {
+        const rowBase = this.rowAddressMap[row] ?? 0x00;
+        return rowBase + Math.max(0, Math.min(col, this.cols - 1));
+    }
+
+    private setCursorFromDDRAMAddress(addr: number): void {
+        let bestRow = 0;
+        let bestDistance = Number.POSITIVE_INFINITY;
+
+        for (let row = 0; row < this.rowAddressMap.length; row++) {
+            const base = this.rowAddressMap[row];
+            const distance = addr - base;
+            if (distance >= 0 && distance < this.cols) {
+                this.cursorRow = Math.min(row, this.rows - 1);
+                this.cursorCol = distance;
+                return;
+            }
+
+            const absDistance = Math.abs(distance);
+            if (absDistance < bestDistance) {
+                bestDistance = absDistance;
+                bestRow = row;
+            }
+        }
+
+        this.cursorRow = Math.min(bestRow, this.rows - 1);
+        const base = this.rowAddressMap[this.cursorRow] ?? 0x00;
+        this.cursorCol = Math.max(0, Math.min(addr - base, this.cols - 1));
     }
 
     /**
@@ -277,16 +297,30 @@ class LCD1602Device implements I2CDevice {
 }
 
 // LCD device instance cache
-const lcdDevices: Map<number, LCD1602Device> = new Map();
+const lcd1602Devices: Map<number, LCD1602Device> = new Map();
+const lcd2004Devices: Map<number, LCD1602Device> = new Map();
 
 /**
  * Get or create an LCD1602 device at the specified address
  */
 export function getLCD1602(address: number = 0x27): LCD1602Device {
-    let device = lcdDevices.get(address);
+    let device = lcd1602Devices.get(address);
     if (!device) {
-        device = new LCD1602Device(address);
-        lcdDevices.set(address, device);
+        device = new LCD1602Device(address, 2, 16);
+        lcd1602Devices.set(address, device);
+        getI2CBus().registerDevice(device);
+    }
+    return device;
+}
+
+/**
+ * Get or create an LCD2004 device at the specified address
+ */
+export function getLCD2004(address: number = 0x27): LCD1602Device {
+    let device = lcd2004Devices.get(address);
+    if (!device) {
+        device = new LCD1602Device(address, 4, 20);
+        lcd2004Devices.set(address, device);
         getI2CBus().registerDevice(device);
     }
     return device;

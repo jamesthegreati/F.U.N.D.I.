@@ -33,10 +33,10 @@ This file lists the Wokwi components you provided and whether FUNDI currently si
 | LED (Standard 5mm) | Implemented | No dedicated emulator required; driven by MCU pin state in the UI. |
 | RGB LED | Implemented | No dedicated emulator required; driven by pin state(s) in the UI. |
 | LED Bar Graph (10-segment) | Implemented | No dedicated emulator required beyond digital IO. |
-| NeoPixel Ring (WS2812B) | Not implemented | Needs WS2812/NeoPixel timing/protocol emulation. |
-| NeoPixel Strip (WS2812B) | Not implemented | Needs WS2812/NeoPixel timing/protocol emulation. |
-| NeoPixel Matrix (WS2812B) | Not implemented | Needs WS2812/NeoPixel timing/protocol emulation. |
-| NeoPixel Meter (Debug tool) | Not implemented | Depends on NeoPixel signal emulation. |
+| NeoPixel Ring (WS2812B) | Implemented | WS2812 timing/protocol emulator wired; updates `pixelColors`. |
+| NeoPixel Strip (WS2812B) | Implemented | WS2812 timing/protocol emulator wired; updates `pixelColors`. |
+| NeoPixel Matrix (WS2812B) | Implemented | WS2812 timing/protocol emulator wired; matrix pixel count derived from rows×cols. |
+| NeoPixel Meter (Debug tool) | Implemented | Works through WS2812 signal emulation path. |
 | Seven Segment Display (1-digit) | Implemented | No dedicated emulator required (segment pins are direct IO). |
 | MAX7219 Dot Matrix (8x8) | Implemented | Emulator: MAX7219 DIN/CLK/CS capture + register model; headless test added. |
 | TM1637 (4-Digit 7-Segment Display) | Implemented | Emulator: TM1637 CLK/DIO protocol; headless test added. |
@@ -45,7 +45,7 @@ This file lists the Wokwi components you provided and whether FUNDI currently si
 | Component | Status | Notes |
 |---|---:|---|
 | LCD 1602 (16x2) | Implemented | I2C LCD1602 emulator + store updates. |
-| LCD 2004 (20x4) | Not implemented | Needs LCD2004 emulation. |
+| LCD 2004 (20x4) | Implemented | I2C LCD2004 emulator + four-row DDRAM mapping. |
 | OLED SSD1306 (128x64) | Implemented | SSD1306 I2C emulator present. |
 | TFT ILI9341 (2.8" SPI) | Implemented | SPI bit-banged emulator supports CASET/PASET/RAMWR (RGB565); UI binds framebuffer to element canvas. |
 | e-Paper Display (2.9") | Not implemented | Needs display controller emulation. |
@@ -56,12 +56,12 @@ This file lists the Wokwi components you provided and whether FUNDI currently si
 |---|---:|---|
 | DHT22 (Temp & Humidity) | Implemented | DHT emulator; headless test exists. |
 | HC-SR04 (Ultrasonic) | Implemented | HC-SR04 timing emulator; headless test exists. |
-| MPU6050 (Accel/Gyro) | Not implemented | Needs I2C device emulation. |
+| MPU6050 (Accel/Gyro) | Implemented | I2C MPU6050 device emulation present; driven by part attrs. |
 | PIR Motion Sensor | Implemented | PIR emulator + headless test. |
 | NTC Temperature Sensor (Analog) | Implemented | ADC conversion support + headless test. |
-| DS18B20 (OneWire Temp) | Not implemented | Needs OneWire bus/device emulation. |
+| DS18B20 (OneWire Temp) | Implemented | OneWire reset/presence + skip ROM + convert/read scratchpad model. |
 | Photoresistor (LDR) | Implemented | ADC conversion + digital threshold support + headless test. |
-| HX711 (Load Cell Amp) | Not implemented | Needs HX711 serial protocol emulation. |
+| HX711 (Load Cell Amp) | Implemented | HX711 serial protocol emulation (`DT`/`SCK`) with load-to-raw mapping. |
 | DS1307 (RTC) | Implemented | I2C device emulator + headless test. |
 
 ## 5. Input Devices
@@ -80,30 +80,30 @@ This file lists the Wokwi components you provided and whether FUNDI currently si
 | Component | Status | Notes |
 |---|---:|---|
 | Servo (SG90) | Implemented | Servo PWM emulator + headless test. |
-| Stepper Motor (Bipolar) | Not implemented | Needs step/dir or coil model. |
-| Stepper Motor Driver (A4988) | Not implemented | Needs A4988 behavior + stepper coupling. |
-| Biaxial Stepper Motor | Not implemented | Needs two-motor model. |
+| Stepper Motor (Bipolar) | Implemented | Direct-coil half-step model (A-/A+/B+/B-) updates angle/step count. |
+| Stepper Motor Driver (A4988) | Implemented | STEP/DIR + ENABLE/SLEEP/RESET + microstep pin behavior modeled. |
+| Biaxial Stepper Motor | Implemented | Supported through A4988 coupling to inner/outer hand angles. |
 
 ## 7. Logic
 | Component | Status | Notes |
 |---|---:|---|
 | 74HC595 (Shift Register) | Implemented | 74HC595 emulator + headless test. |
-| 74HC165 (Shift Register) | Not implemented | Needs 74HC165 behavior. |
-| NOT Gate | Not implemented | Needs combinational logic propagation. |
-| AND Gate | Not implemented | Needs combinational logic propagation. |
-| OR Gate | Not implemented | Needs combinational logic propagation. |
-| XOR Gate | Not implemented | Needs combinational logic propagation. |
-| NAND Gate | Not implemented | Needs combinational logic propagation. |
-| NOR Gate | Not implemented | Needs combinational logic propagation. |
-| Flip-Flop D | Not implemented | Needs sequential logic + clocking. |
-| Flip-Flop DSR | Not implemented | Needs sequential logic + set/reset behavior. |
-| MUX (Multiplexer) | Not implemented | Needs combinational selection logic. |
+| 74HC165 (Shift Register) | Implemented | 74HC165 emulator + chaining support + headless test. |
+| NOT Gate | Implemented | Logic runtime supports inverter propagation to connected MCU pins. |
+| AND Gate | Implemented | Logic runtime supports 2-input AND propagation to connected MCU pins. |
+| OR Gate | Implemented | Logic runtime supports 2-input OR propagation to connected MCU pins. |
+| XOR Gate | Implemented | Logic runtime supports 2-input XOR propagation to connected MCU pins. |
+| NAND Gate | Implemented | Logic runtime supports 2-input NAND propagation to connected MCU pins. |
+| NOR Gate | Implemented | Logic runtime supports 2-input NOR propagation to connected MCU pins. |
+| Flip-Flop D | Implemented | Rising-edge D latch with Q/NQ outputs in logic runtime. |
+| Flip-Flop DSR | Implemented | D latch with async Set/Reset and Q/NQ outputs in logic runtime. |
+| MUX (Multiplexer) | Implemented | 2:1 select logic (I0/I1/S→Y) propagated to connected MCU pins. |
 
 ## 8. Communications
 | Component | Status | Notes |
 |---|---:|---|
-| IR Receiver | Not implemented | Needs IR demodulation + protocol model. |
-| IR Remote (NEC) | Not implemented | Needs transmitter model + pairing with receiver. |
+| IR Receiver | Implemented | Demodulated NEC pulse output model on `DAT`; runtime remote routing added. |
+| IR Remote (NEC) | Implemented | UI keypress events mapped to NEC command injection for receivers. |
 
 ## 9. Other Parts
 | Component | Status | Notes |
@@ -115,6 +115,7 @@ This file lists the Wokwi components you provided and whether FUNDI currently si
 | Zener Diode | Implemented | Passive; connectivity only (no analog circuit solving). |
 | Buzzer (Piezo) | Implemented | Audio/pin-toggle simulation + headless test. |
 | Relay Module | Implemented | Relay module emulator + headless test. |
+| NLSF595 LED Driver | Implemented | NLSF595 pin aliases (`SI/SCK/RCK`) mapped to 74HC595 emulator + headless test. |
 | MicroSD Card (SPI) | Implemented | Minimal SD SPI init + single-block read/write model; headless test covers CMD0/CMD8/ACMD41/CMD58/CMD17/CMD24. |
 | Logic Analyzer (8-channel) | Implemented | Logic analyzer tooling exists in the sim utilities. |
 | Breadboard (Full/Half/Mini) | Implemented | Infrastructure; wiring/connectivity only. |

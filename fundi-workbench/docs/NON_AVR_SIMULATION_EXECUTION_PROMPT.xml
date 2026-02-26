@@ -1,0 +1,75 @@
+<implementation_prompt>
+  <context>
+    <project>FUNDI Workbench</project>
+    <workspace_path>c:/Users/henry/Desktop/FUNDI/fundi-workbench</workspace_path>
+    <primary_plan_path>docs/NON_AVR_SIMULATION_ROADMAP.md</primary_plan_path>
+    <primary_goal>
+      Implement the roadmap end-to-end so simulations run reliably for AVR, ESP32, and RP2040 in the FUNDI app, with ESP32 and RP2040 no longer compile-only.
+    </primary_goal>
+  </context>
+
+  <mandatory_reading>
+    <file>docs/NON_AVR_SIMULATION_ROADMAP.md</file>
+    <file>hooks/useSimulation.ts</file>
+    <file>store/useAppStore.ts</file>
+    <file>backend/app/services/compiler.py</file>
+    <file>backend/app/api/endpoints/compile.py</file>
+    <file>CLAUDE.md</file>
+  </mandatory_reading>
+
+  <execution_rules>
+    <rule>Follow the roadmap phases in order. Do not skip foundational refactor phases.</rule>
+    <rule>Keep changes minimal and production-safe. Preserve AVR behavior while introducing abstractions.</rule>
+    <rule>Do not break existing compile APIs; extend them for simulation metadata where required.</rule>
+    <rule>Use feature flags for incremental rollout of RP2040 and ESP32 simulation engines.</rule>
+    <rule>After each major phase, run targeted tests and document pass/fail with exact command outputs.</rule>
+    <rule>When uncertain, choose the simplest implementation that still satisfies the roadmap and acceptance criteria.</rule>
+  </execution_rules>
+
+  <required_deliverables>
+    <deliverable id="1">Engine abstraction extracted from hooks/useSimulation.ts into a pluggable adapter model (AVR first, no behavior regression).</deliverable>
+    <deliverable id="2">Net/pin graph bridge introduced so peripheral models are board-agnostic and not AVR-port coupled.</deliverable>
+    <deliverable id="3">RP2040 simulation engine adapter implemented (worker-based) and integrated with existing run/stop/reset and serial UX.</deliverable>
+    <deliverable id="4">ESP32 backend simulation service implemented (session manager + emulator runner + websocket event stream) and frontend adapter connected.</deliverable>
+    <deliverable id="5">Board capability matrix documented and surfaced in docs with known limitations.</deliverable>
+    <deliverable id="6">Automated tests expanded to cover multi-board simulation paths, with AVR parity retained.</deliverable>
+  </required_deliverables>
+
+  <phase_requirements>
+    <phase name="Phase 0 - Baseline">
+      <requirement>Lock AVR baseline behavior with parity tests before refactor.</requirement>
+      <requirement>Capture baseline simulation performance and serial output behavior.</requirement>
+    </phase>
+    <phase name="Phase 1 - Engine Abstraction">
+      <requirement>Create SimulationEngine interfaces and AVR adapter without behavior changes.</requirement>
+      <requirement>Refactor useSimulation orchestration to select engine by board family.</requirement>
+    </phase>
+    <phase name="Phase 2 - Net Bridge">
+      <requirement>Implement canonical pin/net model and migrate priority peripherals.</requirement>
+      <requirement>Maintain compatibility bridge for any remaining AVR-specific bindings.</requirement>
+    </phase>
+    <phase name="Phase 3 - RP2040">
+      <requirement>Enable Pico compile-to-sim execution path with GPIO and UART functional.</requirement>
+    </phase>
+    <phase name="Phase 4 - ESP32">
+      <requirement>Enable ESP32 compile-to-sim execution path via backend emulator sessions.</requirement>
+      <requirement>Support session lifecycle start/stop/reset and stable serial streaming.</requirement>
+    </phase>
+    <phase name="Phase 5 - Hardening">
+      <requirement>Add diagnostics, capability matrix, and regression safety checks.</requirement>
+    </phase>
+  </phase_requirements>
+
+  <acceptance_criteria>
+    <criterion>AVR simulation tests still pass after refactor.</criterion>
+    <criterion>RP2040 sample sketch runs in simulation with visible pin interaction and serial output.</criterion>
+    <criterion>ESP32 sample sketch runs in simulation session with serial output and stable controls.</criterion>
+    <criterion>No fatal regressions in existing component simulations (I2C/SPI/UART basics preserved).</criterion>
+    <criterion>Documentation updated with architecture, limits, and run instructions.</criterion>
+  </acceptance_criteria>
+
+  <output_format>
+    <item>Provide a concise implementation report at the end with: files changed, tests run, results, open risks, and next recommended milestone.</item>
+    <item>If blocked, provide exact blocker, attempted mitigation, and smallest unblocking next step.</item>
+  </output_format>
+</implementation_prompt>

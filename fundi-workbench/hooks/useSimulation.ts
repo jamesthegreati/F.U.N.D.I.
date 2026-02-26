@@ -29,7 +29,7 @@ import {
 
 import { useAppStore } from '@/store/useAppStore';
 import { getI2CBus } from '@/utils/simulation/i2c';
-import { getLCD1602, type LCD1602State } from '@/utils/simulation/lcd1602';
+import { getLCD1602, getLCD2004, type LCD1602State } from '@/utils/simulation/lcd1602';
 import { getSSD1306 } from '@/utils/simulation/ssd1306';
 import { DHTDevice, type DHTType } from '@/utils/simulation/dht';
 import { ServoDevice } from '@/utils/simulation/servo';
@@ -50,6 +50,18 @@ import { RelayModuleDevice, type RelayTransistorMode } from '@/utils/simulation/
 import { ILI9341Device, registerILI9341, resetILI9341Registry } from '@/utils/simulation/ili9341';
 import { attachSPIRouter, type SPIRoutedDevice } from '@/utils/simulation/spiBus';
 import { WS2812Device } from '@/utils/simulation/ws2812';
+import { MicroSDCardDevice } from '@/utils/simulation/microsd';
+import { HX711Device } from '@/utils/simulation/hx711';
+import { A4988StepperDevice, StepperMotorDevice } from '@/utils/simulation/stepper';
+import { IRReceiverDevice } from '@/utils/simulation/ir';
+import { DS18B20Device } from '@/utils/simulation/ds18b20';
+import {
+  DFlipFlopDevice,
+  DSRFlipFlopDevice,
+  LogicGateDevice,
+  Mux2Device,
+  type LogicDevice,
+} from '@/utils/simulation/logic';
 
 // --- Speaker Device Implementation ---
 // Monitors a pin for rapid toggling (square wave) and plays audio via Web Audio API
@@ -294,6 +306,41 @@ function normalizeBoardType(partType: string): string {
   return `wokwi-${partType}`;
 }
 
+type LogicSignalSource = { kind: 'mcu'; pin: number } | { kind: 'logic'; key: string };
+
+type LogicInputBinding = {
+  name: string;
+  source: LogicSignalSource | null;
+};
+
+type LogicOutputBinding = {
+  name: string;
+  key: string;
+  sinks: Array<{ port: AVRIOPort; bit: number }>;
+};
+
+type LogicRuntimeDevice = {
+  device: LogicDevice;
+  inputs: LogicInputBinding[];
+  outputs: LogicOutputBinding[];
+};
+
+const LOGIC_OUTPUT_PIN_CANDIDATES = new Set(['y', 'out', 'q', 'qbar', 'nq', 'qb', '!q']);
+
+function isLogicPartType(typeLower: string): boolean {
+  return (
+    typeLower.includes('not-gate') ||
+    typeLower.includes('and-gate') ||
+    typeLower.includes('or-gate') ||
+    typeLower.includes('xor-gate') ||
+    typeLower.includes('nand-gate') ||
+    typeLower.includes('nor-gate') ||
+    typeLower.includes('mux') ||
+    typeLower.includes('flip-flop-dsr') ||
+    typeLower.includes('flip-flop-d')
+  );
+}
+
 type PwmStates = Record<number, number>;
 type PinStates = Record<number, boolean>;
 
@@ -364,6 +411,14 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const relayDevicesRef = useRef<RelayModuleDevice[]>([]);
   const ili9341DevicesRef = useRef<ILI9341Device[]>([]);
   const ws2812DevicesRef = useRef<WS2812Device[]>([]);
+  const hx711DevicesRef = useRef<HX711Device[]>([]);
+  const stepperDevicesRef = useRef<StepperMotorDevice[]>([]);
+  const a4988DevicesRef = useRef<A4988StepperDevice[]>([]);
+  const irDevicesRef = useRef<Array<{ partId: string; device: IRReceiverDevice }>>([]);
+  const irRemoteSeenRef = useRef<Map<string, number>>(new Map());
+  const ds18b20DevicesRef = useRef<DS18B20Device[]>([]);
+  const logicDevicesRef = useRef<LogicRuntimeDevice[]>([]);
+  const logicStateRef = useRef<Map<string, boolean>>(new Map());
 
   const buttonPinMapRef = useRef<Map<string, { port: AVRIOPort; bit: number }>>(new Map());
   const switchPinMapRef = useRef<Map<string, { port: AVRIOPort; bit: number }>>(new Map());
@@ -470,6 +525,60 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         for (const t of tm1637DevicesRef.current) t.tick();
         for (const r of relayDevicesRef.current) r.tick();
         for (const n of ws2812DevicesRef.current) n.tick(runner.cpu.cycles);
+        for (const h of hx711DevicesRef.current) h.tick();
+        for (const s of stepperDevicesRef.current) s.tick();
+        for (const d of a4988DevicesRef.current) d.tick();
+        for (const ir of irDevicesRef.current) ir.device.tick(runner.cpu.cycles);
+        for (const ds of ds18b20DevicesRef.current) ds.tick(runner.cpu.cycles);
+        for (const logic of logicDevicesRef.current) {
+          const inputValues: Record<string, boolean> = {};
+          for (const binding of logic.inputs) {
+            let value = false;
+            const source = binding.source;
+            if (source?.kind === 'mcu') {
+              const pb = getPortBitForArduinoDigitalPin(runner, source.pin);
+              value = pb != null ? pb.port.pinState(pb.bit) === PinState.High : false;
+            } else if (source?.kind === 'logic') {
+              value = logicStateRef.current.get(source.key) ?? false;
+            }
+            inputValues[binding.name] = value;
+          }
+
+          const outputs = logic.device.evaluate(inputValues);
+          for (const output of logic.outputs) {
+            const value = !!outputs[output.name];
+            logicStateRef.current.set(output.key, value);
+            for (const sink of output.sinks) {
+              sink.port.setPin(sink.bit, value);
+            }
+          }
+        }
+
+        // Route IR remote button presses to all registered IR receivers.
+        if (irDevicesRef.current.length > 0) {
+          const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+          for (const part of state.circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('ir-remote')) continue;
+
+            const attrs = (part.attrs ?? {}) as Record<string, unknown>;
+            const seqRaw = attrs.irSeq;
+            const seq = typeof seqRaw === 'number' ? seqRaw : Number.parseInt(String(seqRaw ?? '0'), 10);
+            if (!Number.isFinite(seq) || seq <= 0) continue;
+
+            const prev = irRemoteSeenRef.current.get(part.id) ?? 0;
+            if (seq <= prev) continue;
+
+            const irCodeRaw = attrs.irCode;
+            const irCode = typeof irCodeRaw === 'number' ? irCodeRaw : Number.parseInt(String(irCodeRaw ?? ''), 10);
+            if (!Number.isFinite(irCode)) continue;
+
+            irRemoteSeenRef.current.set(part.id, seq);
+            for (const recv of irDevicesRef.current) {
+              recv.device.sendNec(0x00, irCode & 0xff);
+            }
+          }
+        }
 
         const cpuAny = runner.cpu as unknown as {
           cycles: number;
@@ -527,6 +636,14 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     tm1637DevicesRef.current = [];
     relayDevicesRef.current = [];
     ws2812DevicesRef.current = [];
+    hx711DevicesRef.current = [];
+    stepperDevicesRef.current = [];
+    a4988DevicesRef.current = [];
+    irDevicesRef.current = [];
+    irRemoteSeenRef.current = new Map();
+    ds18b20DevicesRef.current = [];
+    logicDevicesRef.current = [];
+    logicStateRef.current = new Map();
     resetDS1307();
     resetMPU6050();
     ili9341DevicesRef.current = [];
@@ -581,10 +698,10 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
           const typeLower = part.type.toLowerCase();
           const attrs = part.attrs ?? {};
 
-          if (typeLower.includes('lcd1602')) {
+          if (typeLower.includes('lcd1602') || typeLower.includes('lcd2004')) {
             const attrsRecord = attrs as Record<string, unknown>;
             const addr = parseI2CAddress(attrsRecord.i2cAddress ?? attrsRecord.address, 0x27);
-            const lcd = getLCD1602(addr);
+            const lcd = typeLower.includes('lcd2004') ? getLCD2004(addr) : getLCD1602(addr);
             // FIX: Wire LCD state back to Store for UI update
             const partId = part.id;
             lcd.subscribe((state: LCD1602State) => {
@@ -647,6 +764,14 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
         ili9341DevicesRef.current = [];
         resetILI9341Registry();
         resetMPU6050();
+        hx711DevicesRef.current = [];
+        stepperDevicesRef.current = [];
+        a4988DevicesRef.current = [];
+        irDevicesRef.current = [];
+        irRemoteSeenRef.current = new Map();
+        ds18b20DevicesRef.current = [];
+        logicDevicesRef.current = [];
+        logicStateRef.current = new Map();
 
         // Circuit parts often store MCU type without the `wokwi-` prefix (e.g. `arduino-uno`).
         // `partType` here comes from `compiledBoard`, which is normalized (e.g. `wokwi-arduino-uno`).
@@ -655,6 +780,142 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
         if (mcuPart) {
           const adjacency = buildAdjacency(connections);
+          const partById = new Map<string, CircuitPart>();
+          for (const p of circuitParts) partById.set(p.id, p);
+
+          const findConnectedKey = (
+            startKey: string,
+            predicate: (key: string) => boolean
+          ): string | null => {
+            const queue: string[] = [startKey];
+            const seen = new Set<string>(queue);
+            while (queue.length) {
+              const cur = queue.shift()!;
+              if (predicate(cur)) return cur;
+              const neighbors = adjacency.get(cur);
+              if (!neighbors) continue;
+              for (const n of neighbors) {
+                if (!seen.has(n)) {
+                  seen.add(n);
+                  queue.push(n);
+                }
+              }
+            }
+            return null;
+          };
+
+          const partPinsByLower = new Map<string, Map<string, string>>();
+          for (const conn of connections) {
+            const endpoints = [conn.from, conn.to];
+            for (const endpoint of endpoints) {
+              const partPinMap = partPinsByLower.get(endpoint.partId) ?? new Map<string, string>();
+              if (!partPinMap.has(endpoint.pinId.toLowerCase())) {
+                partPinMap.set(endpoint.pinId.toLowerCase(), endpoint.pinId);
+              }
+              partPinsByLower.set(endpoint.partId, partPinMap);
+            }
+          }
+
+          const getPartPinId = (partId: string, aliases: string[]): string | null => {
+            const pinMap = partPinsByLower.get(partId);
+            if (!pinMap) return null;
+            for (const alias of aliases) {
+              const id = pinMap.get(alias.toLowerCase());
+              if (id) return id;
+            }
+            return null;
+          };
+
+          const logicPartById = new Map<string, CircuitPart>();
+          for (const p of circuitParts) {
+            if (isLogicPartType(p.type.toLowerCase())) {
+              logicPartById.set(p.id, p);
+            }
+          }
+
+          const findInputSource = (ownerPartId: string, pinAliases: string[]): LogicSignalSource | null => {
+            const actualPinId = getPartPinId(ownerPartId, pinAliases);
+            if (!actualPinId) return null;
+            const startKey = `${ownerPartId}:${actualPinId}`;
+
+            const found = findConnectedKey(startKey, (key) => {
+              if (key === startKey) return false;
+              const idx = key.indexOf(':');
+              if (idx <= 0) return false;
+              const partId = key.slice(0, idx);
+              const pinId = key.slice(idx + 1);
+
+              if (partId === ownerPartId) return false;
+
+              if (partId === mcuPart.id) {
+                return findConnectedMcuDigitalPin(adjacency, key, mcuPart.id) != null;
+              }
+
+              if (logicPartById.has(partId)) {
+                return LOGIC_OUTPUT_PIN_CANDIDATES.has(pinId.toLowerCase());
+              }
+
+              return false;
+            });
+
+            if (!found) return null;
+
+            const idx = found.indexOf(':');
+            const partId = found.slice(0, idx);
+            const pinId = found.slice(idx + 1);
+
+            if (partId === mcuPart.id) {
+              const pin = findConnectedMcuDigitalPin(adjacency, found, mcuPart.id);
+              if (pin == null) return null;
+              return { kind: 'mcu', pin };
+            }
+
+            return { kind: 'logic', key: `${partId}:${pinId}` };
+          };
+
+          const findOutputSinks = (partId: string, pinAliases: string[]): LogicOutputBinding | null => {
+            const actualPinId = getPartPinId(partId, pinAliases);
+            if (!actualPinId) return null;
+
+            const startKey = `${partId}:${actualPinId}`;
+            const queue: string[] = [startKey];
+            const seen = new Set<string>(queue);
+            const mcuPins = new Set<number>();
+
+            while (queue.length) {
+              const cur = queue.shift()!;
+              const idx = cur.indexOf(':');
+              if (idx > 0) {
+                const curPartId = cur.slice(0, idx);
+                if (curPartId === mcuPart.id) {
+                  const pin = findConnectedMcuDigitalPin(adjacency, cur, mcuPart.id);
+                  if (pin != null) mcuPins.add(pin);
+                }
+              }
+
+              const neighbors = adjacency.get(cur);
+              if (!neighbors) continue;
+              for (const next of neighbors) {
+                if (!seen.has(next)) {
+                  seen.add(next);
+                  queue.push(next);
+                }
+              }
+            }
+
+            const sinks: Array<{ port: AVRIOPort; bit: number }> = [];
+            for (const pin of mcuPins) {
+              const pb = getPortBitForArduinoDigitalPin(runner, pin);
+              if (pb) sinks.push(pb);
+            }
+
+            return {
+              name: pinAliases[0]!,
+              key: `${partId}:${actualPinId}`,
+              sinks,
+            };
+          };
+
           const spiDevices: SPIRoutedDevice[] = [];
           // --- ILI9341 (SPI) Setup ---
           for (const part of circuitParts) {
@@ -682,6 +943,20 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
             ili9341DevicesRef.current.push(dev);
             registerILI9341(part.id, dev);
             spiDevices.push(dev);
+          }
+
+          // --- MicroSD (SPI) Setup ---
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('microsd')) continue;
+
+            const csPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:CS`, mcuPart.id);
+            if (csPin == null) continue;
+
+            const cs = getPortBitForArduinoDigitalPin(runner, csPin);
+            if (!cs) continue;
+
+            spiDevices.push(new MicroSDCardDevice({ cs }));
           }
 
           if (spiDevices.length > 0) {
@@ -1136,20 +1411,77 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
             getDS1307();
           }
 
+          // --- DS18B20 (OneWire) Setup ---
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('ds18b20')) continue;
+
+            const pinNames = ['DQ', 'DATA', 'OUT', 'SIG', 'SIGNAL'];
+            let foundPin: number | null = null;
+            for (const pinName of pinNames) {
+              const pin = findConnectedMcuDigitalPin(adjacency, `${part.id}:${pinName}`, mcuPart.id);
+              if (pin != null) {
+                foundPin = pin;
+                break;
+              }
+            }
+            if (foundPin == null) continue;
+
+            const portBit = getPortBitForArduinoDigitalPin(runner, foundPin);
+            if (!portBit) continue;
+
+            const partId = part.id;
+            const interactiveManager = getInteractiveComponentManager();
+            interactiveManager.registerComponent(partId, part.type);
+
+            ds18b20DevicesRef.current.push(
+              new DS18B20Device({
+                port: portBit.port,
+                bit: portBit.bit,
+                cpuFrequencyHz: 16_000_000,
+                readTemperatureC: () => {
+                  const managerVal = interactiveManager.getValue(partId);
+                  if (managerVal !== undefined) return managerVal;
+
+                  const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                  const pNow = state.circuitParts.find((p) => p.id === partId);
+                  const attrsRecord = (pNow?.attrs ?? {}) as Record<string, unknown>;
+                  const tRaw = attrsRecord.temperature;
+                  const t = typeof tRaw === 'number' ? tRaw : Number.parseFloat(String(tRaw ?? '25'));
+                  return Number.isFinite(t) ? t : 25;
+                },
+              })
+            );
+          }
+
           // --- 74HC595 Shift Register Setup ---
           for (const part of circuitParts) {
             const typeLower = part.type.toLowerCase();
-            if (!typeLower.includes('74hc595') && !typeLower.includes('shift')) continue;
+            if (!typeLower.includes('74hc595') && !typeLower.includes('nlsf595')) continue;
 
-            const dsPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:DS`, mcuPart.id);
-            const shcpPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:SHCP`, mcuPart.id);
-            const stcpPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:STCP`, mcuPart.id);
+            const dsPin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:DS`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:SI`, mcuPart.id);
+            const shcpPin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:SHCP`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:SCK`, mcuPart.id);
+            const stcpPin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:STCP`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:RCK`, mcuPart.id);
 
             if (dsPin == null || shcpPin == null || stcpPin == null) continue;
 
             const dsPortBit = getPortBitForArduinoDigitalPin(runner, dsPin);
             const shcpPortBit = getPortBitForArduinoDigitalPin(runner, shcpPin);
             const stcpPortBit = getPortBitForArduinoDigitalPin(runner, stcpPin);
+            const oePin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:OE`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:G`, mcuPart.id);
+            const mrPin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:MR`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:SCLR`, mcuPart.id);
+            const oePortBit = oePin != null ? getPortBitForArduinoDigitalPin(runner, oePin) : null;
+            const mrPortBit = mrPin != null ? getPortBitForArduinoDigitalPin(runner, mrPin) : null;
 
             if (!dsPortBit || !shcpPortBit || !stcpPortBit) continue;
 
@@ -1162,8 +1494,166 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
                 shcpBit: shcpPortBit.bit,
                 stcpPort: stcpPortBit.port,
                 stcpBit: stcpPortBit.bit,
+                oePort: oePortBit?.port,
+                oeBit: oePortBit?.bit,
+                mrPort: mrPortBit?.port,
+                mrBit: mrPortBit?.bit,
                 onOutputChange: (outputs: number) => {
                   useAppStore.getState().updatePartAttrs(partId, { outputs });
+                },
+              })
+            );
+          }
+
+          // --- HX711 Setup ---
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('hx711')) continue;
+
+            const dtPin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:DT`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:DAT`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:DOUT`, mcuPart.id);
+            const sckPin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:SCK`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:CLK`, mcuPart.id);
+
+            if (dtPin == null || sckPin == null) continue;
+            const dtPortBit = getPortBitForArduinoDigitalPin(runner, dtPin);
+            const sckPortBit = getPortBitForArduinoDigitalPin(runner, sckPin);
+            if (!dtPortBit || !sckPortBit) continue;
+
+            const partId = part.id;
+            hx711DevicesRef.current.push(
+              new HX711Device({
+                dtPort: dtPortBit.port,
+                dtBit: dtPortBit.bit,
+                sckPort: sckPortBit.port,
+                sckBit: sckPortBit.bit,
+                readRawValue: () => {
+                  const state = useAppStore.getState() as unknown as { circuitParts: CircuitPart[] };
+                  const pNow = state.circuitParts.find((p) => p.id === partId);
+                  const attrs = (pNow?.attrs ?? {}) as Record<string, unknown>;
+
+                  const loadRaw = attrs.load ?? attrs.value ?? 0;
+                  const load = typeof loadRaw === 'number' ? loadRaw : Number.parseFloat(String(loadRaw));
+                  const type = String(attrs.type ?? '50kg').toLowerCase();
+                  const span = type === '5kg' ? 2100 : 21000;
+                  const clampedLoad = Number.isFinite(load) ? Math.max(0, Math.min(type === '5kg' ? 5 : 50, load)) : 0;
+                  const raw = Math.round((clampedLoad / (type === '5kg' ? 5 : 50)) * span);
+                  return raw;
+                },
+              })
+            );
+          }
+
+          // --- Direct Stepper Motor Setup ---
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('stepper-motor')) continue;
+
+            const aMinusPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:A-`, mcuPart.id);
+            const aPlusPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:A+`, mcuPart.id);
+            const bPlusPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:B+`, mcuPart.id);
+            const bMinusPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:B-`, mcuPart.id);
+            if (aMinusPin == null || aPlusPin == null || bPlusPin == null || bMinusPin == null) continue;
+
+            const aMinus = getPortBitForArduinoDigitalPin(runner, aMinusPin);
+            const aPlus = getPortBitForArduinoDigitalPin(runner, aPlusPin);
+            const bPlus = getPortBitForArduinoDigitalPin(runner, bPlusPin);
+            const bMinus = getPortBitForArduinoDigitalPin(runner, bMinusPin);
+            if (!aMinus || !aPlus || !bPlus || !bMinus) continue;
+
+            const partId = part.id;
+            stepperDevicesRef.current.push(
+              new StepperMotorDevice({
+                aMinus,
+                aPlus,
+                bPlus,
+                bMinus,
+                onChange: (state) => {
+                  useAppStore.getState().updatePartAttrs(partId, {
+                    angle: state.angle,
+                    value: Math.round(state.steps),
+                    units: 'Steps',
+                  });
+                },
+              })
+            );
+          }
+
+          // --- A4988 Driver Setup ---
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('a4988')) continue;
+
+            const stepPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:STEP`, mcuPart.id);
+            const dirPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:DIR`, mcuPart.id);
+            if (stepPin == null || dirPin == null) continue;
+
+            const stepPortBit = getPortBitForArduinoDigitalPin(runner, stepPin);
+            const dirPortBit = getPortBitForArduinoDigitalPin(runner, dirPin);
+            if (!stepPortBit || !dirPortBit) continue;
+
+            const enablePin = findConnectedMcuDigitalPin(adjacency, `${part.id}:ENABLE`, mcuPart.id);
+            const sleepPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:SLEEP`, mcuPart.id);
+            const resetPin = findConnectedMcuDigitalPin(adjacency, `${part.id}:RESET`, mcuPart.id);
+            const ms1Pin = findConnectedMcuDigitalPin(adjacency, `${part.id}:MS1`, mcuPart.id);
+            const ms2Pin = findConnectedMcuDigitalPin(adjacency, `${part.id}:MS2`, mcuPart.id);
+            const ms3Pin = findConnectedMcuDigitalPin(adjacency, `${part.id}:MS3`, mcuPart.id);
+
+            const targetKey = findConnectedKey(`${part.id}:1A`, (key) => {
+              const idx = key.indexOf(':');
+              if (idx <= 0) return false;
+              const connectedPartId = key.slice(0, idx);
+              const connectedPinId = key.slice(idx + 1);
+              const p = partById.get(connectedPartId);
+              if (!p) return false;
+              const t = p.type.toLowerCase();
+              if (t.includes('stepper-motor')) return connectedPinId === 'A+' || connectedPinId === 'A-' || connectedPinId === 'B+' || connectedPinId === 'B-';
+              if (t.includes('biaxial-stepper')) return connectedPinId.startsWith('A1') || connectedPinId.startsWith('B1') || connectedPinId.startsWith('A2') || connectedPinId.startsWith('B2');
+              return false;
+            });
+
+            const targetPartId = targetKey ? targetKey.slice(0, targetKey.indexOf(':')) : null;
+            const targetPinId = targetKey ? targetKey.slice(targetKey.indexOf(':') + 1) : null;
+            const targetTypeLower = targetPartId ? (partById.get(targetPartId)?.type.toLowerCase() ?? '') : '';
+
+            const partId = part.id;
+            a4988DevicesRef.current.push(
+              new A4988StepperDevice({
+                step: stepPortBit,
+                dir: dirPortBit,
+                enable: enablePin != null ? getPortBitForArduinoDigitalPin(runner, enablePin) ?? undefined : undefined,
+                sleep: sleepPin != null ? getPortBitForArduinoDigitalPin(runner, sleepPin) ?? undefined : undefined,
+                reset: resetPin != null ? getPortBitForArduinoDigitalPin(runner, resetPin) ?? undefined : undefined,
+                ms1: ms1Pin != null ? getPortBitForArduinoDigitalPin(runner, ms1Pin) ?? undefined : undefined,
+                ms2: ms2Pin != null ? getPortBitForArduinoDigitalPin(runner, ms2Pin) ?? undefined : undefined,
+                ms3: ms3Pin != null ? getPortBitForArduinoDigitalPin(runner, ms3Pin) ?? undefined : undefined,
+                onChange: (state) => {
+                  useAppStore.getState().updatePartAttrs(partId, {
+                    angle: state.angle,
+                    value: Math.round(state.steps),
+                    units: 'Steps',
+                  });
+
+                  if (!targetPartId) return;
+                  if (targetTypeLower.includes('stepper-motor')) {
+                    useAppStore.getState().updatePartAttrs(targetPartId, {
+                      angle: state.angle,
+                      value: Math.round(state.steps),
+                      units: 'Steps',
+                    });
+                    return;
+                  }
+
+                  if (targetTypeLower.includes('biaxial-stepper')) {
+                    const isInner = targetPinId?.startsWith('A1') || targetPinId?.startsWith('B1');
+                    const attrs = isInner
+                      ? { innerHandAngle: state.angle }
+                      : { outerHandAngle: state.angle };
+                    useAppStore.getState().updatePartAttrs(targetPartId, attrs);
+                  }
                 },
               })
             );
@@ -1173,30 +1663,6 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
           // Note: This models the common case where D0..D7 are driven by MCU output pins.
           // Optional chaining via DS<-Q7 of another 74HC165 is supported.
           {
-            const partById = new Map<string, CircuitPart>();
-            for (const p of circuitParts) partById.set(p.id, p);
-
-            const findConnectedKey = (
-              startKey: string,
-              predicate: (key: string) => boolean
-            ): string | null => {
-              const queue: string[] = [startKey];
-              const seen = new Set<string>(queue);
-              while (queue.length) {
-                const cur = queue.shift()!;
-                if (predicate(cur)) return cur;
-                const neighbors = adjacency.get(cur);
-                if (!neighbors) continue;
-                for (const n of neighbors) {
-                  if (!seen.has(n)) {
-                    seen.add(n);
-                    queue.push(n);
-                  }
-                }
-              }
-              return null;
-            };
-
             const sr165DevicesByPartId = new Map<string, ShiftRegister165>();
             const pendingChainLinks: Array<{ partId: string; dsFromPartId: string }> = [];
 
@@ -1408,6 +1874,134 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
                 },
               })
             );
+          }
+
+          // --- IR Receiver Setup ---
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!typeLower.includes('ir-receiver')) continue;
+
+            const datPin =
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:DAT`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:OUT`, mcuPart.id) ??
+              findConnectedMcuDigitalPin(adjacency, `${part.id}:SIG`, mcuPart.id);
+            if (datPin == null) continue;
+
+            const datPortBit = getPortBitForArduinoDigitalPin(runner, datPin);
+            if (!datPortBit) continue;
+
+            irDevicesRef.current.push({
+              partId: part.id,
+              device: new IRReceiverDevice({
+                datPort: datPortBit.port,
+                datBit: datPortBit.bit,
+                cpuFrequencyHz: 16_000_000,
+              }),
+            });
+          }
+
+          // --- Logic Gates / MUX / Flip-Flops Setup ---
+          for (const part of circuitParts) {
+            const typeLower = part.type.toLowerCase();
+            if (!isLogicPartType(typeLower)) continue;
+
+            let device: LogicDevice | null = null;
+            let inputs: LogicInputBinding[] = [];
+            let outputs: LogicOutputBinding[] = [];
+
+            if (typeLower.includes('not-gate')) {
+              device = new LogicGateDevice('not');
+              inputs = [{ name: 'A', source: findInputSource(part.id, ['A', 'IN', 'I']) }];
+              const y = findOutputSinks(part.id, ['Y', 'OUT', 'Q']);
+              if (y) outputs.push(y);
+            } else if (typeLower.includes('and-gate')) {
+              device = new LogicGateDevice('and');
+              inputs = [
+                { name: 'A', source: findInputSource(part.id, ['A', 'IN1', 'I0']) },
+                { name: 'B', source: findInputSource(part.id, ['B', 'IN2', 'I1']) },
+              ];
+              const y = findOutputSinks(part.id, ['Y', 'OUT', 'Q']);
+              if (y) outputs.push(y);
+            } else if (typeLower.includes('or-gate')) {
+              device = new LogicGateDevice('or');
+              inputs = [
+                { name: 'A', source: findInputSource(part.id, ['A', 'IN1', 'I0']) },
+                { name: 'B', source: findInputSource(part.id, ['B', 'IN2', 'I1']) },
+              ];
+              const y = findOutputSinks(part.id, ['Y', 'OUT', 'Q']);
+              if (y) outputs.push(y);
+            } else if (typeLower.includes('xor-gate')) {
+              device = new LogicGateDevice('xor');
+              inputs = [
+                { name: 'A', source: findInputSource(part.id, ['A', 'IN1', 'I0']) },
+                { name: 'B', source: findInputSource(part.id, ['B', 'IN2', 'I1']) },
+              ];
+              const y = findOutputSinks(part.id, ['Y', 'OUT', 'Q']);
+              if (y) outputs.push(y);
+            } else if (typeLower.includes('nand-gate')) {
+              device = new LogicGateDevice('nand');
+              inputs = [
+                { name: 'A', source: findInputSource(part.id, ['A', 'IN1', 'I0']) },
+                { name: 'B', source: findInputSource(part.id, ['B', 'IN2', 'I1']) },
+              ];
+              const y = findOutputSinks(part.id, ['Y', 'OUT', 'Q']);
+              if (y) outputs.push(y);
+            } else if (typeLower.includes('nor-gate')) {
+              device = new LogicGateDevice('nor');
+              inputs = [
+                { name: 'A', source: findInputSource(part.id, ['A', 'IN1', 'I0']) },
+                { name: 'B', source: findInputSource(part.id, ['B', 'IN2', 'I1']) },
+              ];
+              const y = findOutputSinks(part.id, ['Y', 'OUT', 'Q']);
+              if (y) outputs.push(y);
+            } else if (typeLower.includes('mux')) {
+              device = new Mux2Device();
+              inputs = [
+                { name: 'I0', source: findInputSource(part.id, ['I0', 'A', 'IN0']) },
+                { name: 'I1', source: findInputSource(part.id, ['I1', 'B', 'IN1']) },
+                { name: 'S', source: findInputSource(part.id, ['S', 'SEL']) },
+              ];
+              const y = findOutputSinks(part.id, ['Y', 'OUT', 'Q']);
+              if (y) outputs.push(y);
+            } else if (typeLower.includes('flip-flop-dsr')) {
+              device = new DSRFlipFlopDevice();
+              inputs = [
+                { name: 'D', source: findInputSource(part.id, ['D']) },
+                { name: 'CLK', source: findInputSource(part.id, ['CLK', 'C']) },
+                { name: 'S', source: findInputSource(part.id, ['S', 'SET']) },
+                { name: 'R', source: findInputSource(part.id, ['R', 'RST', 'RESET']) },
+              ];
+              const q = findOutputSinks(part.id, ['Q', 'OUT']);
+              const nq = findOutputSinks(part.id, ['QBAR', 'NQ', 'QB', '!Q']);
+              if (q) {
+                q.name = 'Q';
+                outputs.push(q);
+              }
+              if (nq) {
+                nq.name = 'NQ';
+                outputs.push(nq);
+              }
+            } else if (typeLower.includes('flip-flop-d')) {
+              device = new DFlipFlopDevice();
+              inputs = [
+                { name: 'D', source: findInputSource(part.id, ['D']) },
+                { name: 'CLK', source: findInputSource(part.id, ['CLK', 'C']) },
+              ];
+              const q = findOutputSinks(part.id, ['Q', 'OUT']);
+              const nq = findOutputSinks(part.id, ['QBAR', 'NQ', 'QB', '!Q']);
+              if (q) {
+                q.name = 'Q';
+                outputs.push(q);
+              }
+              if (nq) {
+                nq.name = 'NQ';
+                outputs.push(nq);
+              }
+            }
+
+            if (device && outputs.length > 0) {
+              logicDevicesRef.current.push({ device, inputs, outputs });
+            }
           }
         } // End mcuPart check
 

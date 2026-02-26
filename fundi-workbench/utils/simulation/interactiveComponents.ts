@@ -58,6 +58,10 @@ export const INTERACTIVE_COMPONENT_CONFIG: Record<string, {
     'gas-sensor': { min: 0, max: 1023, default: 200, unit: 'ppm', label: 'Gas Level' },
     'wokwi-gas-sensor': { min: 0, max: 1023, default: 200, unit: 'ppm', label: 'Gas Level' },
 
+    // HX711 load cell input (kg)
+    'hx711': { min: 0, max: 50, default: 0, unit: 'kg', label: 'Load' },
+    'wokwi-hx711': { min: 0, max: 50, default: 0, unit: 'kg', label: 'Load' },
+
     // PIR Motion sensor
     'pir-motion-sensor': { min: 0, max: 1, default: 0, unit: '', label: 'Motion' },
     'wokwi-pir-motion-sensor': { min: 0, max: 1, default: 0, unit: '', label: 'Motion' },

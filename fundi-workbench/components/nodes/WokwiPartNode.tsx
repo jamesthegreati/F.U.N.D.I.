@@ -10,7 +10,7 @@ import { WOKWI_PARTS, WokwiPartType } from '@/lib/wokwiParts';
 import { useAppStore, type CircuitPart } from '@/store/useAppStore';
 import type { WirePoint } from '@/types/wire';
 import { getAudioSimulation, pwmToFrequency } from '@/utils/simulation/audio';
-import { getLCD1602 } from '@/utils/simulation/lcd1602';
+import { getLCD1602, getLCD2004 } from '@/utils/simulation/lcd1602';
 import { getSSD1306 } from '@/utils/simulation/ssd1306';
 import { getILI9341 } from '@/utils/simulation/ili9341';
 import { SensorValuePopup, isSensorWithPopup } from '@/components/SensorValuePopup';
@@ -674,7 +674,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         const attrs = data?.attrs ?? {};
         const attrsRecord = attrs as Record<string, unknown>;
         const addr = parseI2CAddress(attrsRecord.i2cAddress ?? attrsRecord.address, 0x27);
-        const lcdDevice = getLCD1602(addr);
+        const lcdDevice = partTypeLower.includes('lcd2004') ? getLCD2004(addr) : getLCD1602(addr);
 
         const lcdEl = element as unknown as {
             text?: string;
@@ -1034,6 +1034,45 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         return () => {
             element.removeEventListener('button-press', handleKeypadPress);
             element.removeEventListener('button-release', handleKeypadRelease);
+        };
+    }, [nodeId, partType, elementReadyTick]);
+
+    // Listen for IR remote button presses and persist command code to attrs
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+
+        const typeLower = partType.toLowerCase();
+        const isIrRemote = typeLower.includes('ir-remote');
+        if (!isIrRemote) return;
+
+        const handleIrPress = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { key?: string; irCode?: number } | undefined;
+            const irCode = typeof detail?.irCode === 'number' ? detail.irCode : NaN;
+            if (!Number.isFinite(irCode)) return;
+
+            const state = useAppStore.getState();
+            const parts = state.circuitParts || [];
+            const partIndex = parts.findIndex((p: CircuitPart) => p.id === nodeId);
+            if (partIndex === -1) return;
+
+            const part = parts[partIndex];
+            const attrs = (part.attrs ?? {}) as Record<string, unknown>;
+            const prevSeqRaw = attrs.irSeq;
+            const prevSeq = typeof prevSeqRaw === 'number' ? prevSeqRaw : Number.parseInt(String(prevSeqRaw ?? '0'), 10);
+            const irSeq = Number.isFinite(prevSeq) ? prevSeq + 1 : 1;
+
+            state.updatePartAttrs(nodeId, {
+                ...part.attrs,
+                irCode,
+                irSeq,
+                irKey: String(detail?.key ?? ''),
+            });
+        };
+
+        element.addEventListener('button-press', handleIrPress);
+        return () => {
+            element.removeEventListener('button-press', handleIrPress);
         };
     }, [nodeId, partType, elementReadyTick]);
 
