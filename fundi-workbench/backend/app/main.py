@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from contextlib import asynccontextmanager
@@ -10,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.endpoints.compile import router as compile_router
 from app.api.endpoints.generate import router as generate_router
 from app.api.endpoints.ai_tools import router as ai_tools_router
+from app.api.endpoints.simulate import router as simulate_router
 from app.core.config import settings
+from app.services.compiler import CompilerService
 
 
 @asynccontextmanager
@@ -29,9 +32,34 @@ async def lifespan(app: FastAPI):
         print(f"🤖 Gemini model: {settings.GEMINI_MODEL}", file=sys.stderr)
     
     # Validate Arduino CLI availability
-    arduino_cli_path = shutil.which("arduino-cli")
+    # Prefer explicit override, then fall back to PATH lookup.
+    arduino_cli_path = os.environ.get("ARDUINO_CLI_PATH") or shutil.which("arduino-cli")
     if arduino_cli_path:
         print(f"✅ Arduino CLI found at: {arduino_cli_path}", file=sys.stderr)
+
+        sketchbook_dir = os.environ.get("ARDUINO_SKETCHBOOK_DIR")
+        libraries_dir = os.environ.get("ARDUINO_LIBRARIES_DIR")
+        if sketchbook_dir:
+            print(f"📁 Arduino sketchbook dir: {sketchbook_dir}", file=sys.stderr)
+        if libraries_dir:
+            print(f"📚 Arduino libraries dir: {libraries_dir}", file=sys.stderr)
+
+        # Optional startup bootstrap for non-AVR board cores so ESP32/Pico compile out-of-the-box.
+        if os.environ.get("FUNDI_AUTO_BOOTSTRAP_CORES", "0").strip().lower() not in {"0", "false", "no"}:
+            service = CompilerService()
+            for board in ("wokwi-esp32-devkit-v1", "wokwi-pi-pico"):
+                ok, err = service.ensure_board_core(board)
+                if ok:
+                    if err:
+                        print(f"⏳ Board core setup in progress: {board} ({err})", file=sys.stderr)
+                    else:
+                        print(f"✅ Board core ready: {board}", file=sys.stderr)
+                else:
+                    print(
+                        f"⚠️  Board core bootstrap failed for {board}: {err} "
+                        "(you can tune FUNDI_CORE_INSTALL_RETRIES and FUNDI_CORE_INSTALL_TIMEOUT_S)",
+                        file=sys.stderr,
+                    )
     else:
         print("⚠️  Arduino CLI not found in PATH. Compilation features may not work.", file=sys.stderr)
     
@@ -61,6 +89,7 @@ app.add_middleware(
 app.include_router(generate_router)
 app.include_router(compile_router)
 app.include_router(ai_tools_router)
+app.include_router(simulate_router)
 
 
 @app.get("/health")

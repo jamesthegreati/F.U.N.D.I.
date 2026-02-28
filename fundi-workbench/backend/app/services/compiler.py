@@ -14,6 +14,8 @@ from typing import Optional
 import tempfile
 import os
 import shutil
+import time
+from contextlib import contextmanager
 
 from app.core.security import is_safe_filename, validate_file_path, is_safe_serial_port
 
@@ -22,6 +24,9 @@ from app.core.security import is_safe_filename, validate_file_path, is_safe_seri
 class CompileResult:
     success: bool
     hex: Optional[str] = None
+    artifact_type: Optional[str] = None
+    artifact_payload: Optional[str] = None
+    simulation_hints: Optional[dict[str, object]] = None
     error: Optional[str] = None
 
 
@@ -42,6 +47,7 @@ AVAILABLE_LIBRARIES: set[str] = {
 
 
 _MISSING_HEADER_RE = re.compile(r"fatal error:\s*([^:\s]+):\s*No such file or directory", re.IGNORECASE)
+_MISSING_PLATFORM_RE = re.compile(r"Platform\s+'([^']+)'\s+not\s+found", re.IGNORECASE)
 
 # Only auto-install well-known, safe Arduino libraries that we explicitly support.
 # Key = header file mentioned in compile error; value = Arduino Library Manager name.
@@ -70,6 +76,10 @@ _PORTS_CACHE_LOCK = threading.Lock()
 _PORTS_CACHE: list[dict[str, object]] | None = None
 _PORTS_CACHE_TS: float = 0.0
 _PORTS_CACHE_TTL_S: float = 3.0
+_CLI_CONFIG_PATH: str | None = None
+_CORE_PACKAGE_INDEX_URLS: dict[str, list[str]] = {
+    "esp32:esp32": ["https://espressif.github.io/arduino-esp32/package_esp32_index.json"],
+}
 
 
 class CompilerService:
@@ -90,6 +100,22 @@ class CompilerService:
     }
 
     SUPPORTED_BOARDS: frozenset[str] = frozenset(FQBN_MAP.keys())
+
+    BOARD_ENGINE: dict[str, str] = {
+        "wokwi-arduino-uno": "avr",
+        "wokwi-arduino-nano": "avr",
+        "wokwi-arduino-mega": "avr",
+        "wokwi-pi-pico": "rp2040",
+        "wokwi-esp32-devkit-v1": "esp32",
+    }
+
+    BOARD_CORE_MAP: dict[str, str] = {
+        "wokwi-arduino-uno": "arduino:avr",
+        "wokwi-arduino-nano": "arduino:avr",
+        "wokwi-arduino-mega": "arduino:avr",
+        "wokwi-esp32-devkit-v1": "esp32:esp32",
+        "wokwi-pi-pico": "arduino:mbed_rp2040",
+    }
 
     UPLOAD_SUPPORTED_BOARDS: frozenset[str] = frozenset(
         {
@@ -214,7 +240,7 @@ class CompilerService:
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 def run_compile() -> subprocess.CompletedProcess[str]:
-                    cmd = [
+                    cmd = self._cli_cmd(
                         arduino_cli,
                         "compile",
                         "--fqbn",
@@ -222,8 +248,11 @@ class CompilerService:
                         "--output-dir",
                         str(out_dir),
                         "--no-color",
-                        str(sketch_dir),
-                    ]
+                    )
+                    library_dirs = self._resolve_library_dirs()
+                    for library_dir in library_dirs:
+                        cmd.extend(["--libraries", library_dir])
+                    cmd.append(str(sketch_dir))
                     return subprocess.run(
                         cmd,
                         capture_output=True,
@@ -262,6 +291,60 @@ class CompilerService:
                     stderr = (proc.stderr or "").strip()
                     stdout = (proc.stdout or "").strip()
                     combined = "\n".join([s for s in [stderr, stdout] if s])
+
+                    # Missing board platform/core is common for first-time non-AVR use.
+                    # Try a one-shot auto-install of the required core and retry.
+                    missing_platform = self._extract_missing_platform(combined)
+                    if missing_platform:
+                        core_package = self.BOARD_CORE_MAP.get(board) or missing_platform
+                        installed_core, core_err = self._install_core_package(arduino_cli, core_package)
+                        if installed_core:
+                            try:
+                                proc_core_retry = run_compile()
+                            except subprocess.TimeoutExpired:
+                                return CompileResult(
+                                    success=False,
+                                    error="Compilation timed out after 2 minutes (after installing board core).",
+                                )
+                            except Exception as exc:  # noqa: BLE001
+                                return CompileResult(
+                                    success=False,
+                                    error=f"Unexpected error during board-core compile retry: {exc}",
+                                )
+
+                            if proc_core_retry.returncode == 0:
+                                artifact_path = self._find_artifact(out_dir)
+                                if not artifact_path:
+                                    return CompileResult(
+                                        success=False,
+                                        error="Compilation succeeded but no .hex/.bin artifact was found in output directory.",
+                                    )
+                                try:
+                                    data = artifact_path.read_bytes()
+                                    encoded = base64.b64encode(data).decode("ascii")
+                                    artifact_type = self._infer_artifact_type(board, artifact_path)
+                                    hints = self._build_simulation_hints(board, artifact_type)
+                                    return CompileResult(
+                                        success=True,
+                                        hex=encoded,
+                                        artifact_type=artifact_type,
+                                        artifact_payload=encoded,
+                                        simulation_hints=hints,
+                                    )
+                                except Exception as exc:  # noqa: BLE001
+                                    return CompileResult(success=False, error=f"Failed to read compiled artifact: {exc}")
+
+                            stderr_core = (proc_core_retry.stderr or "").strip()
+                            stdout_core = (proc_core_retry.stdout or "").strip()
+                            combined = "\n".join([s for s in [stderr_core, stdout_core] if s]) or combined
+                        else:
+                            combined = (
+                                (combined or "Compilation failed.")
+                                + "\n\nHint: install board core with `arduino-cli core install "
+                                + core_package
+                                + "`."
+                                + (f"\nDetails: {core_err}" if core_err else "")
+                            )
 
                     # Try to fix missing includes by installing libraries (max N installs)
                     max_installs = int(os.environ.get("FUNDI_MAX_AUTO_LIB_INSTALLS", "6"))
@@ -302,7 +385,15 @@ class CompilerService:
                             try:
                                 data = artifact_path.read_bytes()
                                 encoded = base64.b64encode(data).decode("ascii")
-                                return CompileResult(success=True, hex=encoded)
+                                artifact_type = self._infer_artifact_type(board, artifact_path)
+                                hints = self._build_simulation_hints(board, artifact_type)
+                                return CompileResult(
+                                    success=True,
+                                    hex=encoded,
+                                    artifact_type=artifact_type,
+                                    artifact_payload=encoded,
+                                    simulation_hints=hints,
+                                )
                             except Exception as exc:  # noqa: BLE001
                                 return CompileResult(success=False, error=f"Failed to read compiled artifact: {exc}")
 
@@ -323,7 +414,15 @@ class CompilerService:
                 try:
                     data = artifact_path.read_bytes()
                     encoded = base64.b64encode(data).decode("ascii")
-                    return CompileResult(success=True, hex=encoded)
+                    artifact_type = self._infer_artifact_type(board, artifact_path)
+                    hints = self._build_simulation_hints(board, artifact_type)
+                    return CompileResult(
+                        success=True,
+                        hex=encoded,
+                        artifact_type=artifact_type,
+                        artifact_payload=encoded,
+                        simulation_hints=hints,
+                    )
                 except Exception as exc:
                     return CompileResult(
                         success=False,
@@ -359,7 +458,7 @@ class CompilerService:
 
         try:
             proc = subprocess.run(
-                [arduino_cli, "board", "list", "--format", "json", "--no-color"],
+                self._cli_cmd(arduino_cli, "board", "list", "--format", "json", "--no-color"),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -466,15 +565,17 @@ class CompilerService:
                 artifact_path.write_bytes(artifact_bytes)
 
                 cmd = [
-                    arduino_cli,
-                    "upload",
-                    "--fqbn",
-                    fqbn,
-                    "-p",
-                    port.strip(),
-                    "--input-file",
-                    str(artifact_path),
-                    "--no-color",
+                    *self._cli_cmd(
+                        arduino_cli,
+                        "upload",
+                        "--fqbn",
+                        fqbn,
+                        "-p",
+                        port.strip(),
+                        "--input-file",
+                        str(artifact_path),
+                        "--no-color",
+                    ),
                 ]
 
                 proc = subprocess.run(
@@ -511,6 +612,202 @@ class CompilerService:
         if override:
             return override
         return shutil.which("arduino-cli")
+
+    def _resolve_library_dirs(self) -> list[str]:
+        env_value = (os.environ.get("ARDUINO_LIBRARIES_DIR") or "").strip()
+        if env_value:
+            return [env_value]
+
+        sketchbook = (os.environ.get("ARDUINO_SKETCHBOOK_DIR") or "").strip()
+        if sketchbook:
+            return [str(Path(sketchbook) / "libraries")]
+
+        return []
+
+    def _resolve_cli_config_file(self) -> Optional[str]:
+        global _CLI_CONFIG_PATH  # noqa: PLW0603
+
+        explicit = (os.environ.get("ARDUINO_CLI_CONFIG_FILE") or "").strip()
+        if explicit:
+            return explicit
+
+        sketchbook = (os.environ.get("ARDUINO_SKETCHBOOK_DIR") or "").strip()
+        if not sketchbook:
+            return None
+
+        # YAML treats backslashes in double-quoted strings as escapes (e.g. \U...).
+        # Normalize Windows paths so Arduino CLI can parse config reliably.
+        sketchbook_yaml = sketchbook.replace("\\", "/")
+        network_timeout_s = max(60, int(os.environ.get("FUNDI_ARDUINO_NETWORK_TIMEOUT_S", "900")))
+
+        additional_urls: list[str] = []
+        env_urls = (os.environ.get("ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS") or "").strip()
+        if env_urls:
+            for value in env_urls.split(","):
+                url = value.strip()
+                if url:
+                    additional_urls.append(url)
+
+        # Ensure ESP32 board manager index is always available for bootstrap/install flows.
+        esp32_url = "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+        if esp32_url not in additional_urls:
+            additional_urls.append(esp32_url)
+
+        if _CLI_CONFIG_PATH:
+            return _CLI_CONFIG_PATH
+
+        config_dir = Path(tempfile.gettempdir()) / "fundi-arduino-cli"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "arduino-cli.yaml"
+        try:
+            urls_yaml = "\n".join([f"    - \"{u}\"" for u in additional_urls])
+            config_text = (
+                "directories:\n"
+                f"  user: \"{sketchbook_yaml}\"\n"
+                "board_manager:\n"
+                "  additional_urls:\n"
+                f"{urls_yaml}\n"
+                "network:\n"
+                f"  connection_timeout: {network_timeout_s}s\n"
+            )
+            config_path.write_text(config_text, encoding="utf-8")
+            _CLI_CONFIG_PATH = str(config_path)
+            return _CLI_CONFIG_PATH
+        except Exception:
+            return None
+
+    def _cli_cmd(self, arduino_cli: str, *args: str) -> list[str]:
+        cmd = [arduino_cli]
+        config_file = self._resolve_cli_config_file()
+        if config_file:
+            cmd.extend(["--config-file", config_file])
+        cmd.extend(args)
+        return cmd
+
+    def _cli_cmd_with_additional_urls(self, arduino_cli: str, additional_urls: list[str], *args: str) -> list[str]:
+        cmd = self._cli_cmd(arduino_cli)
+        for url in additional_urls:
+            if isinstance(url, str) and url.strip():
+                cmd.extend(["--additional-urls", url.strip()])
+        cmd.extend(args)
+        return cmd
+
+    @contextmanager
+    def _global_core_install_lock(self, timeout_s: int):
+        lock_file_env = (os.environ.get("FUNDI_CORE_INSTALL_LOCK_FILE") or "").strip()
+        lock_path = Path(lock_file_env) if lock_file_env else Path(tempfile.gettempdir()) / "fundi-arduino-core-install.lock"
+        stale_s = max(60, int(os.environ.get("FUNDI_CORE_INSTALL_LOCK_STALE_S", "3600")))
+        lock_wait_s = max(5, int(os.environ.get("FUNDI_CORE_INSTALL_LOCK_TIMEOUT_S", "120")))
+        deadline = time.time() + lock_wait_s
+        fd: int | None = None
+
+        while True:
+            try:
+                # Clear stale lock if present.
+                if lock_path.exists():
+                    age_s = time.time() - lock_path.stat().st_mtime
+                    owner_dead = False
+                    try:
+                        raw_pid = lock_path.read_text(encoding="utf-8", errors="ignore").strip()
+                        if raw_pid.isdigit() and not self._pid_is_alive(int(raw_pid)):
+                            owner_dead = True
+                    except Exception:
+                        owner_dead = False
+
+                    if age_s > stale_s:
+                        try:
+                            lock_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    elif owner_dead:
+                        try:
+                            lock_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+
+                fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                os.write(fd, str(os.getpid()).encode("utf-8", errors="ignore"))
+                break
+            except FileExistsError:
+                if time.time() >= deadline:
+                    raise TimeoutError(f"Timed out waiting for core install lock: {lock_path}")
+                time.sleep(1.0)
+
+        try:
+            yield
+        finally:
+            try:
+                if fd is not None:
+                    os.close(fd)
+            except Exception:
+                pass
+            try:
+                lock_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    def _pid_is_alive(self, pid: int) -> bool:
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+        except Exception:
+            return False
+
+    def ensure_board_core(self, board: str) -> tuple[bool, Optional[str]]:
+        core_package = self.BOARD_CORE_MAP.get(board)
+        if not core_package:
+            return False, f"No board core mapping for {board}"
+
+        arduino_cli = self._resolve_arduino_cli()
+        if not arduino_cli:
+            return False, "arduino-cli executable not found"
+
+        if self._is_core_installed(arduino_cli, core_package):
+            return True, None
+
+        installed, install_err = self._install_core_package(arduino_cli, core_package)
+        if installed:
+            return True, None
+
+        if install_err:
+            if "Timed out waiting for core install lock" in install_err:
+                return True, "Core install already in progress in another process"
+            return False, f"Failed to install board core: {core_package}. {install_err}"
+        return False, f"Failed to install board core: {core_package}"
+
+    def _is_core_installed(self, arduino_cli: str, core_package: str) -> bool:
+        try:
+            proc = subprocess.run(
+                self._cli_cmd(arduino_cli, "core", "list", "--format", "json", "--no-color"),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=30,
+            )
+            raw = (proc.stdout or "").strip()
+            if not raw:
+                return False
+
+            payload = json.loads(raw)
+            installed = payload.get("installed_platforms") if isinstance(payload, dict) else None
+            if not isinstance(installed, list):
+                return False
+
+            for entry in installed:
+                if not isinstance(entry, dict):
+                    continue
+                id_value = entry.get("id")
+                if isinstance(id_value, str) and id_value.strip() == core_package:
+                    return True
+            return False
+        except Exception:
+            return False
 
     def get_missing_header(self, compiler_output: str) -> Optional[str]:
         """Public wrapper to extract missing header from compiler output."""
@@ -554,7 +851,7 @@ class CompilerService:
         try:
             # Newer arduino-cli supports JSON output for lib list.
             proc = subprocess.run(
-                [arduino_cli, "lib", "list", "--format", "json", "--no-color"],
+                self._cli_cmd(arduino_cli, "lib", "list", "--format", "json", "--no-color"),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -579,7 +876,7 @@ class CompilerService:
         # Fallback: parse plaintext output.
         try:
             proc = subprocess.run(
-                [arduino_cli, "lib", "list", "--no-color"],
+                self._cli_cmd(arduino_cli, "lib", "list", "--no-color"),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -620,6 +917,38 @@ class CompilerService:
 
         return None
 
+    def _infer_artifact_type(self, board: str, artifact_path: Path) -> str:
+        suffix = artifact_path.suffix.lower()
+        if suffix == ".hex":
+            return "intel-hex"
+        if suffix == ".uf2":
+            return "uf2"
+        if suffix == ".elf":
+            return "elf"
+        if suffix == ".bin":
+            return "raw-bin"
+        if board.startswith("wokwi-arduino-"):
+            return "intel-hex"
+        return "raw-bin"
+
+    def _build_simulation_hints(self, board: str, artifact_type: str) -> dict[str, object]:
+        engine = self.BOARD_ENGINE.get(board, "unknown")
+        cpu_hz: int | None = None
+        if engine == "avr":
+            cpu_hz = 16_000_000
+        elif engine == "rp2040":
+            cpu_hz = 133_000_000
+        elif engine == "esp32":
+            cpu_hz = 240_000_000
+
+        hints: dict[str, object] = {
+            "engine": engine,
+            "artifactType": artifact_type,
+        }
+        if cpu_hz is not None:
+            hints["cpuHz"] = cpu_hz
+        return hints
+
     def _extract_missing_header(self, compiler_output: str) -> Optional[str]:
         """Extract a missing header from Arduino compiler output."""
         if not compiler_output:
@@ -629,6 +958,82 @@ class CompilerService:
             return None
         header = match.group(1).strip()
         return header or None
+
+    def _extract_missing_platform(self, compiler_output: str) -> Optional[str]:
+        if not compiler_output:
+            return None
+        match = _MISSING_PLATFORM_RE.search(compiler_output)
+        if not match:
+            return None
+        value = match.group(1).strip()
+        return value or None
+
+    def _install_core_package(self, arduino_cli: str, core_package: str) -> tuple[bool, Optional[str]]:
+        pkg = (core_package or "").strip()
+        if not pkg:
+            return False, "empty core package"
+
+        extra_urls = _CORE_PACKAGE_INDEX_URLS.get(pkg, [])
+        retries = max(1, int(os.environ.get("FUNDI_CORE_INSTALL_RETRIES", "3")))
+        timeout_s = max(120, int(os.environ.get("FUNDI_CORE_INSTALL_TIMEOUT_S", "900")))
+        last_out = ""
+
+        try:
+            with self._global_core_install_lock(timeout_s=max(120, timeout_s)):
+                with _LIB_INSTALL_LOCK:
+                    for attempt in range(1, retries + 1):
+                        try:
+                            subprocess.run(
+                                self._cli_cmd_with_additional_urls(
+                                    arduino_cli,
+                                    extra_urls,
+                                    "core",
+                                    "update-index",
+                                    "--no-color",
+                                ),
+                                capture_output=True,
+                                text=True,
+                                encoding="utf-8",
+                                errors="replace",
+                                check=False,
+                                timeout=240,
+                            )
+
+                            proc = subprocess.run(
+                                self._cli_cmd_with_additional_urls(
+                                    arduino_cli,
+                                    extra_urls,
+                                    "core",
+                                    "install",
+                                    pkg,
+                                    "--no-color",
+                                ),
+                                capture_output=True,
+                                text=True,
+                                encoding="utf-8",
+                                errors="replace",
+                                check=False,
+                                timeout=timeout_s,
+                            )
+                        except subprocess.TimeoutExpired:
+                            last_out = f"timeout after {timeout_s}s (attempt {attempt}/{retries})"
+                            continue
+                        except Exception as exc:
+                            last_out = f"unexpected install error (attempt {attempt}/{retries}): {exc}"
+                            continue
+
+                        out_raw = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+                        out = out_raw.lower()
+                        if proc.returncode == 0:
+                            return True, None
+                        if "already installed" in out or "is already installed" in out:
+                            return True, None
+
+                        last_out = out_raw or f"core install exited with code {proc.returncode}"
+        except TimeoutError as exc:
+            return False, str(exc)
+
+        return False, last_out or "unknown core install failure"
 
     def _try_install_library_for_header(self, arduino_cli: str, header: str) -> bool:
         """Attempt to install a supported Arduino library for a missing header.
@@ -641,7 +1046,7 @@ class CompilerService:
 
         # Serialize installs to avoid concurrent arduino-cli writes to the library directory.
         with _LIB_INSTALL_LOCK:
-            cmd = [arduino_cli, "lib", "install", library, "--no-color"]
+            cmd = self._cli_cmd(arduino_cli, "lib", "install", library, "--no-color")
             try:
                 proc = subprocess.run(
                     cmd,
@@ -707,7 +1112,7 @@ class CompilerService:
         # Use omit-releases-details for smaller payloads.
         try:
             proc = subprocess.run(
-                [arduino_cli, "lib", "search", f"provides:{header}", "--json", "--omit-releases-details"],
+                self._cli_cmd(arduino_cli, "lib", "search", f"provides:{header}", "--json", "--omit-releases-details"),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -768,7 +1173,7 @@ class CompilerService:
                 return
             try:
                 subprocess.run(
-                    [arduino_cli, "lib", "update-index", "--no-color"],
+                    self._cli_cmd(arduino_cli, "lib", "update-index", "--no-color"),
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -784,7 +1189,7 @@ class CompilerService:
     def _install_library(self, arduino_cli: str, library: str) -> bool:
         # Serialize installs to avoid concurrent arduino-cli writes to the library directory.
         with _LIB_INSTALL_LOCK:
-            cmd = [arduino_cli, "lib", "install", library, "--no-color"]
+            cmd = self._cli_cmd(arduino_cli, "lib", "install", library, "--no-color")
             try:
                 proc = subprocess.run(
                     cmd,

@@ -44,6 +44,18 @@
     {
       "id": "smart-facility-guardian",
       "file": "smart-facility-guardian.json"
+    },
+    {
+      "id": "esp32-touch-ledc-dac",
+      "file": "esp32-touch-ledc-dac.json"
+    },
+    {
+      "id": "esp32-dual-core-rtos-hub",
+      "file": "esp32-dual-core-rtos-hub.json"
+    },
+    {
+      "id": "pico-internal-temp-pwm",
+      "file": "pico-internal-temp-pwm.json"
     }
   ]
 }

@@ -22,6 +22,13 @@ python -m pip install -r requirements.txt
 
 # Run the backend (every time)
 $env:PATH = "C:\arduino-cli;$env:PATH"
+$env:ARDUINO_CLI_PATH = "C:\arduino-cli\arduino-cli.exe"
+$env:ARDUINO_SKETCHBOOK_DIR = "C:\Users\henry\Documents\Arduino"
+$env:ARDUINO_LIBRARIES_DIR = "C:\Users\henry\Documents\Arduino\libraries"
+$env:FUNDI_AUTO_BOOTSTRAP_CORES = "0"
+$env:FUNDI_CORE_INSTALL_RETRIES = "4"
+$env:FUNDI_CORE_INSTALL_TIMEOUT_S = "12000"
+$env:FUNDI_ARDUINO_NETWORK_TIMEOUT_S = "900"
 .\venv\Scripts\Activate.ps1
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -38,8 +45,33 @@ python -m pip install -r requirements.txt
 
 # Run the backend (every time)
 export PATH="/c/arduino-cli:$PATH"
+export ARDUINO_CLI_PATH="C:/arduino-cli/arduino-cli.exe"
+export ARDUINO_SKETCHBOOK_DIR="C:/Users/henry/Documents/Arduino"
+export ARDUINO_LIBRARIES_DIR="C:/Users/henry/Documents/Arduino/libraries"
+export FUNDI_AUTO_BOOTSTRAP_CORES="0"
+export FUNDI_CORE_INSTALL_RETRIES="4"
+export FUNDI_CORE_INSTALL_TIMEOUT_S="1200"
+export FUNDI_ARDUINO_NETWORK_TIMEOUT_S="900"
 source venv/Scripts/activate
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### One-time board core setup (run separately)
+
+Run this once (or whenever you need to repair board core installs):
+
+```powershell
+cd fundi-workbench/backend
+.\venv\Scripts\Activate.ps1
+python bootstrap_board_cores.py
+```
+
+Git Bash:
+
+```bash
+cd fundi-workbench/backend
+source venv/Scripts/activate
+python bootstrap_board_cores.py
 ```
 
 ### Terminal 2: Frontend (Next.js)
@@ -126,6 +158,17 @@ If the upload fails, the response includes `upload_error` and `upload_output` (A
 Make sure to add it to PATH before starting the backend:
 ```powershell
 $env:PATH = "C:\arduino-cli;$env:PATH"
+```
+
+### Board platform not installed (ESP32 / Pico)
+If compile reports `Platform '... not found: platform not installed'`, install the board core once:
+
+```bash
+# ESP32 DevKit v1
+arduino-cli core install esp32:esp32
+
+# RP2040 Pico
+arduino-cli core install arduino:mbed_rp2040
 ```
 
 ### Port already in use

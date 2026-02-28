@@ -1,6 +1,9 @@
 'use client';
 
 import smartFacilityGuardian from '../data/featured-projects/smart-facility-guardian.json';
+import esp32TouchLedcDac from '../data/featured-projects/esp32-touch-ledc-dac.json';
+import esp32DualCoreRtosHub from '../data/featured-projects/esp32-dual-core-rtos-hub.json';
+import picoInternalTempPwm from '../data/featured-projects/pico-internal-temp-pwm.json';
 
 /**
  * Featured Projects - Wokwi Project Loader
@@ -777,6 +780,9 @@ void loop() {
   }
 }`
   },
+  esp32TouchLedcDac as unknown as FeaturedProject,
+  esp32DualCoreRtosHub as unknown as FeaturedProject,
+  picoInternalTempPwm as unknown as FeaturedProject,
   smartFacilityGuardian as unknown as FeaturedProject
 ];
 

@@ -62,6 +62,11 @@ import {
   Mux2Device,
   type LogicDevice,
 } from '@/utils/simulation/logic';
+import { simFeatureFlags, boardFamily } from '@/utils/simulation/featureFlags';
+import { Rp2040EngineAdapter } from '@/utils/simulation/engines/rp2040/Rp2040EngineAdapter';
+import { Esp32EngineAdapter } from '@/utils/simulation/engines/esp32/Esp32EngineAdapter';
+import type { SimulationEngine, SimulationArtifact as EngineSimulationArtifact } from '@/utils/simulation/engines/SimulationEngine';
+import { buildAdjacency as buildNetAdjacency, findConnectedBoardPinId } from '@/utils/simulation/net/NetGraph';
 
 // --- Speaker Device Implementation ---
 // Monitors a pin for rapid toggling (square wave) and plays audio via Web Audio API
@@ -364,6 +369,12 @@ export type UseSimulationControls = {
   rotateEncoder: (partId: string, direction: 'cw' | 'ccw') => void;
 };
 
+export type SimulationArtifact = {
+  artifactType: string;
+  artifactPayload: string;
+  simulationHints?: Record<string, unknown> | null;
+} | null;
+
 function isAvrPart(partType: string): boolean {
   return (
     partType === 'wokwi-arduino-uno' ||
@@ -372,7 +383,11 @@ function isAvrPart(partType: string): boolean {
   );
 }
 
-export function useSimulation(hexData: string | null | undefined, partType: string): UseSimulationControls {
+export function useSimulation(
+  hexData: string | null | undefined,
+  partType: string,
+  simulationArtifact?: SimulationArtifact
+): UseSimulationControls {
   const circuitParts = useAppStore((s) => s.circuitParts) as unknown as CircuitPart[];
   const connections = useAppStore((s) => s.connections) as unknown as CircuitConnection[];
   const setCircuitPartAttr = useAppStore((s) => s.setCircuitPartAttr);
@@ -384,10 +399,12 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const [serialOutput, setSerialOutput] = useState<string[]>([]);
 
   const runnerRef = useRef<AVRRunner | null>(null);
+  const engineRef = useRef<SimulationEngine | null>(null);
   const rafRef = useRef<number | null>(null);
   const runningRef = useRef(false);
   const serialBufferRef = useRef<string>('');
   const stepFrameRef = useRef<() => void>(() => { });
+  const nonAvrControlPinMapRef = useRef<Map<string, string>>(new Map());
 
   // Reduce UI churn: keep fast-changing signals in refs and flush to React state at a controlled rate.
   const pinStatesRef = useRef<PinStates>({});
@@ -618,6 +635,11 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     runningRef.current = false;
     setIsRunning(false);
     setHasRunner(false);
+    if (engineRef.current) {
+      void engineRef.current.stop();
+      engineRef.current = null;
+    }
+    nonAvrControlPinMapRef.current = new Map();
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -667,6 +689,9 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   const pause = useCallback(() => {
     runningRef.current = false;
     setIsRunning(false);
+    if (engineRef.current) {
+      void engineRef.current.stop();
+    }
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -676,6 +701,84 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
 
   const run = useCallback(() => {
     if (!hexData) return;
+
+    const family = boardFamily(partType);
+    if (family !== 'avr') {
+      const enabled =
+        (family === 'rp2040' && simFeatureFlags.rp2040) ||
+        (family === 'esp32' && simFeatureFlags.esp32);
+      if (!enabled) return;
+
+      const artifact: EngineSimulationArtifact = {
+        artifactType: simulationArtifact?.artifactType ?? 'raw-bin',
+        artifactPayload: simulationArtifact?.artifactPayload ?? hexData,
+        simulationHints: simulationArtifact?.simulationHints ?? null,
+      };
+
+      const mcuPart = circuitParts.find((p) => normalizeBoardType(p.type) === partType);
+      const adjacency = buildNetAdjacency(connections as unknown as Array<{ from: { partId: string; pinId: string }; to: { partId: string; pinId: string } }>);
+      const controlMap = new Map<string, string>();
+
+      if (mcuPart) {
+        const bindControl = (partId: string, pinCandidates: string[]) => {
+          for (const pinName of pinCandidates) {
+            const boardPin = findConnectedBoardPinId(adjacency, `${partId}:${pinName}`, mcuPart.id);
+            if (boardPin) {
+              controlMap.set(partId, boardPin);
+              return;
+            }
+          }
+        };
+
+        for (const part of circuitParts) {
+          const typeLower = part.type.toLowerCase();
+          if ((typeLower.includes('pushbutton') || typeLower.includes('button')) && !typeLower.includes('keypad')) {
+            bindControl(part.id, ['1.l', '1.r', '2.l', '2.r', '1', '2', 'OUT', 'SIG']);
+          }
+          if (typeLower.includes('slide-switch')) {
+            bindControl(part.id, ['2', '1', '3']);
+          }
+          if (typeLower.includes('analog-joystick')) {
+            bindControl(part.id, ['SEL']);
+          }
+        }
+      }
+
+      nonAvrControlPinMapRef.current = controlMap;
+
+      const startEngine = async () => {
+        try {
+          if (!engineRef.current) {
+            engineRef.current = family === 'rp2040' ? new Rp2040EngineAdapter() : new Esp32EngineAdapter();
+            engineRef.current.setHandlers({
+              onSerial: (line) => appendSerialLine(line),
+              onPinChange: (pinId, level) => {
+                const m = pinId.match(/^(?:D)?(\d+)$/i) ?? pinId.match(/^A(\d+)$/i);
+                if (!m) return;
+                const idx = Number.parseInt(m[1], 10);
+                const pin = /^A/i.test(pinId) ? 14 + idx : idx;
+                if (!Number.isFinite(pin)) return;
+                pinStatesRef.current[pin] = level === 1;
+                uiDirtyRef.current.pins = true;
+                flushUiSignalsIfNeeded();
+              },
+            });
+            await engineRef.current.init({ board: partType, artifact });
+          }
+
+          await engineRef.current.start();
+          runningRef.current = true;
+          setIsRunning(true);
+          setHasRunner(true);
+        } catch (err) {
+          console.error(err);
+        }
+      };
+
+      void startEngine();
+      return;
+    }
+
     if (!isAvrPart(partType)) return;
 
     // Initialize Audio
@@ -2139,15 +2242,42 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
     setIsRunning(true);
     setHasRunner(true);
     rafRef.current = requestAnimationFrame(stepFrame);
-  }, [hexData, partType, circuitParts, connections, setCircuitPartAttr, stepFrame, updatePortPins]);
+  }, [
+    hexData,
+    partType,
+    simulationArtifact,
+    circuitParts,
+    connections,
+    appendSerialLine,
+    flushUiSignalsIfNeeded,
+    setCircuitPartAttr,
+    stepFrame,
+    updatePortPins,
+  ]);
 
   const setButtonState = useCallback((partId: string, pressed: boolean) => {
+    const engine = engineRef.current;
+    if (engine) {
+      const pinId = nonAvrControlPinMapRef.current.get(partId);
+      if (!pinId) return;
+      engine.writePin(pinId, pressed ? 0 : 1);
+      return;
+    }
+
     const portBit = buttonPinMapRef.current.get(partId);
     if (!portBit) return;
     portBit.port.setPin(portBit.bit, !pressed);
   }, []);
 
   const setSwitchState = useCallback((partId: string, isOn: boolean) => {
+    const engine = engineRef.current;
+    if (engine) {
+      const pinId = nonAvrControlPinMapRef.current.get(partId);
+      if (!pinId) return;
+      engine.writePin(pinId, isOn ? 0 : 1);
+      return;
+    }
+
     const portBit = switchPinMapRef.current.get(partId);
     if (!portBit) return;
     // Active-low (consistent with button semantics)
@@ -2155,6 +2285,18 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   }, []);
 
   const setDipSwitchState = useCallback((partId: string, values: number[]) => {
+    const engine = engineRef.current;
+    if (engine) {
+      for (let i = 0; i < 8; i++) {
+        const pinId = nonAvrControlPinMapRef.current.get(`${partId}:${i}`) ?? nonAvrControlPinMapRef.current.get(partId);
+        if (!pinId) continue;
+        const valRaw = values[i];
+        const isOn = (typeof valRaw === 'number' ? valRaw : Number.parseInt(String(valRaw ?? '0'), 10)) === 1;
+        engine.writePin(pinId, isOn ? 0 : 1);
+      }
+      return;
+    }
+
     for (let i = 0; i < 8; i++) {
       const portBit = dipPinMapRef.current.get(`${partId}:${i}`);
       if (!portBit) continue;
@@ -2165,6 +2307,11 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
   }, []);
 
   const rotateEncoder = useCallback((partId: string, direction: 'cw' | 'ccw') => {
+    if (engineRef.current) {
+      appendSerialLine(`[sim] encoder ${partId} ${direction}`);
+      return;
+    }
+
     const queue = encoderQueueRef.current.get(partId);
     if (!queue) return;
 
@@ -2187,7 +2334,7 @@ export function useSimulation(hexData: string | null | undefined, partType: stri
       ];
 
     queue.push(...seq);
-  }, []);
+  }, [appendSerialLine]);
 
   const setAnalogValue = useCallback((partId: string, value: number) => {
     const manager = getInteractiveComponentManager();

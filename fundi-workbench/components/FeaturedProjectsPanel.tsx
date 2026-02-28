@@ -238,6 +238,9 @@ export function FeaturedProjectsPanel({ isOpen, onClose }: FeaturedProjectsPanel
 
   // Store actions
   const updateCode = useAppStore((s) => s.updateCode);
+  const updateFileContent = useAppStore((s) => s.updateFileContent);
+  const setActiveFile = useAppStore((s) => s.setActiveFile);
+  const openFile = useAppStore((s) => s.openFile);
   const applyGeneratedCircuit = useAppStore((s) => s.applyGeneratedCircuit);
 
   const allProjects = useMemo(() => getFeaturedProjects(), []);
@@ -279,8 +282,13 @@ export function FeaturedProjectsPanel({ isOpen, onClose }: FeaturedProjectsPanel
       // Convert project to FUNDI format
       const { parts, connections } = convertToFundiCircuit(selectedProject);
 
-      // Update code
+      // Ensure main file is active so editor always reflects loaded project code.
+      openFile('main.cpp');
+      setActiveFile('main.cpp');
+
+      // Update code in both legacy code state and main file content.
       updateCode(selectedProject.code);
+      updateFileContent('main.cpp', selectedProject.code);
 
       // Apply circuit with proper type mapping
       const circuitParts: CircuitPart[] = parts.map((p) => ({
@@ -311,7 +319,7 @@ export function FeaturedProjectsPanel({ isOpen, onClose }: FeaturedProjectsPanel
     } finally {
       setIsLoading(false);
     }
-  }, [selectedProject, updateCode, applyGeneratedCircuit, onClose]);
+  }, [selectedProject, openFile, setActiveFile, updateCode, updateFileContent, applyGeneratedCircuit, onClose]);
 
   if (!isOpen) return null;
 

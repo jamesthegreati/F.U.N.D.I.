@@ -83,6 +83,16 @@ The backend requires Arduino CLI for code compilation. In Docker, it's pre-insta
 - **Install**: Follow platform-specific instructions
 - **Verify**: `arduino-cli version`
 
+For faster backend startup locally, install non-AVR cores once and keep runtime bootstrap disabled:
+
+```bash
+cd backend
+source venv/bin/activate  # Windows Git Bash: source venv/Scripts/activate
+python bootstrap_board_cores.py
+```
+
+Then run backend with `FUNDI_AUTO_BOOTSTRAP_CORES=0`.
+
 The Docker image includes pre-installed cores for:
 - Arduino AVR (Uno, Nano, Mega)
 - ESP32 (ESP32 DevKit)

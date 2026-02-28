@@ -1331,6 +1331,7 @@ export default function Home() {
   const compilationError = useAppStore((s) => s.compilationError)
   const hex = useAppStore((s) => s.hex)
   const compiledBoard = useAppStore((s) => s.compiledBoard)
+  const simulationArtifact = useAppStore((s) => s.simulationArtifact)
 
   const {
     run: simRun,
@@ -1348,7 +1349,7 @@ export default function Home() {
     setSwitchState,
     setDipSwitchState,
     rotateEncoder,
-  } = useSimulation(hex, compiledBoard ?? '')
+  } = useSimulation(hex, compiledBoard ?? '', simulationArtifact)
 
   const hasProgram = Boolean(hex && compiledBoard)
   const lastAutoRunHexRef = useRef<string | null>(null)

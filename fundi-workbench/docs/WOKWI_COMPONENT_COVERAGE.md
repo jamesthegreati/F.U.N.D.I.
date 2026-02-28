@@ -15,13 +15,13 @@ This file lists the Wokwi components you provided and whether FUNDI currently si
 | Arduino Mega 2560 (ATmega2560) | Not implemented | UI may allow selection, but AVR core/peripheral map is ATmega328P-based today. |
 | Arduino Nano (ATmega328P) | Implemented | Same MCU family as Uno; supported by the AVR sim path. |
 | ATtiny85 (8-pin AVR MCU) | Not implemented | Needs MCU/peripheral support + pin mapping. |
-| ESP32 DevKit v1 (ESP32 WROOM) | Not implemented | Non-AVR. |
+| ESP32 DevKit v1 (ESP32 WROOM) | Implemented (Experimental) | Backend simulation session + websocket event bridge (feature-flagged). |
 | ESP32-S2 | Not implemented | Non-AVR. |
 | ESP32-S3 | Not implemented | Non-AVR. |
 | ESP32-C3 | Not implemented | Non-AVR. |
 | ESP32-C6 | Not implemented | Non-AVR. |
 | ESP32-H2 | Not implemented | Non-AVR. |
-| Raspberry Pi Pico (RP2040) | Not implemented | Non-AVR. |
+| Raspberry Pi Pico (RP2040) | Implemented (Experimental) | RP2040 worker adapter with serial/pin event bridge (feature-flagged). |
 | Raspberry Pi Pico W (RP2040 + WiFi) | Not implemented | Non-AVR. |
 | STM32 Nucleo C031C6 | Not implemented | Non-AVR. |
 | STM32 Nucleo L031K6 | Not implemented | Non-AVR. |

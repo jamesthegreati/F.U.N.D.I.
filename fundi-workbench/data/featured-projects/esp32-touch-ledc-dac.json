@@ -1,0 +1,27 @@
+{
+  "id": "esp32-touch-ledc-dac",
+  "name": "ESP32 Touch + LEDC + DAC Lab",
+  "description": "ESP32-only demo: capacitive touch input drives hardware LEDC PWM brightness and DAC output tone shaping",
+  "difficulty": "advanced",
+  "tags": ["esp32", "touch", "ledc", "dac", "hardware-pwm", "non-avr"],
+  "estimatedTime": "20 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -110, "left": 240, "attrs": { "color": "blue" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -70, "left": 240, "attrs": { "value": "220" } },
+      { "type": "wokwi-buzzer", "id": "buzz1", "top": 70, "left": 240 }
+    ],
+    "connections": [
+      ["esp:18", "r1:1", "green", []],
+      ["r1:2", "led1:A", "green", []],
+      ["led1:C", "esp:GND.1", "black", []],
+      ["buzz1:1", "esp:25", "orange", []],
+      ["buzz1:2", "esp:GND.2", "black", []]
+    ]
+  },
+  "code": "// ESP32 Touch + LEDC + DAC Lab\\n// Board-specific features not available on classic AVR Arduino:\\n// 1) touchRead() capacitive input (T0 on GPIO4)\\n// 2) LEDC hardware PWM engine\\n// 3) dacWrite() analog output (GPIO25)\\n\\n#if !defined(ARDUINO_ARCH_ESP32)\\n#error This sketch targets ESP32 only (wokwi-esp32-devkit-v1).\\n#endif\\n\\nconst int TOUCH_PIN = 4;     // T0\\nconst int LED_PIN = 18;\\nconst int DAC_PIN = 25;\\n\\nconst int LEDC_CHANNEL = 0;\\nconst int LEDC_FREQ = 5000;\\nconst int LEDC_RES = 8;\\n\\nint touchBaseline = 0;\\n\\nint readTouchAverage() {\\n  long sum = 0;\\n  for (int i = 0; i < 8; i++) {\\n    sum += touchRead(TOUCH_PIN);\\n    delay(2);\\n  }\\n  return (int)(sum / 8);\\n}\\n\\nvoid setup() {\\n  Serial.begin(115200);\\n  delay(200);\\n  Serial.println(\\\"ESP32 Touch + LEDC + DAC Lab\\\");\\n\\n  ledcSetup(LEDC_CHANNEL, LEDC_FREQ, LEDC_RES);\\n  ledcAttachPin(LED_PIN, LEDC_CHANNEL);\\n\\n  touchBaseline = readTouchAverage();\\n  Serial.print(\\\"Touch baseline: \\\");\\n  Serial.println(touchBaseline);\\n}\\n\\nvoid loop() {\\n  int touch = readTouchAverage();\\n  int delta = touchBaseline - touch;\\n  if (delta < 0) delta = 0;\\n\\n  int brightness = map(delta, 0, 50, 0, 255);\\n  brightness = constrain(brightness, 0, 255);\\n  ledcWrite(LEDC_CHANNEL, brightness);\\n\\n  // Map touch pressure to DAC waveform amplitude-ish value\\n  // (FUNDI bridge currently focuses on serial + lifecycle, but this compiles/runs on real ESP32)\\n  int dacValue = map(brightness, 0, 255, 0, 255);\\n  dacWrite(DAC_PIN, dacValue);\\n\\n  Serial.print(\\\"touch=\\\");\\n  Serial.print(touch);\\n  Serial.print(\\\" delta=\\\");\\n  Serial.print(delta);\\n  Serial.print(\\\" pwm=\\\");\\n  Serial.print(brightness);\\n  Serial.print(\\\" dac=\\\");\\n  Serial.println(dacValue);\\n\\n  delay(100);\\n}"
+}

@@ -76,6 +76,9 @@ class CompileRequest(BaseModel):
 class CompileResponse(BaseModel):
     success: bool
     hex: Optional[str] = None
+    artifact_type: Optional[str] = None
+    artifact_payload: Optional[str] = None
+    simulation_hints: Optional[dict] = None
     error: Optional[str] = None
     missing_header: Optional[str] = None
     library_suggestions: List[dict] = Field(default_factory=list)
@@ -160,6 +163,9 @@ def compile_sketch(req: CompileRequest) -> CompileResponse:
         return CompileResponse(
             success=result.success,
             hex=result.hex,
+            artifact_type=result.artifact_type,
+            artifact_payload=result.artifact_payload,
+            simulation_hints=result.simulation_hints,
             error=result.error,
             missing_header=missing_header,
             library_suggestions=suggestions,

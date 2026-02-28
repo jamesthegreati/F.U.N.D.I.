@@ -92,6 +92,11 @@ export type AppState = {
   libraryInstallError: string | null
   hex: string | null
   compiledBoard: string | null
+  simulationArtifact: {
+    artifactType: string
+    artifactPayload: string
+    simulationHints?: Record<string, unknown> | null
+  } | null
 
   nextWireColorIndex: number
 
@@ -421,6 +426,7 @@ export const useAppStore = create<AppState>()(
       libraryInstallError: null,
       hex: null,
       compiledBoard: null,
+      simulationArtifact: null,
 
       nextWireColorIndex: 0,
 
@@ -620,7 +626,12 @@ export const useAppStore = create<AppState>()(
       compileAndRun: async () => {
         const mcu = findMicrocontroller(get().circuitParts)
         if (!mcu) {
-          set({ compilationError: 'No supported microcontroller found in the circuit.', hex: null, compiledBoard: null })
+          set({
+            compilationError: 'No supported microcontroller found in the circuit.',
+            hex: null,
+            compiledBoard: null,
+            simulationArtifact: null,
+          })
           return
         }
 
@@ -659,6 +670,9 @@ export const useAppStore = create<AppState>()(
             | {
                 success?: boolean
                 hex?: string | null
+                artifact_type?: string | null
+                artifact_payload?: string | null
+                simulation_hints?: Record<string, unknown> | null
                 error?: string | null
                 missing_header?: string | null
                 library_suggestions?: Array<{ name?: string; installed?: boolean }> | null
@@ -675,6 +689,7 @@ export const useAppStore = create<AppState>()(
                 .filter((x) => !!x.name),
               hex: null,
               compiledBoard: null,
+              simulationArtifact: null,
             })
             return
           }
@@ -689,6 +704,7 @@ export const useAppStore = create<AppState>()(
                 .filter((x) => !!x.name),
               hex: null,
               compiledBoard: null,
+              simulationArtifact: null,
             })
             return
           }
@@ -696,6 +712,11 @@ export const useAppStore = create<AppState>()(
           set({
             hex: data.hex,
             compiledBoard: board,
+            simulationArtifact: {
+              artifactType: data.artifact_type || 'intel-hex',
+              artifactPayload: data.artifact_payload || data.hex,
+              simulationHints: data.simulation_hints || null,
+            },
             compilationError: null,
             compilationMissingHeader: null,
             compilationLibrarySuggestions: [],
@@ -709,6 +730,7 @@ export const useAppStore = create<AppState>()(
             compilationLibrarySuggestions: [],
             hex: null,
             compiledBoard: null,
+            simulationArtifact: null,
           })
         } finally {
           set({ isCompiling: false })
@@ -1079,6 +1101,7 @@ export const useAppStore = create<AppState>()(
           circuitGeneratedVersion: state.circuitGeneratedVersion + 1,
           hex: null,
           compiledBoard: null,
+          simulationArtifact: null,
           compilationError: null,
         }))
       },
