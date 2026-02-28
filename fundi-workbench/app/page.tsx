@@ -665,6 +665,7 @@ function SimulationCanvasInner({
   )
 
   // Group-drag engine
+  const dragZoom = useStore((s) => s.transform[2])
   const dragStartNodesRef = useRef<Map<string, { x: number; y: number }>>(new Map())
   const dragStartWirePointsRef = useRef<Map<string, WirePoint[] | undefined>>(new Map())
   const dragWireModeRef = useRef<Map<string, 'both' | 'one'>>(new Map())
@@ -714,19 +715,23 @@ function SimulationCanvasInner({
         })
       )
 
+      // `delta` is the flow-space movement of the dragged node since drag start.
+      // Waypoints are stored in screen-space (container-relative pixels).
+      // Multiply the flow-space delta by the current zoom to get the correct screen-space delta.
+      const screenDelta = { x: delta.x * dragZoom, y: delta.y * dragZoom }
       const overrides = new Map<string, WirePoint[] | undefined>()
       for (const [wireId, basePoints] of dragStartWirePointsRef.current.entries()) {
         const mode = dragWireModeRef.current.get(wireId)
         if (!mode) continue
         if (mode === 'both') {
-          overrides.set(wireId, translatePoints(basePoints, delta))
+          overrides.set(wireId, translatePoints(basePoints, screenDelta))
         } else {
           overrides.set(wireId, undefined)
         }
       }
       setWirePointOverrides(overrides.size ? overrides : null)
     },
-    [setNodes]
+    [dragZoom, setNodes]
   )
 
   const onNodeDragStop = useCallback(() => {

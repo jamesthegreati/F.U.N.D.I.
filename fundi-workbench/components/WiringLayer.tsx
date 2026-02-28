@@ -132,7 +132,9 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  const zoom = useStore((s) => s.transform[2]);
+  // Subscribe to the full transform so pinCenters recomputes on pan AND zoom.
+  const transform = useStore((s) => s.transform as [number, number, number]);
+  const zoom = transform[2];
   // Subscribe to node changes so wire endpoints update in real-time while parts move.
   // Using the store's nodes array reference is enough to invalidate memos during drags.
   const flowNodes = useStore((s) => (s as unknown as { nodes: unknown[] }).nodes);
@@ -210,7 +212,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     });
     return next;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef, dimensions.width, dimensions.height, zoom, flowNodes]);
+  }, [containerRef, dimensions.width, dimensions.height, transform, flowNodes]);
 
   // Precompute component bounding boxes for obstacle avoidance
   const componentBounds = useMemo(() => {
@@ -247,7 +249,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
 
     return bounds;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef, dimensions.width, dimensions.height, zoom, flowNodes]);
+  }, [containerRef, dimensions.width, dimensions.height, transform, flowNodes]);
 
   const getPinPoint = useCallback(
     (pin: PinRef): WirePoint | null => {
@@ -663,7 +665,6 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
                   strokeLinejoin="round"
                   style={{
                     pointerEvents: 'none',
-                    transition: 'all 0.2s ease',
                   }}
                 />
 
