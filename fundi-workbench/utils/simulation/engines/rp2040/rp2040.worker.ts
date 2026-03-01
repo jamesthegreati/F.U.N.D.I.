@@ -171,8 +171,28 @@ function resolveBootVector(firmware: Uint8Array): { sp: number; pc: number; vtor
 function applyBootVector(): void {
   if (!mcu) return
   mcu.core.VTOR = bootVtor
-  mcu.core.SP = bootSp
-  mcu.core.PC = bootPc
+
+  const core = mcu.core as unknown as {
+    SP: number
+    SPmain?: number
+    SPprocess?: number
+    BXWritePC?: (value: number) => void
+    PC: number
+    xPSR: number
+  }
+
+  // Ensure both stack pointers are initialized; reset state may use MSP.
+  core.SP = bootSp
+  if (typeof core.SPmain === 'number') core.SPmain = bootSp
+  if (typeof core.SPprocess === 'number') core.SPprocess = bootSp
+
+  // Use CPU helper so Thumb bit/state is set consistently from vector-table PC.
+  if (typeof core.BXWritePC === 'function') {
+    core.BXWritePC(bootPc)
+  } else {
+    core.PC = bootPc & ~1
+    core.xPSR = 0x01000000
+  }
 }
 
 // ---------------------------------------------------------------------------
