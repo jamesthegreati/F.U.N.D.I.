@@ -23,13 +23,21 @@ async def lifespan(app: FastAPI):
     print("🚀 Starting FUNDI Backend...", file=sys.stderr)
     print(f"📊 Environment: {settings.ENVIRONMENT}", file=sys.stderr)
     
-    # Validate API key
+    # Validate API keys
     if not settings.validate_api_key():
         print(f"⚠️  {settings.get_api_key_error_message()}", file=sys.stderr)
         print("⚠️  AI features will not work until a valid API key is configured.", file=sys.stderr)
     else:
-        print("✅ Gemini API key configured", file=sys.stderr)
-        print(f"🤖 Gemini model: {settings.GEMINI_MODEL}", file=sys.stderr)
+        if settings.validate_gemini_key():
+            print("✅ Gemini API key configured", file=sys.stderr)
+            print(f"🤖 Gemini model: {settings.GEMINI_MODEL}", file=sys.stderr)
+        else:
+            print("⚠️  Gemini API key not configured", file=sys.stderr)
+        if settings.validate_openrouter_key():
+            print("✅ OpenRouter API key configured (fallback provider)", file=sys.stderr)
+            print(f"🤖 OpenRouter model: {settings.OPENROUTER_MODEL}", file=sys.stderr)
+        else:
+            print("ℹ️  OpenRouter not configured (optional fallback)", file=sys.stderr)
     
     # Validate Arduino CLI availability
     # Prefer explicit override, then fall back to PATH lookup.
@@ -100,4 +108,6 @@ def health() -> dict:
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
         "api_key_configured": settings.validate_api_key(),
+        "gemini_configured": settings.validate_gemini_key(),
+        "openrouter_configured": settings.validate_openrouter_key(),
     }

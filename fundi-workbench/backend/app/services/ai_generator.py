@@ -5,6 +5,7 @@ import re
 from typing import Optional, List
 
 from google import genai
+import httpx
 
 from app.core.config import settings
 from app.schemas.circuit import AIResponse
@@ -270,6 +271,101 @@ OUTPUT REQUIREMENTS:
 
 
 
+# ─── OpenRouter client (OpenAI-compatible fallback) ─────────────────────────
+
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+class _OpenRouterResponse:
+    """Minimal response wrapper matching the ``genai`` response interface."""
+
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _OpenRouterModels:
+    """Mimics ``genai.Client.models`` so callers can use the same API."""
+
+    def __init__(self, api_key: str):
+        self._api_key = api_key
+
+    # ---- helpers ----
+    @staticmethod
+    def _convert_contents(contents: list[dict], config: dict) -> list[dict]:
+        """Convert Gemini-style contents + config into OpenAI messages."""
+        messages: list[dict] = []
+        sys_instr = config.get("system_instruction", "")
+        if sys_instr:
+            messages.append({"role": "system", "content": sys_instr})
+
+        for item in contents:
+            role = item.get("role", "user")
+            if role == "model":
+                role = "assistant"
+            parts = item.get("parts", [])
+            # Single text part → plain string content
+            if len(parts) == 1 and "text" in parts[0]:
+                messages.append({"role": role, "content": parts[0]["text"]})
+            else:
+                content_parts: list[dict] = []
+                for part in parts:
+                    if "text" in part:
+                        content_parts.append({"type": "text", "text": part["text"]})
+                    elif "inline_data" in part:
+                        d = part["inline_data"]
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{d['mime_type']};base64,{d['data']}"
+                            },
+                        })
+                messages.append({"role": role, "content": content_parts})
+        return messages
+
+    def generate_content(self, *, model: str, contents: list[dict], config: dict | None = None) -> _OpenRouterResponse:
+        """Call OpenRouter and return a Gemini-compatible response object."""
+        config = config or {}
+        messages = self._convert_contents(contents, config)
+        body: dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": config.get("temperature", 0.2),
+        }
+        if config.get("response_mime_type") == "application/json":
+            body["response_format"] = {"type": "json_object"}
+
+        resp = httpx.post(
+            _OPENROUTER_BASE_URL,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/jamesthegreati/F.U.N.D.I.",
+                "X-Title": "FUNDI Workbench",
+            },
+            json=body,
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+        return _OpenRouterResponse(text)
+
+
+class _OpenRouterClient:
+    """Drop-in replacement for ``genai.Client`` backed by OpenRouter."""
+
+    def __init__(self, api_key: str):
+        self.models = _OpenRouterModels(api_key)
+
+
+def _openrouter_client() -> _OpenRouterClient | None:
+    """Return an OpenRouter client if properly configured, else ``None``."""
+    key = (settings.OPENROUTER_API_KEY or "").strip()
+    if not key or key in ("your_api_key_here", "None", "null"):
+        return None
+    return _OpenRouterClient(api_key=key)
+
+
 def _client(api_key_override: str | None = None) -> genai.Client:
     api_key = (api_key_override or settings.GEMINI_API_KEY or "").strip()
     if not api_key:
@@ -347,7 +443,7 @@ def _models_to_try_from_env() -> list[str]:
 
 def _generate_json_ai_response(
     *,
-    client: genai.Client,
+    client,
     model: str,
     contents: list[dict],
     system_prompt: str,
@@ -356,7 +452,8 @@ def _generate_json_ai_response(
     """Generate AIResponse JSON reliably (Teacher and Builder share this path).
 
     Uses response_schema when supported by the backend Gemini API, and
-    falls back to schema-less JSON mode if rejected.
+    falls back to schema-less JSON mode if rejected.  OpenRouter clients
+    skip the response_schema attempt entirely.
     """
     base_config: dict = {
         "system_instruction": system_prompt,
@@ -364,24 +461,34 @@ def _generate_json_ai_response(
         "temperature": temperature,
     }
 
-    # Pydantic v2 schema is JSON-serializable.
-    schema = AIResponse.model_json_schema()
+    is_openrouter = isinstance(client, _OpenRouterClient)
 
-    try:
+    if is_openrouter:
+        # OpenRouter does not support response_schema; use base config only.
         response = client.models.generate_content(
             model=model,
             contents=contents,
-            config={**base_config, "response_schema": schema},
+            config=base_config,
         )
-    except Exception as exc:  # noqa: BLE001
-        if _schema_rejected_by_gemini(exc):
+    else:
+        # Pydantic v2 schema is JSON-serializable.
+        schema = AIResponse.model_json_schema()
+
+        try:
             response = client.models.generate_content(
                 model=model,
                 contents=contents,
-                config=base_config,
+                config={**base_config, "response_schema": schema},
             )
-        else:
-            raise
+        except Exception as exc:  # noqa: BLE001
+            if _schema_rejected_by_gemini(exc):
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=base_config,
+                )
+            else:
+                raise
 
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
@@ -406,7 +513,36 @@ def generate_circuit(
         current_circuit: Optional JSON string of current circuit state for context
         conversation_history: Optional list of previous messages for iterative development
     """
-    client = _client(api_key_override=api_key_override)
+    # ── Build ordered list of (client, model_name) attempts ──
+    # Gemini first (if configured), then OpenRouter as fallback.
+    gemini_client: genai.Client | None = None
+    try:
+        gemini_client = _client(api_key_override=api_key_override)
+    except RuntimeError:
+        pass  # Gemini not available; will try OpenRouter
+
+    configured_models = _models_to_try_from_env()
+    fallback_gemini_models = [
+        "models/gemini-flash-lite-latest",
+        "models/gemini-2.0-flash-exp",
+        "models/gemini-1.5-flash",
+    ]
+    gemini_models = configured_models if configured_models else fallback_gemini_models
+
+    attempts: list[tuple] = []
+    if gemini_client is not None:
+        for m in gemini_models:
+            attempts.append((gemini_client, m))
+
+    openrouter_client = _openrouter_client()
+    if openrouter_client is not None:
+        attempts.append((openrouter_client, settings.OPENROUTER_MODEL))
+
+    if not attempts:
+        raise RuntimeError(
+            "No LLM provider is configured. "
+            "Please set GEMINI_API_KEY or OPENROUTER_API_KEY in your environment."
+        )
     
     # Select system prompt based on mode - try modular prompts first
     if USE_MODULAR_PROMPTS:
@@ -507,18 +643,6 @@ def generate_circuit(
     # Add current request to contents
     contents.append({"role": "user", "parts": parts})
 
-
-    # Use the model(s) from backend/.env if provided; otherwise fall back.
-    # This keeps Teacher and Builder behavior identical and predictable.
-    configured_models = _models_to_try_from_env()
-    fallback_models = [
-        "models/gemini-flash-lite-latest",
-        "models/gemini-2.0-flash-exp",
-        "models/gemini-1.5-flash",
-    ]
-
-    models_to_try = configured_models if configured_models else fallback_models
-
     last_error: Exception | None = None
 
     # Grab a best-effort prior sketch so validator can enforce small-diff edits.
@@ -534,10 +658,10 @@ def generate_circuit(
     except Exception:
         prior_code = None
 
-    for model_name in models_to_try:
+    for attempt_client, model_name in attempts:
         try:
             # Decide intent first (answer-only vs which parts to apply).
-            plan = plan_generation(client=client, model=model_name, user_prompt=prompt)
+            plan = plan_generation(client=attempt_client, model=model_name, user_prompt=prompt)
 
             # If it's answer-only, don't ask for a full circuit JSON. Just answer,
             # and return current state with apply flags disabled so the UI won't overwrite.
@@ -566,7 +690,7 @@ def generate_circuit(
                     curr_parts = snapshot.get("components", []) or []
                     curr_conns = snapshot.get("connections", []) or []
 
-                answer_resp = client.models.generate_content(
+                answer_resp = attempt_client.models.generate_content(
                     model=model_name,
                     contents=[
                         {
@@ -604,7 +728,7 @@ def generate_circuit(
 
             for _attempt in range(3):
                 text = _generate_json_ai_response(
-                    client=client,
+                    client=attempt_client,
                     model=model_name,
                     contents=attempt_contents,
                     system_prompt=system_prompt,
