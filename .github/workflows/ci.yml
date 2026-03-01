@@ -41,6 +41,8 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'models/gemini-flash-latest' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001' }}
           ENVIRONMENT: dev
         run: pytest tests/ -v --tb=short
 
@@ -92,12 +94,16 @@ jobs:
         run: |
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > backend/.env
           echo "GEMINI_MODEL=${{ vars.GEMINI_MODEL || 'models/gemini-flash-latest' }}" >> backend/.env
+          echo "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}" >> backend/.env
+          echo "OPENROUTER_MODEL=${{ vars.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001' }}" >> backend/.env
           echo "ENVIRONMENT=dev" >> backend/.env
 
       - name: Build and start services
         run: docker compose up --build -d
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001' }}
           ENVIRONMENT: dev
 
       - name: Wait for backend to be healthy

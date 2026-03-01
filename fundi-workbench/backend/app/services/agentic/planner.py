@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from typing import Literal, Optional
 
-from google import genai
 from pydantic import BaseModel, Field
 
 
@@ -46,8 +45,12 @@ def build_planner_prompt(user_prompt: str) -> str:
     )
 
 
-def plan_generation(*, client: genai.Client, model: str, user_prompt: str) -> GenerationPlan:
-    """Ask the model to classify intent. Kept tiny for stability."""
+def plan_generation(*, client, model: str, user_prompt: str) -> GenerationPlan:
+    """Ask the model to classify intent. Kept tiny for stability.
+
+    ``client`` may be a ``genai.Client`` or an OpenRouter-compatible wrapper
+    that exposes ``client.models.generate_content()``.
+    """
 
     prompt = build_planner_prompt(user_prompt)
     resp = client.models.generate_content(

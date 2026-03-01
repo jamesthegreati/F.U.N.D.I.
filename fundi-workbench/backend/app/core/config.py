@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # Can be set in backend/.env as GEMINI_MODEL.
     # Examples: "models/gemini-1.5-flash", "gemini-1.5-pro"
     GEMINI_MODEL: str = "models/gemini-flash-lite-latest"
+
+    # OpenRouter fallback provider.
+    # Used when Gemini is unavailable or its API key is missing.
+    OPENROUTER_API_KEY: str | None = None
+    OPENROUTER_MODEL: str = "google/gemini-2.0-flash-001"
+
     ENVIRONMENT: str = "dev"  # dev | prod
 
     # Per spec: hardcode allowed origins
@@ -41,19 +47,32 @@ class Settings(BaseSettings):
     DIFF_BUDGET_LARGE_PROJECT_MAX_CHANGED_RATIO: float = 0.25
 
     def validate_api_key(self) -> bool:
-        """Validate that the API key is set and not a placeholder."""
+        """Validate that at least one LLM API key (Gemini or OpenRouter) is usable."""
+        return self.validate_gemini_key() or self.validate_openrouter_key()
+
+    def validate_gemini_key(self) -> bool:
+        """Validate that the Gemini API key is set and not a placeholder."""
         if not self.GEMINI_API_KEY:
             return False
         if self.GEMINI_API_KEY in ["your_api_key_here", "", "None", "null"]:
             return False
         return True
 
+    def validate_openrouter_key(self) -> bool:
+        """Validate that the OpenRouter API key is set and not a placeholder."""
+        if not self.OPENROUTER_API_KEY:
+            return False
+        if self.OPENROUTER_API_KEY in ["your_api_key_here", "", "None", "null"]:
+            return False
+        return True
+
     def get_api_key_error_message(self) -> str:
-        """Get a helpful error message for missing/invalid API key."""
+        """Get a helpful error message for missing/invalid API keys."""
         return (
-            "GEMINI_API_KEY is not configured properly. "
-            "Please set a valid Google Gemini API key in your environment or .env file. "
-            "Get your API key from: https://makersuite.google.com/app/apikey"
+            "No LLM API key is configured. "
+            "Please set GEMINI_API_KEY or OPENROUTER_API_KEY in your environment or .env file. "
+            "Gemini: https://makersuite.google.com/app/apikey | "
+            "OpenRouter: https://openrouter.ai/keys"
         )
 
 
