@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { X, ChevronUp, ChevronDown, Thermometer, Droplets, Ruler } from 'lucide-react';
+import { X, ChevronUp, ChevronDown, Thermometer, Droplets, Ruler, Activity, Gauge, Scale } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 /**
@@ -103,6 +103,76 @@ const SENSOR_CONFIG: Record<string, {
     'wokwi-pir-motion-sensor': {
         fields: [
             { key: 'motion', label: 'Motion', icon: Ruler, min: 0, max: 1, step: 1, unit: '', defaultValue: 0 },
+        ],
+    },
+
+    // Potentiometers
+    'potentiometer': {
+        fields: [
+            { key: 'value', label: 'Analog Value', icon: Gauge, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+    'wokwi-potentiometer': {
+        fields: [
+            { key: 'value', label: 'Analog Value', icon: Gauge, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+    'slide-potentiometer': {
+        fields: [
+            { key: 'value', label: 'Analog Value', icon: Gauge, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+    'wokwi-slide-potentiometer': {
+        fields: [
+            { key: 'value', label: 'Analog Value', icon: Gauge, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+
+    // Analog joystick
+    'analog-joystick': {
+        fields: [
+            { key: 'horz', label: 'Horizontal', icon: Activity, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+            { key: 'vert', label: 'Vertical', icon: Activity, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+    'wokwi-analog-joystick': {
+        fields: [
+            { key: 'horz', label: 'Horizontal', icon: Activity, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+            { key: 'vert', label: 'Vertical', icon: Activity, min: 0, max: 1023, step: 1, unit: '', defaultValue: 512 },
+        ],
+    },
+
+    // MPU6050 IMU
+    'mpu6050': {
+        fields: [
+            { key: 'accelX', label: 'Accel X', icon: Activity, min: -2, max: 2, step: 0.01, unit: 'g', defaultValue: 0 },
+            { key: 'accelY', label: 'Accel Y', icon: Activity, min: -2, max: 2, step: 0.01, unit: 'g', defaultValue: 0 },
+            { key: 'accelZ', label: 'Accel Z', icon: Activity, min: -2, max: 2, step: 0.01, unit: 'g', defaultValue: 1 },
+            { key: 'gyroX', label: 'Gyro X', icon: Activity, min: -250, max: 250, step: 1, unit: '°/s', defaultValue: 0 },
+            { key: 'gyroY', label: 'Gyro Y', icon: Activity, min: -250, max: 250, step: 1, unit: '°/s', defaultValue: 0 },
+            { key: 'gyroZ', label: 'Gyro Z', icon: Activity, min: -250, max: 250, step: 1, unit: '°/s', defaultValue: 0 },
+        ],
+    },
+    'wokwi-mpu6050': {
+        fields: [
+            { key: 'accelX', label: 'Accel X', icon: Activity, min: -2, max: 2, step: 0.01, unit: 'g', defaultValue: 0 },
+            { key: 'accelY', label: 'Accel Y', icon: Activity, min: -2, max: 2, step: 0.01, unit: 'g', defaultValue: 0 },
+            { key: 'accelZ', label: 'Accel Z', icon: Activity, min: -2, max: 2, step: 0.01, unit: 'g', defaultValue: 1 },
+            { key: 'gyroX', label: 'Gyro X', icon: Activity, min: -250, max: 250, step: 1, unit: '°/s', defaultValue: 0 },
+            { key: 'gyroY', label: 'Gyro Y', icon: Activity, min: -250, max: 250, step: 1, unit: '°/s', defaultValue: 0 },
+            { key: 'gyroZ', label: 'Gyro Z', icon: Activity, min: -250, max: 250, step: 1, unit: '°/s', defaultValue: 0 },
+        ],
+    },
+
+    // HX711 load cell amplifier
+    'hx711': {
+        fields: [
+            { key: 'load', label: 'Weight', icon: Scale, min: 0, max: 50, step: 0.1, unit: 'kg', defaultValue: 0 },
+        ],
+    },
+    'wokwi-hx711': {
+        fields: [
+            { key: 'load', label: 'Weight', icon: Scale, min: 0, max: 50, step: 0.1, unit: 'kg', defaultValue: 0 },
         ],
     },
 };

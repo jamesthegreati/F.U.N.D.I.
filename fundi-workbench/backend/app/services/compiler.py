@@ -159,6 +159,10 @@ class CompilerService:
         if not fqbn:
             return CompileResult(success=False, error=f"Unsupported board: {board}")
 
+        engine = self.BOARD_ENGINE.get(board, "avr")
+        if engine == "rp2040":
+            code, files = self._rewrite_rp2040_serial_for_sim(code, files)
+
         arduino_cli = self._resolve_arduino_cli()
         if not arduino_cli:
             return CompileResult(
@@ -240,7 +244,6 @@ class CompilerService:
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 # Non-AVR boards (RP2040, ESP32) need much longer for first compile.
-                engine = self.BOARD_ENGINE.get(board, "avr")
                 timeout_s = 120 if engine == "avr" else 600
 
                 def run_compile() -> subprocess.CompletedProcess[str]:
@@ -1319,6 +1322,54 @@ class CompilerService:
         if "already installed" in out or "is already installed" in out:
             return True
         return False
+
+    def _rewrite_rp2040_serial_for_sim(
+        self,
+        code: str,
+        files: Optional[dict[str, str]],
+    ) -> tuple[str, Optional[dict[str, str]]]:
+        """Route Pico USB Serial calls to UART serial for rp2040js monitor compatibility.
+
+        The RP2040 worker captures UART output, not USB CDC. Many sketches use `Serial`
+        (USB CDC) by default, which appears silent in the simulator. For RP2040 only,
+        rewrite common `Serial.*` calls to `Serial1.*` before compile.
+
+        Important: sketches often block on `while (!Serial) {}` waiting for USB monitor
+        attach. In simulation this can deadlock setup forever, so we also rewrite common
+        boolean guards to `Serial1`.
+        """
+
+        member_pattern = re.compile(
+            r"(?<![A-Za-z0-9_])Serial\s*\.\s*"
+            r"(begin|end|print|println|printf|write|flush|available|availableForWrite|"
+            r"read|readBytes|readString|readStringUntil|peek|setTimeout|parseInt|parseFloat)\b"
+        )
+        while_guard_pattern = re.compile(r"\bwhile\s*\(\s*!\s*Serial\s*\)")
+        if_guard_pattern = re.compile(r"\bif\s*\(\s*(!\s*)?Serial\s*\)")
+
+        def rewrite_source(src: str) -> str:
+            if not src:
+                return src
+            out = member_pattern.sub(r"Serial1.\1", src)
+            out = while_guard_pattern.sub(r"while (!Serial1)", out)
+            out = if_guard_pattern.sub(lambda m: f"if ({m.group(1) or ''}Serial1)", out)
+            return out
+
+        rewritten_code = rewrite_source(code)
+
+        rewritten_files: Optional[dict[str, str]] = None
+        if files:
+            rewritten_files = {}
+            for filename, content in files.items():
+                if not isinstance(content, str):
+                    rewritten_files[filename] = content
+                    continue
+                if filename == "main.cpp":
+                    rewritten_files[filename] = content
+                    continue
+                rewritten_files[filename] = rewrite_source(content)
+
+        return rewritten_code, rewritten_files if rewritten_files is not None else files
 
     def _write_simulation_shims(self, sketch_dir: Path, code: str, files: Optional[dict[str, str]]) -> None:
         """Write local header shims into the sketch folder for simulation-only use.

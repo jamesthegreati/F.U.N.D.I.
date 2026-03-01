@@ -198,6 +198,15 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             humidity: parseNum(attrs.humidity, 50),
             value: parseNum(attrs.value, 512),
             motion: parseNum(attrs.motion, 0),
+            horz: parseNum(attrs.horz, 512),
+            vert: parseNum(attrs.vert, 512),
+            accelX: parseNum(attrs.accelX, 0),
+            accelY: parseNum(attrs.accelY, 0),
+            accelZ: parseNum(attrs.accelZ, 1),
+            gyroX: parseNum(attrs.gyroX, 0),
+            gyroY: parseNum(attrs.gyroY, 0),
+            gyroZ: parseNum(attrs.gyroZ, 0),
+            load: parseNum(attrs.load, 0),
         };
     }, [data?.attrs]);
 
@@ -996,6 +1005,28 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             element.removeEventListener('input', handleInput, { capture: true });
         };
     }, [data?.onJoystickMove, nodeId, partType, elementReadyTick]);
+
+    // Handle potentiometer rotation via native Wokwi element events
+    useEffect(() => {
+        const element = elementRef.current;
+        if (!element) return;
+        const typeLower = partType.toLowerCase();
+        if (!typeLower.includes('potentiometer')) return;
+        const handleInput = () => {
+            const potEl = element as unknown as { value?: number };
+            const rawValue = typeof potEl.value === 'number' ? potEl.value : 0.5;
+            // Wokwi potentiometer value is 0-1, map to 0-1023 ADC range
+            const adcValue = Math.max(0, Math.min(1023, Math.round(rawValue * 1023)));
+            data?.onValueChange?.(nodeId, adcValue);
+        };
+        element.addEventListener('input', handleInput, { capture: true });
+        const shadowRoot = element.shadowRoot;
+        if (shadowRoot) shadowRoot.addEventListener('input', handleInput, { capture: true });
+        return () => {
+            element.removeEventListener('input', handleInput, { capture: true });
+            if (shadowRoot) shadowRoot.removeEventListener('input', handleInput, { capture: true });
+        };
+    }, [data?.onValueChange, nodeId, partType, elementReadyTick]);
 
     // Listen for keypad button press/release events
     useEffect(() => {
