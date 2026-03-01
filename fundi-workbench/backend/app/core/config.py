@@ -32,7 +32,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "dev"  # dev | prod
 
     # Per spec: hardcode allowed origins
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://jamesthegreati.github.io",
+    ]
 
     # Agentic guardrails: diff budget (tunable via backend/.env)
     # These limit how much the model can rewrite existing sketches unless the user
