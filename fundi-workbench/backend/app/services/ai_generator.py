@@ -534,9 +534,9 @@ def generate_circuit(
         for m in gemini_models:
             attempts.append((gemini_client, m))
 
-    or_client = _openrouter_client()
-    if or_client is not None:
-        attempts.append((or_client, settings.OPENROUTER_MODEL))
+    openrouter_client = _openrouter_client()
+    if openrouter_client is not None:
+        attempts.append((openrouter_client, settings.OPENROUTER_MODEL))
 
     if not attempts:
         raise RuntimeError(
