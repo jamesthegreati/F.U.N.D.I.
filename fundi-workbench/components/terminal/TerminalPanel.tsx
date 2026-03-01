@@ -7,7 +7,7 @@ import { SerialMonitor } from './SerialMonitor'
 import { LogicAnalyzerPanel } from '@/components/LogicAnalyzerPanel'
 import { NetworkPanel } from '@/components/NetworkPanel'
 import { cn } from '@/utils/cn'
-import { useAppStore } from '@/store/useAppStore'
+import { useAppStore, getBackendUrl } from '@/store/useAppStore'
 
 type TerminalTab = 'serial' | 'upload' | 'assistant' | 'logic' | 'network'
 
@@ -152,7 +152,7 @@ function ArduinoUploadTab({ isActive }: { isActive: boolean }) {
         return acc
       }, {} as Record<string, string>)
 
-    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+    const baseUrl = getBackendUrl()
 
     setIsUploading(true)
     try {
@@ -198,8 +198,13 @@ function ArduinoUploadTab({ isActive }: { isActive: boolean }) {
       setUploadError(null)
       setUploadOutput(data?.upload_output || 'Upload completed successfully.')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setUploadError(msg || 'Upload request failed.')
+      const raw = err instanceof Error ? err.message : String(err)
+      const isNetworkError = raw === 'Failed to fetch' || raw.includes('NetworkError') || raw.includes('ECONNREFUSED')
+      setUploadError(
+        isNetworkError
+          ? `Cannot reach backend at ${getBackendUrl()}. Start it with "docker compose up" or update the Backend URL in Settings.`
+          : raw || 'Upload request failed.'
+      )
     } finally {
       setIsUploading(false)
     }

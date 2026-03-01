@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { 
   ArrowLeft, 
@@ -9,8 +9,9 @@ import {
   Key,
   Save,
   RotateCcw,
+  Server,
 } from 'lucide-react'
-import { useAppStore, type AppSettings } from '@/store/useAppStore'
+import { useAppStore, type AppSettings, getBackendUrl } from '@/store/useAppStore'
 import { cn } from '@/utils/cn'
 
 const fontSizeOptions = [12, 14, 16, 18, 20]
@@ -71,11 +72,19 @@ export default function SettingsPage() {
   
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings)
   const [hasChanges, setHasChanges] = useState(false)
+  const [backendStatus, setBackendStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle')
+  const [backendStatusMsg, setBackendStatusMsg] = useState('')
 
   const handleChange = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setLocalSettings((prev) => ({ ...prev, [key]: value }))
     setHasChanges(true)
   }
+
+  // Reset test status when the user changes the backend URL
+  useEffect(() => {
+    setBackendStatus('idle')
+    setBackendStatusMsg('')
+  }, [localSettings.backendUrl])
 
   const handleSave = () => {
     updateSettings(localSettings)
@@ -85,6 +94,30 @@ export default function SettingsPage() {
   const handleReset = () => {
     setLocalSettings(settings)
     setHasChanges(false)
+  }
+
+  const testBackendConnection = async () => {
+    setBackendStatus('testing')
+    setBackendStatusMsg('')
+    const url = (localSettings.backendUrl || getBackendUrl()).replace(/\/+$/, '')
+    try {
+      const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) })
+      if (res.ok) {
+        setBackendStatus('ok')
+        setBackendStatusMsg(`Connected to ${url}`)
+      } else {
+        setBackendStatus('error')
+        setBackendStatusMsg(`Server returned ${res.status}`)
+      }
+    } catch (err) {
+      setBackendStatus('error')
+      const isTimeout = err instanceof DOMException && err.name === 'TimeoutError'
+      setBackendStatusMsg(
+        isTimeout
+          ? `Connection timed out after 5 seconds. Is ${url} correct?`
+          : `Cannot reach ${url}. Make sure the backend is running.`
+      )
+    }
   }
 
   return (
@@ -234,6 +267,46 @@ export default function SettingsPage() {
               <p className="mt-2 text-xs text-ide-text-subtle">
                 If set, this key will be used instead of the server&apos;s default key. 
                 The key is stored in your browser&apos;s local storage.
+              </p>
+            </div>
+          </SettingCard>
+
+          {/* Backend Connection */}
+          <SettingCard
+            icon={Server}
+            title="Backend Connection"
+            description="Configure the backend server URL used for compilation and AI features"
+          >
+            <div>
+              <label className="mb-1.5 block text-sm text-ide-text-muted">
+                Backend URL
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={localSettings.backendUrl || ''}
+                  onChange={(e) => handleChange('backendUrl', e.target.value)}
+                  placeholder="http://127.0.0.1:8000"
+                  className="flex-1 rounded-lg border border-ide-border bg-ide-panel-bg px-3 py-2 text-sm text-ide-text placeholder:text-ide-text-subtle focus:border-ide-accent focus:outline-none focus:ring-1 focus:ring-ide-accent/50"
+                />
+                <button
+                  type="button"
+                  onClick={testBackendConnection}
+                  disabled={backendStatus === 'testing'}
+                  className="shrink-0 rounded-lg border border-ide-border bg-ide-panel-bg px-3 py-2 text-sm text-ide-text-muted hover:bg-ide-panel-hover hover:text-ide-text transition-colors disabled:opacity-50"
+                >
+                  {backendStatus === 'testing' ? 'Testing…' : 'Test Connection'}
+                </button>
+              </div>
+              {backendStatus === 'ok' && (
+                <p className="mt-2 text-xs text-green-500">{backendStatusMsg}</p>
+              )}
+              {backendStatus === 'error' && (
+                <p className="mt-2 text-xs text-red-400">{backendStatusMsg}</p>
+              )}
+              <p className="mt-2 text-xs text-ide-text-subtle">
+                Leave empty to use the default ({process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'}). 
+                If running locally, start the backend with <code className="rounded bg-ide-panel-bg px-1">docker compose up</code>.
               </p>
             </div>
           </SettingCard>

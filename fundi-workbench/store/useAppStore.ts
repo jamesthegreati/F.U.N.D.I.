@@ -64,6 +64,7 @@ export type AppSettings = {
   editorTabSize: number
   defaultBoardTarget: string
   geminiApiKeyOverride: string | null
+  backendUrl: string
 }
 
 export type AppState = {
@@ -267,6 +268,7 @@ const defaultSettings: AppSettings = {
   editorTabSize: 2,
   defaultBoardTarget: 'wokwi-arduino-uno',
   geminiApiKeyOverride: null,
+  backendUrl: '',
 }
 
 function createDefaultProject(name: string = 'Untitled Project'): Project {
@@ -646,7 +648,7 @@ export const useAppStore = create<AppState>()(
         })
 
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const baseUrl = getBackendUrl()
 
           // Build files object for multi-file compilation
           const filesForCompilation = get().files
@@ -723,9 +725,13 @@ export const useAppStore = create<AppState>()(
             libraryInstallError: null,
           })
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
+          const raw = err instanceof Error ? err.message : String(err)
+          const isNetworkError = raw === 'Failed to fetch' || raw.includes('NetworkError') || raw.includes('ECONNREFUSED')
+          const msg = isNetworkError
+            ? `Cannot reach the backend server at ${getBackendUrl()}. Make sure the backend is running (e.g. "docker compose up" or start it manually) or update the Backend URL in Settings.`
+            : raw || 'Compilation request failed.'
           set({
-            compilationError: msg || 'Compilation request failed.',
+            compilationError: msg,
             compilationMissingHeader: null,
             compilationLibrarySuggestions: [],
             hex: null,
@@ -739,7 +745,7 @@ export const useAppStore = create<AppState>()(
 
       listArduinoPorts: async () => {
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const baseUrl = getBackendUrl()
           const res = await fetch(`${baseUrl}/api/v1/arduino/ports`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
@@ -770,7 +776,7 @@ export const useAppStore = create<AppState>()(
         if (!artifact || !board) return { success: false, error: 'Nothing compiled yet (compile first).', output: null }
 
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const baseUrl = getBackendUrl()
           const res = await fetch(`${baseUrl}/api/v1/arduino/upload`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -799,7 +805,7 @@ export const useAppStore = create<AppState>()(
 
         set({ isInstallingLibrary: true, libraryInstallError: null })
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const baseUrl = getBackendUrl()
           const res = await fetch(`${baseUrl}/api/v1/compile/install-library`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1193,7 +1199,7 @@ You can also upload images of physical circuits for recognition.`,
         // Call AI generate endpoint
         set({ isAiLoading: true })
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+          const baseUrl = getBackendUrl()
 
           // Sync state with backend for AI context
           await fetch(`${baseUrl}/api/v1/ai-tools/sync-state`, {
@@ -1720,7 +1726,11 @@ You can also upload images of physical circuits for recognition.`,
             set({ lastAiAppliedEntryId: null, lastAiUndoSnapshot: null })
           }
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
+          const raw = err instanceof Error ? err.message : String(err)
+          const isNetworkError = raw === 'Failed to fetch' || raw.includes('NetworkError') || raw.includes('ECONNREFUSED')
+          const msg = isNetworkError
+            ? `Cannot reach the backend server at ${getBackendUrl()}. Make sure the backend is running (e.g. "docker compose up") or update the Backend URL in Settings.`
+            : raw
           get().addTerminalEntry({ type: 'error', content: `Error: ${msg}` })
         } finally {
           set({ isAiLoading: false })
@@ -1910,4 +1920,15 @@ export const clearHistory = (): void => {
   temporalHistory.past = []
   temporalHistory.future = []
   lastTrackedState = getTrackableState()
+}
+
+/**
+ * Get the backend URL from settings (localStorage) → env var → default.
+ * Works both inside and outside React components.
+ */
+export function getBackendUrl(): string {
+  const raw = useAppStore.getState().settings.backendUrl
+    || process.env.NEXT_PUBLIC_BACKEND_URL
+    || 'http://127.0.0.1:8000'
+  return raw.replace(/\/+$/, '')
 }

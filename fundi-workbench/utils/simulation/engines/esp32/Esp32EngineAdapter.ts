@@ -6,6 +6,7 @@ import type {
   SimulationEventHandlers,
 } from '../SimulationEngine'
 import { esp32PinToGpio, gpioToEsp32PinLabel } from './esp32PinMap'
+import { getBackendUrl } from '@/store/useAppStore'
 
 /**
  * Esp32EngineAdapter – communicates with the backend QEMU-based ESP32
@@ -40,7 +41,7 @@ export class Esp32EngineAdapter implements SimulationEngine {
   private config: SimulationEngineConfig | null = null
 
   async init(config: SimulationEngineConfig): Promise<void> {
-    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+    const baseUrl = getBackendUrl()
     this.baseUrl = baseUrl
     this.config = config
 
