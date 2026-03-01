@@ -14,7 +14,6 @@ import { RP2040, GPIOPinState, ConsoleLogger, LogLevel } from 'rp2040js'
 // FLASH_START_ADDRESS is 0x10000000 but not exported from the main module
 const FLASH_START_ADDRESS = 0x10000000
 const RP2040_DEFAULT_SP = 0x20041f00
-const FLASH_END_ADDRESS = 0x11000000
 // GPIOPinListener is (state: GPIOPinState, oldState: GPIOPinState) => void
 type GPIOPinListener = (state: GPIOPinState, oldState: GPIOPinState) => void
 
@@ -58,9 +57,6 @@ const lastPwmDuty = new Map<number, number>()
 // Serial line buffers: separate accumulators per UART to avoid interleaved output
 let uart0Buffer = ''
 let uart1Buffer = ''
-let bootSp = RP2040_DEFAULT_SP
-let bootPc = FLASH_START_ADDRESS
-let bootVtor = FLASH_START_ADDRESS
 
 // ---------------------------------------------------------------------------
 // I2C Device Simulation (worker-side, synchronous)
@@ -152,47 +148,29 @@ function readLe32(bytes: Uint8Array, offset: number): number {
   ) >>> 0
 }
 
-function resolveBootVector(firmware: Uint8Array): { sp: number; pc: number; vtor: number } {
-  const readAt = (offset: number) => ({ sp: readLe32(firmware, offset), pc: readLe32(firmware, offset + 4) })
-  const baseVec = readAt(0)
-  const altVec = readAt(0x100)
-  const hasValidVector = (sp: number, pc: number) =>
-    sp >= 0x20000000 && sp <= 0x20042000 && pc >= FLASH_START_ADDRESS && pc < FLASH_END_ADDRESS
-  const selected = hasValidVector(baseVec.sp, baseVec.pc)
-    ? { ...baseVec, vtor: FLASH_START_ADDRESS }
-    : hasValidVector(altVec.sp, altVec.pc)
-      ? { ...altVec, vtor: FLASH_START_ADDRESS + 0x100 }
-      : null
+function resolveInitialStackPointer(firmware: Uint8Array): number {
+  const candidateSpAt100 = readLe32(firmware, 0x100)
+  if (candidateSpAt100 >= 0x20000000 && candidateSpAt100 <= 0x20042000) {
+    return candidateSpAt100
+  }
 
-  if (selected) return selected
-  return { sp: RP2040_DEFAULT_SP, pc: FLASH_START_ADDRESS, vtor: FLASH_START_ADDRESS }
+  const candidateSpAt0 = readLe32(firmware, 0)
+  if (candidateSpAt0 >= 0x20000000 && candidateSpAt0 <= 0x20042000) {
+    return candidateSpAt0
+  }
+
+  return RP2040_DEFAULT_SP
 }
 
-function applyBootVector(): void {
-  if (!mcu) return
-  mcu.core.VTOR = bootVtor
-
-  const core = mcu.core as unknown as {
-    SP: number
-    SPmain?: number
-    SPprocess?: number
-    BXWritePC?: (value: number) => void
-    PC: number
-    xPSR: number
-  }
-
-  // Ensure both stack pointers are initialized; reset state may use MSP.
-  core.SP = bootSp
-  if (typeof core.SPmain === 'number') core.SPmain = bootSp
-  if (typeof core.SPprocess === 'number') core.SPprocess = bootSp
-
-  // Use CPU helper so Thumb bit/state is set consistently from vector-table PC.
-  if (typeof core.BXWritePC === 'function') {
-    core.BXWritePC(bootPc)
-  } else {
-    core.PC = bootPc & ~1
-    core.xPSR = 0x01000000
-  }
+function createSyntheticBootrom(firmware: Uint8Array): Uint32Array {
+  // rp2040js needs bootrom contents at 0x00000000. Since this workspace's
+  // rp2040js package does not export bootromB1, provide a minimal ROM vector
+  // table that starts execution at flash boot2 (0x10000000).
+  // boot2 then initializes XIP and jumps to app vectors at +0x100.
+  const bootrom = new Uint32Array(4 * 1024)
+  bootrom[0] = resolveInitialStackPointer(firmware) >>> 0
+  bootrom[1] = (FLASH_START_ADDRESS | 1) >>> 0
+  return bootrom
 }
 
 // ---------------------------------------------------------------------------
@@ -213,17 +191,12 @@ function loadFirmware(firmwareBase64: string, cpuHz?: number): void {
 
   // Decode base64 firmware into flash memory
   const firmware = base64ToUint8Array(firmwareBase64)
+  mcu.loadBootrom(createSyntheticBootrom(firmware))
   mcu.flash.set(firmware)
 
-  const bootVector = resolveBootVector(firmware)
-  bootSp = bootVector.sp
-  bootPc = bootVector.pc
-  bootVtor = bootVector.vtor
-
-  // Boot directly from flash image (similar to rp2040js demo startup path).
-  // Our bundled rp2040js package does not include bootrom data by default, so relying on
-  // reset vectors at address 0x00000000 can leave the CPU in invalid memory.
-  applyBootVector()
+  // Start from ROM entry and let boot2 perform flash/XIP initialization.
+  mcu.reset()
+  mcu.core.PC = 0x00000000
 
   // Wire up UART0 for Serial output (Serial1/Serial2 on Pico uses UART0: GP0=TX, GP1=RX)
   mcu.uart[0].onByte = (byte: number) => {
@@ -818,8 +791,9 @@ onmessage = (event: MessageEvent<WorkerIn>) => {
     case 'reset': {
       if (mcu) {
         stopStepping()
-        // Preserve flash firmware and restart execution from flash image.
-        applyBootVector()
+        // Preserve flash/bootrom and restart from ROM entry.
+        mcu.reset()
+        mcu.core.PC = 0x00000000
         lastPinState.clear()
         lastPwmDuty.clear()
         uart0Buffer = ''
