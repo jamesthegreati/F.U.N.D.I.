@@ -55,14 +55,19 @@ function readLe32(bytes: Uint8Array, offset: number): number {
   ) >>> 0;
 }
 
-function resolveBootVector(firmware: Uint8Array): { sp: number; pc: number } {
-  const vectorSp = readLe32(firmware, 0);
-  const vectorPc = readLe32(firmware, 4);
-
-  const sp = vectorSp >= 0x20000000 && vectorSp <= 0x20042000 ? vectorSp : RP2040_DEFAULT_SP;
-  const pc = vectorPc >= RP2040_FLASH_START && vectorPc < RP2040_FLASH_END ? vectorPc : RP2040_FLASH_START;
-
-  return { sp, pc };
+function resolveBootVector(firmware: Uint8Array): { sp: number; pc: number; vtor: number } {
+  const readAt = (offset: number) => ({ sp: readLe32(firmware, offset), pc: readLe32(firmware, offset + 4) });
+  const baseVec = readAt(0);
+  const altVec = readAt(0x100);
+  const hasValidVector = (sp: number, pc: number) =>
+    sp >= 0x20000000 && sp <= 0x20042000 && pc >= RP2040_FLASH_START && pc < RP2040_FLASH_END;
+  const selected = hasValidVector(baseVec.sp, baseVec.pc)
+    ? { ...baseVec, vtor: RP2040_FLASH_START }
+    : hasValidVector(altVec.sp, altVec.pc)
+      ? { ...altVec, vtor: RP2040_FLASH_START + 0x100 }
+      : null;
+  if (selected) return selected;
+  return { sp: RP2040_DEFAULT_SP, pc: RP2040_FLASH_START, vtor: RP2040_FLASH_START };
 }
 
 function collectLinesFromByte(charBuffer: { value: string }, lines: string[], byte: number): void {
@@ -124,7 +129,7 @@ function runPicoArtifact(
   mcu.clkSys = Number.isFinite(hintedHz) && hintedHz > 0 ? hintedHz : PICO_CPU_HZ;
   mcu.flash.set(firmware);
   const bootVector = resolveBootVector(firmware);
-  mcu.core.VTOR = RP2040_FLASH_START;
+  mcu.core.VTOR = bootVector.vtor;
   mcu.core.SP = bootVector.sp;
   mcu.core.PC = bootVector.pc;
 
