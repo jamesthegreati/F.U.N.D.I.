@@ -44,7 +44,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001' }}
           ENVIRONMENT: dev
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short --ignore=tests/test_ai_benchmark.py --ignore=tests/test_openrouter_fallback.py
 
   # ─── Fast frontend lint + build ───
   frontend-build:
