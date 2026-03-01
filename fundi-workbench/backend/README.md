@@ -55,6 +55,7 @@ FastAPI backend service for the FUNDI IoT Development Workbench.
    ```bash
    python validate_setup.py
    ```
+   This now also checks simulation readiness (installed AVR/ESP32/RP2040 cores and `qemu-system-xtensa` for ESP32 simulation).
 
 5. **Run the development server**:
    ```bash
