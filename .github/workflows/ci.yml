@@ -1,0 +1,201 @@
+name: FUNDI CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ─── Fast backend unit tests (no Docker needed) ───
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fundi-workbench/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: fundi-workbench/backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx
+
+      - name: Run unit tests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'models/gemini-flash-latest' }}
+          ENVIRONMENT: dev
+        run: pytest tests/ -v --tb=short
+
+  # ─── Fast frontend lint + build ───
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fundi-workbench
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: fundi-workbench/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: fundi-workbench/out/
+          retention-days: 7
+
+  # ─── Full integration test with Docker Compose ───
+  integration:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-build]
+    defaults:
+      run:
+        working-directory: fundi-workbench
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create backend .env from secrets
+        run: |
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > backend/.env
+          echo "GEMINI_MODEL=${{ vars.GEMINI_MODEL || 'models/gemini-flash-latest' }}" >> backend/.env
+          echo "ENVIRONMENT=dev" >> backend/.env
+
+      - name: Build and start services
+        run: docker compose up --build -d
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ENVIRONMENT: dev
+
+      - name: Wait for backend to be healthy
+        run: |
+          echo "Waiting for backend health check..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy!"
+              curl -s http://localhost:8000/health | python3 -m json.tool
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "❌ Backend failed to start within 10 minutes"
+              docker compose logs backend
+              exit 1
+            fi
+            echo "  Attempt $i/60 - waiting 10s..."
+            sleep 10
+          done
+
+      - name: Verify backend API
+        run: |
+          # Health check
+          curl -sf http://localhost:8000/health | python3 -m json.tool
+
+          # Test compile endpoint with minimal sketch
+          echo "Testing compile endpoint..."
+          curl -sf -X POST http://localhost:8000/api/v1/compile \
+            -H "Content-Type: application/json" \
+            -d '{"code":"void setup(){} void loop(){}","board":"wokwi-arduino-uno"}' \
+            | python3 -c "import sys,json; r=json.load(sys.stdin); print('Compile:', 'OK' if r.get('success') else 'FAIL -', r.get('error',''))"
+
+      - name: Wait for frontend to be ready
+        run: |
+          echo "Waiting for frontend..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
+              echo "✅ Frontend is ready!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Frontend failed to start within 5 minutes"
+              docker compose logs frontend
+              exit 1
+            fi
+            echo "  Attempt $i/30 - waiting 10s..."
+            sleep 10
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: fundi-workbench/package-lock.json
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Run simulation tests against backend
+        run: npm run sim:test:featured
+        env:
+          BACKEND_URL: http://localhost:8000
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend Logs ==="
+          docker compose logs backend
+          echo "=== Frontend Logs ==="
+          docker compose logs frontend
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
+
+  # ─── Deploy frontend to GitHub Pages (main branch only) ───
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [frontend-build, integration]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: out/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

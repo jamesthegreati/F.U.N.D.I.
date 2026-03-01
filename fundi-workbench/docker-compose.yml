@@ -4,7 +4,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file:
-      - ./backend/.env
+      - path: ./backend/.env
+        required: false
     ports:
       - "8000:8000"
     environment:

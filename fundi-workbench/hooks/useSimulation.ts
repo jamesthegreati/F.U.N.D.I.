@@ -2091,7 +2091,7 @@ export function useSimulation(
 
             let device: LogicDevice | null = null;
             let inputs: LogicInputBinding[] = [];
-            let outputs: LogicOutputBinding[] = [];
+            const outputs: LogicOutputBinding[] = [];
 
             if (typeLower.includes('not-gate')) {
               device = new LogicGateDevice('not');
