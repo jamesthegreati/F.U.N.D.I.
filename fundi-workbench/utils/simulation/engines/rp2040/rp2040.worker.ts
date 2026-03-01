@@ -58,9 +58,39 @@ const lastPwmDuty = new Map<number, number>()
 // Serial line buffers: separate accumulators per UART to avoid interleaved output
 let uart0Buffer = ''
 let uart1Buffer = ''
+const UART_CHUNK_FLUSH_LEN = 120
 let bootSp = RP2040_DEFAULT_SP
 let bootPc = FLASH_START_ADDRESS
 let bootVtor = FLASH_START_ADDRESS
+
+function flushUartBuffer(uart: 0 | 1): void {
+  if (uart === 0) {
+    if (uart0Buffer.length > 0) {
+      emit({ type: 'serial', line: uart0Buffer })
+      uart0Buffer = ''
+    }
+    return
+  }
+  if (uart1Buffer.length > 0) {
+    emit({ type: 'serial', line: `[UART1] ${uart1Buffer}` })
+    uart1Buffer = ''
+  }
+}
+
+function onUartByte(uart: 0 | 1, byte: number): void {
+  const ch = String.fromCharCode(byte)
+  if (ch === '\n' || ch === '\r') {
+    flushUartBuffer(uart)
+    return
+  }
+  if (uart === 0) {
+    uart0Buffer += ch
+    if (uart0Buffer.length >= UART_CHUNK_FLUSH_LEN) flushUartBuffer(0)
+    return
+  }
+  uart1Buffer += ch
+  if (uart1Buffer.length >= UART_CHUNK_FLUSH_LEN) flushUartBuffer(1)
+}
 
 // ---------------------------------------------------------------------------
 // I2C Device Simulation (worker-side, synchronous)
@@ -205,27 +235,11 @@ function loadFirmware(firmwareBase64: string, cpuHz?: number): void {
   // reset vectors at address 0x00000000 can leave the CPU in invalid memory.
   applyBootVector()
 
-  // Wire up UART0 for Serial output (Serial1/Serial2 on Pico uses UART0: GP0=TX, GP1=RX)
-  mcu.uart[0].onByte = (byte: number) => {
-    const ch = String.fromCharCode(byte)
-    if (ch === '\n') {
-      emit({ type: 'serial', line: uart0Buffer })
-      uart0Buffer = ''
-    } else if (ch !== '\r') {
-      uart0Buffer += ch
-    }
-  }
+  // Wire up UART0 for serial output (commonly Serial1 on Pico: GP0=TX, GP1=RX)
+  mcu.uart[0].onByte = (byte: number) => onUartByte(0, byte)
 
-  // Wire up UART1 as well (Serial1 on GP4=TX, GP5=RX)
-  mcu.uart[1].onByte = (byte: number) => {
-    const ch = String.fromCharCode(byte)
-    if (ch === '\n') {
-      emit({ type: 'serial', line: `[UART1] ${uart1Buffer}` })
-      uart1Buffer = ''
-    } else if (ch !== '\r') {
-      uart1Buffer += ch
-    }
-  }
+  // Wire up UART1 as well (commonly Serial2 on Pico: GP4=TX, GP5=RX)
+  mcu.uart[1].onByte = (byte: number) => onUartByte(1, byte)
 
   // Attach GPIO listeners for all 30 pins
   for (let i = 0; i < 30; i++) {
@@ -782,14 +796,8 @@ onmessage = (event: MessageEvent<WorkerIn>) => {
     case 'stop': {
       stopStepping()
       // Flush any remaining UART buffers
-      if (uart0Buffer.length > 0) {
-        emit({ type: 'serial', line: uart0Buffer })
-        uart0Buffer = ''
-      }
-      if (uart1Buffer.length > 0) {
-        emit({ type: 'serial', line: `[UART1] ${uart1Buffer}` })
-        uart1Buffer = ''
-      }
+      flushUartBuffer(0)
+      flushUartBuffer(1)
       emit({ type: 'stopped' })
       emit({ type: 'serial', line: '[rp2040] simulation stopped' })
       break
