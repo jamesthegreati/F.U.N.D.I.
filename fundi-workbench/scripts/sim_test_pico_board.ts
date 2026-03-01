@@ -232,9 +232,17 @@ async function main(): Promise<void> {
     throw new Error('Pico engine appears non-functional: no LED transitions and no UART output in Serial1 case.');
   }
 
-  if (uartCase.uart1Lines.length === 0) {
-    throw new Error('Serial1/UART case produced no UART1 output. This indicates RP2040 UART path is broken.');
+  // Serial1 in arduino-pico maps to UART1 (GP4/GP5) in most configurations.
+  // If it maps to UART0 (GP0/GP1) in a variant, uart0Lines will have the output instead.
+  const hasUartOutput = uartCase.uart0Lines.length > 0 || uartCase.uart1Lines.length > 0;
+  if (!hasUartOutput) {
+    throw new Error(
+      'Serial1/UART case produced no UART output on either UART0 or UART1. ' +
+      'This indicates the RP2040 UART path is broken or the firmware hung before reaching Serial output.'
+    );
   }
+  // eslint-disable-next-line no-console
+  console.log(`[Serial1/UART] UART0 lines: ${uartCase.uart0Lines.length}, UART1 lines: ${uartCase.uart1Lines.length}`);
 
   // USB serial may still be empty in rp2040js-only integration, unlike Wokwi's full monitor integration.
   if (usbCase.uart0Lines.length === 0 && usbCase.uart1Lines.length === 0) {

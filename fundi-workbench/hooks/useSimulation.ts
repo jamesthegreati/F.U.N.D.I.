@@ -859,6 +859,17 @@ export function useSimulation(
           runningRef.current = true;
           setIsRunning(true);
           setHasRunner(true);
+
+          // Start a RAF loop to flush UI signals at ~60fps for non-AVR engines.
+          // (AVR engines have their own RAF step-loop started below after this early return.)
+          // Without this, pin-state updates only flush when onPinChange fires,
+          // meaning a throttled pin-change with no follow-up never reaches React state.
+          const scheduleFlush = () => {
+            if (!runningRef.current) return;
+            flushUiSignalsIfNeeded();
+            rafRef.current = requestAnimationFrame(scheduleFlush);
+          };
+          rafRef.current = requestAnimationFrame(scheduleFlush);
         } catch (err) {
           console.error(err);
         }
