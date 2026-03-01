@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { 
   ArrowLeft, 
@@ -78,13 +78,11 @@ export default function SettingsPage() {
   const handleChange = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setLocalSettings((prev) => ({ ...prev, [key]: value }))
     setHasChanges(true)
+    if (key === 'backendUrl') {
+      setBackendStatus('idle')
+      setBackendStatusMsg('')
+    }
   }
-
-  // Reset test status when the user changes the backend URL
-  useEffect(() => {
-    setBackendStatus('idle')
-    setBackendStatusMsg('')
-  }, [localSettings.backendUrl])
 
   const handleSave = () => {
     updateSettings(localSettings)
