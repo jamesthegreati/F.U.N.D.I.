@@ -56,7 +56,7 @@ LEDC_CHANNEL_STRIDE = 0x14         # 20 bytes per channel block
 BOOTLOADER_OFFSET = 0x1000
 PARTITION_TABLE_OFFSET = 0x8000
 APP_OFFSET = 0x10000
-FLASH_SIZE = 4 * 1024 * 1024     # 4 MB
+FLASH_SIZE = 4 * 1024 * 1024     # Default 4 MB
 
 
 def _find_qemu_binary() -> str | None:
@@ -104,7 +104,7 @@ def create_flash_image(
     partition_bin: bytes | None = None,
     flash_size: int = FLASH_SIZE,
 ) -> bytes:
-    """Merge bootloader + partition table + application into a flat 4 MB flash image.
+    """Merge bootloader + partition table + application into a flat flash image.
 
     If *bootloader_bin* or *partition_bin* are ``None`` we use minimal default
     stubs that allow ESP32 QEMU to boot the application binary.
@@ -129,13 +129,17 @@ def create_flash_image(
         # ESP-IDF partition entry format: 2B magic + 1B type + 1B subtype + 4B offset + 4B size + 20B label + 4B flags
         pt = _build_minimal_partition_table(APP_OFFSET, flash_size - APP_OFFSET)
         end = PARTITION_TABLE_OFFSET + len(pt)
-        flash[PARTITION_TABLE_OFFSET:end] = pt
+        if end <= flash_size:
+            flash[PARTITION_TABLE_OFFSET:end] = pt
 
     # Write application
     if app_bin:
         end = APP_OFFSET + len(app_bin)
         if end <= flash_size:
             flash[APP_OFFSET:end] = app_bin
+        else:
+            # truncate app if it exceeds flash size
+            flash[APP_OFFSET:flash_size] = app_bin[:flash_size - APP_OFFSET]
 
     return bytes(flash)
 
@@ -153,8 +157,8 @@ def _build_minimal_partition_table(app_offset: int, app_max_size: int) -> bytes:
     entry[3] = 0x00
     # Offset (little-endian)
     struct.pack_into('<I', entry, 4, app_offset)
-    # Size (little-endian) – cap at 1MB
-    size = min(app_max_size, 1 * 1024 * 1024)
+    # Size (little-endian) – cap at 1MB if space is tight, or use max available
+    size = min(app_max_size, max(app_max_size, 1 * 1024 * 1024))
     struct.pack_into('<I', entry, 8, size)
     # Label: "factory\0..."
     label = b'factory\x00' + b'\x00' * 12
@@ -167,13 +171,6 @@ def _build_minimal_partition_table(app_offset: int, app_max_size: int) -> bytes:
     # Fill rest with 0xFF
     for i in range(2, 32):
         end_marker[i] = 0xFF
-
-    # MD5 checksum entry (simplified: just the marker)
-    md5_marker = bytearray(32)
-    md5_marker[0] = 0xEB
-    md5_marker[1] = 0xEB
-    for i in range(2, 32):
-        md5_marker[i] = 0xFF
 
     return bytes(entry + end_marker)
 
@@ -190,7 +187,7 @@ class Esp32QemuRunner:
     """Manages a single QEMU process for one ESP32 simulation session."""
 
     session_id: str
-    flash_image_path: str              # path to the 4MB flash file on disk
+    flash_image_path: str              # path to the flash file on disk
     ports: QemuPorts = field(default_factory=QemuPorts)
     _process: asyncio.subprocess.Process | None = None
     _uart_reader: asyncio.Task[Any] | None = None
@@ -635,23 +632,56 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
     """Build a complete ESP32 flash image from a base64 compile artifact.
 
     For raw-bin artifacts, this wraps the binary in a minimal flash image
-    with a default partition table.
+    with a default partition table. If it's a pre-merged image, it ensures
+    the flash file size exactly matches the size requested in the ESP32 header.
     """
     raw = base64.b64decode(artifact_b64)
 
-    # If the artifact is already a full flash image (4MB), use it as-is
-    if len(raw) >= FLASH_SIZE:
-        return raw[:FLASH_SIZE]
+    target_flash_size = FLASH_SIZE
 
     # Check if this looks like a merged image (has bootloader magic at 0x1000)
     # ESP32 bootloader starts with 0xE9 at the entry point
-    if len(raw) > BOOTLOADER_OFFSET + 1 and raw[BOOTLOADER_OFFSET] == 0xE9:
-        # Pad to full flash size
-        padded = bytearray(FLASH_SIZE)
-        for i in range(FLASH_SIZE):
+    if len(raw) > BOOTLOADER_OFFSET + 4 and raw[BOOTLOADER_OFFSET] == 0xE9:
+        # Extract the flash size ID from byte 3 (high 4 bits)
+        size_id = (raw[BOOTLOADER_OFFSET + 3] >> 4) & 0x0F
+        mapped_size = {
+            0: 1024 * 1024,
+            1: 2 * 1024 * 1024,
+            2: 4 * 1024 * 1024,
+            3: 8 * 1024 * 1024,
+            4: 16 * 1024 * 1024,
+        }.get(size_id, FLASH_SIZE)
+
+        # QEMU esp32 machine supports 2, 4, 8, 16 MB. Min 4MB is safest.
+        if mapped_size < 4 * 1024 * 1024:
+            target_flash_size = 4 * 1024 * 1024
+        elif mapped_size > 16 * 1024 * 1024:
+            target_flash_size = 16 * 1024 * 1024
+        else:
+            target_flash_size = mapped_size
+
+        # Pad to exactly the required flash size
+        padded = bytearray(target_flash_size)
+        for i in range(target_flash_size):
             padded[i] = 0xFF
-        padded[:len(raw)] = raw
+            
+        copy_len = min(len(raw), target_flash_size)
+        padded[:copy_len] = raw[:copy_len]
         return bytes(padded)
 
-    # Otherwise, treat as raw app binary and build flash image
-    return create_flash_image(app_bin=raw)
+    # Standard app only (no bootloader included). Extract size from app header.
+    if len(raw) > 4 and raw[0] == 0xE9:
+        size_id = (raw[3] >> 4) & 0x0F
+        mapped_size = {
+            0: 1024 * 1024,
+            1: 2 * 1024 * 1024,
+            2: 4 * 1024 * 1024,
+            3: 8 * 1024 * 1024,
+            4: 16 * 1024 * 1024,
+        }.get(size_id, FLASH_SIZE)
+        
+        if mapped_size >= 4 * 1024 * 1024 and mapped_size <= 16 * 1024 * 1024:
+            target_flash_size = mapped_size
+
+    # Build the wrapper
+    return create_flash_image(app_bin=raw, flash_size=target_flash_size)
