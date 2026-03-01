@@ -59,6 +59,7 @@ const lastPwmDuty = new Map<number, number>()
 let serialBuffer = ''
 let bootSp = RP2040_DEFAULT_SP
 let bootPc = FLASH_START_ADDRESS
+let bootVtor = FLASH_START_ADDRESS
 
 // ---------------------------------------------------------------------------
 // I2C Device Simulation (worker-side, synchronous)
@@ -150,22 +151,25 @@ function readLe32(bytes: Uint8Array, offset: number): number {
   ) >>> 0
 }
 
-function resolveBootVector(firmware: Uint8Array): { sp: number; pc: number } {
-  const vectorSp = readLe32(firmware, 0)
-  const vectorPc = readLe32(firmware, 4)
+function resolveBootVector(firmware: Uint8Array): { sp: number; pc: number; vtor: number } {
+  const readAt = (offset: number) => ({ sp: readLe32(firmware, offset), pc: readLe32(firmware, offset + 4) })
+  const baseVec = readAt(0)
+  const altVec = readAt(0x100)
+  const hasValidVector = (sp: number, pc: number) =>
+    sp >= 0x20000000 && sp <= 0x20042000 && pc >= FLASH_START_ADDRESS && pc < FLASH_END_ADDRESS
+  const selected = hasValidVector(baseVec.sp, baseVec.pc)
+    ? { ...baseVec, vtor: FLASH_START_ADDRESS }
+    : hasValidVector(altVec.sp, altVec.pc)
+      ? { ...altVec, vtor: FLASH_START_ADDRESS + 0x100 }
+      : null
 
-  const spIsValid = vectorSp >= 0x20000000 && vectorSp <= 0x20042000
-  const pcIsValid = vectorPc >= FLASH_START_ADDRESS && vectorPc < FLASH_END_ADDRESS
-
-  return {
-    sp: spIsValid ? vectorSp : RP2040_DEFAULT_SP,
-    pc: pcIsValid ? vectorPc : FLASH_START_ADDRESS,
-  }
+  if (selected) return selected
+  return { sp: RP2040_DEFAULT_SP, pc: FLASH_START_ADDRESS, vtor: FLASH_START_ADDRESS }
 }
 
 function applyBootVector(): void {
   if (!mcu) return
-  mcu.core.VTOR = FLASH_START_ADDRESS
+  mcu.core.VTOR = bootVtor
   mcu.core.SP = bootSp
   mcu.core.PC = bootPc
 }
@@ -193,6 +197,7 @@ function loadFirmware(firmwareBase64: string, cpuHz?: number): void {
   const bootVector = resolveBootVector(firmware)
   bootSp = bootVector.sp
   bootPc = bootVector.pc
+  bootVtor = bootVector.vtor
 
   // Boot directly from flash image (similar to rp2040js demo startup path).
   // Our bundled rp2040js package does not include bootrom data by default, so relying on
