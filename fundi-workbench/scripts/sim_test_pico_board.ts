@@ -198,9 +198,11 @@ async function runCase(backendUrl: string, name: string, sketch: string): Promis
   const artifactBytes = decodeBase64ToBytes(artifactPayload);
   const vecSp = readLe32(artifactBytes, 0);
   const vecPc = readLe32(artifactBytes, 4);
+  const vecSp100 = readLe32(artifactBytes, 0x100);
+  const vecPc100 = readLe32(artifactBytes, 0x104);
 
   // eslint-disable-next-line no-console
-  console.log(`\n[${name}] artifactType=${artifactType}, payloadBytes=${artifactBytes.length}, vecSP=0x${vecSp.toString(16)}, vecPC=0x${vecPc.toString(16)}`);
+  console.log(`\n[${name}] artifactType=${artifactType}, payloadBytes=${artifactBytes.length}, vecSP=0x${vecSp.toString(16)}, vecPC=0x${vecPc.toString(16)}, vecSP@0x100=0x${vecSp100.toString(16)}, vecPC@0x104=0x${vecPc100.toString(16)}`);
 
   const result = runPicoArtifact(artifactType, artifactPayload, hints, 6_000_000);
 
