@@ -159,6 +159,9 @@ jobs:
           cache: npm
           cache-dependency-path: fundi-workbench/package-lock.json
 
+      - name: Clean up Docker-created node_modules
+        run: sudo rm -rf node_modules
+
       - name: Install Node.js dependencies
         run: npm ci
 
