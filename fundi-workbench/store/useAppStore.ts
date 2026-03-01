@@ -1726,7 +1726,11 @@ You can also upload images of physical circuits for recognition.`,
             set({ lastAiAppliedEntryId: null, lastAiUndoSnapshot: null })
           }
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
+          const raw = err instanceof Error ? err.message : String(err)
+          const isNetworkError = raw === 'Failed to fetch' || raw.includes('NetworkError') || raw.includes('ECONNREFUSED')
+          const msg = isNetworkError
+            ? `Cannot reach the backend server at ${getBackendUrl()}. Make sure the backend is running (e.g. "docker compose up") or update the Backend URL in Settings.`
+            : raw
           get().addTerminalEntry({ type: 'error', content: `Error: ${msg}` })
         } finally {
           set({ isAiLoading: false })

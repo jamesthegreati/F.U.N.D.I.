@@ -198,8 +198,13 @@ function ArduinoUploadTab({ isActive }: { isActive: boolean }) {
       setUploadError(null)
       setUploadOutput(data?.upload_output || 'Upload completed successfully.')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setUploadError(msg || 'Upload request failed.')
+      const raw = err instanceof Error ? err.message : String(err)
+      const isNetworkError = raw === 'Failed to fetch' || raw.includes('NetworkError') || raw.includes('ECONNREFUSED')
+      setUploadError(
+        isNetworkError
+          ? `Cannot reach backend at ${getBackendUrl()}. Start it with "docker compose up" or update the Backend URL in Settings.`
+          : raw || 'Upload request failed.'
+      )
     } finally {
       setIsUploading(false)
     }
