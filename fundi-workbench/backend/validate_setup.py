@@ -92,15 +92,26 @@ def _get_installed_core_ids(arduino_cli: str) -> set[str]:
         check=False,
         timeout=30,
     )
-    payload = json.loads((proc.stdout or "").strip() or "{}")
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip() or "no error details available"
+        raise ValueError(f"`arduino-cli core list` failed: {err}")
+    try:
+        payload = json.loads((proc.stdout or "").strip() or "{}")
+    except json.JSONDecodeError:
+        return set()
     installed = payload.get("installed_platforms", []) if isinstance(payload, dict) else []
     if not isinstance(installed, list):
         return set()
-    return {
-        entry.get("id", "").strip()
-        for entry in installed
-        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry.get("id", "").strip()
-    }
+    core_ids: set[str] = set()
+    for entry in installed:
+        if not isinstance(entry, dict):
+            continue
+        core_id = entry.get("id")
+        if isinstance(core_id, str):
+            core_id = core_id.strip()
+            if core_id:
+                core_ids.add(core_id)
+    return core_ids
 
 
 def check_simulation_readiness():
@@ -113,7 +124,7 @@ def check_simulation_readiness():
 
     try:
         installed_core_ids = _get_installed_core_ids(arduino_cli)
-    except Exception as exc:  # noqa: BLE001
+    except (subprocess.SubprocessError, OSError, ValueError) as exc:
         print(f"❌ Failed to inspect installed Arduino cores: {exc}")
         return False
 
@@ -138,15 +149,20 @@ def check_simulation_readiness():
         print("⚠️  ESP32 QEMU not found (qemu-system-xtensa)")
         missing.append("qemu-system-xtensa")
 
-    print(
-        "ℹ️  ESP32 compile is usually slower than AVR because ESP32 toolchains and"
-        " libraries are much larger, and the first compile can include board-core/tool downloads."
-    )
-
     if missing:
-        print("   Run: python bootstrap_board_cores.py")
+        bootstrap_script = Path(__file__).parent / "bootstrap_board_cores.py"
+        if bootstrap_script.exists():
+            print("   Run: python bootstrap_board_cores.py  # pre-installs ESP32/RP2040 board cores")
+        else:
+            print("   Install missing board cores with arduino-cli, then retry this check.")
         print("   Set QEMU_ESP32_PATH or add qemu-system-xtensa to PATH for ESP32 simulation.")
         return False
+
+    if "esp32:esp32" in installed_core_ids:
+        print(
+            "ℹ️  ESP32 compile is usually slower than AVR because ESP32 toolchains and"
+            " libraries are much larger, and occasional compilations may include extra board-core/tool work."
+        )
 
     print("✅ Simulation prerequisites look ready for realistic compile/sim flows.")
     return True

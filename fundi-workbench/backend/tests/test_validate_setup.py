@@ -24,9 +24,26 @@ class ValidateSetupTests(unittest.TestCase):
 
         with patch("validate_setup.subprocess.run") as mock_run:
             mock_run.return_value.stdout = json.dumps(fake_payload)
+            mock_run.return_value.returncode = 0
             core_ids = validate_setup._get_installed_core_ids("arduino-cli")
 
         self.assertEqual(core_ids, {"arduino:avr", "esp32:esp32", "rp2040:rp2040"})
+
+    def test_get_installed_core_ids_handles_invalid_json(self) -> None:
+        with patch("validate_setup.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = "{not-json"
+            mock_run.return_value.returncode = 0
+            core_ids = validate_setup._get_installed_core_ids("arduino-cli")
+
+        self.assertEqual(core_ids, set())
+
+    def test_get_installed_core_ids_raises_on_cli_error(self) -> None:
+        with patch("validate_setup.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 1
+            mock_run.return_value.stderr = "network timeout"
+
+            with self.assertRaises(ValueError):
+                validate_setup._get_installed_core_ids("arduino-cli")
 
     def test_simulation_readiness_requires_cores_and_qemu(self) -> None:
         with patch("validate_setup.shutil.which", return_value="/usr/bin/arduino-cli"), patch(
