@@ -55,8 +55,9 @@ const lastPinState = new Map<number, SignalLevel>()
 // Track last-emitted PWM duty to avoid flooding
 const lastPwmDuty = new Map<number, number>()
 
-// Serial line buffer: accumulates bytes until newline
-let serialBuffer = ''
+// Serial line buffers: separate accumulators per UART to avoid interleaved output
+let uart0Buffer = ''
+let uart1Buffer = ''
 let bootSp = RP2040_DEFAULT_SP
 let bootPc = FLASH_START_ADDRESS
 let bootVtor = FLASH_START_ADDRESS
@@ -204,14 +205,14 @@ function loadFirmware(firmwareBase64: string, cpuHz?: number): void {
   // reset vectors at address 0x00000000 can leave the CPU in invalid memory.
   applyBootVector()
 
-  // Wire up UART0 for Serial output (Arduino Serial on Pico uses UART0: GP0=TX, GP1=RX)
+  // Wire up UART0 for Serial output (Serial1/Serial2 on Pico uses UART0: GP0=TX, GP1=RX)
   mcu.uart[0].onByte = (byte: number) => {
     const ch = String.fromCharCode(byte)
     if (ch === '\n') {
-      emit({ type: 'serial', line: serialBuffer })
-      serialBuffer = ''
+      emit({ type: 'serial', line: uart0Buffer })
+      uart0Buffer = ''
     } else if (ch !== '\r') {
-      serialBuffer += ch
+      uart0Buffer += ch
     }
   }
 
@@ -219,10 +220,10 @@ function loadFirmware(firmwareBase64: string, cpuHz?: number): void {
   mcu.uart[1].onByte = (byte: number) => {
     const ch = String.fromCharCode(byte)
     if (ch === '\n') {
-      emit({ type: 'serial', line: `[UART1] ${serialBuffer}` })
-      serialBuffer = ''
+      emit({ type: 'serial', line: `[UART1] ${uart1Buffer}` })
+      uart1Buffer = ''
     } else if (ch !== '\r') {
-      serialBuffer += ch
+      uart1Buffer += ch
     }
   }
 
@@ -710,7 +711,8 @@ function cleanup(): void {
   pinListenerCleanups.length = 0
   lastPinState.clear()
   lastPwmDuty.clear()
-  serialBuffer = ''
+  uart0Buffer = ''
+  uart1Buffer = ''
   // Reset all I2C devices
   for (const [, devMap] of i2cDevices) {
     for (const [, dev] of devMap) dev.reset?.()
@@ -771,16 +773,22 @@ onmessage = (event: MessageEvent<WorkerIn>) => {
         return
       }
       emit({ type: 'serial', line: '[rp2040] simulation started' })
+      emit({ type: 'serial', line: '[rp2040] Note: Serial (USB CDC) output is not captured.' })
+      emit({ type: 'serial', line: '[rp2040] Use Serial1 (UART0, GP0/GP1) or Serial2 (UART1, GP4/GP5) to see output here.' })
       startStepping()
       break
     }
 
     case 'stop': {
       stopStepping()
-      // Flush any remaining serial buffer
-      if (serialBuffer.length > 0) {
-        emit({ type: 'serial', line: serialBuffer })
-        serialBuffer = ''
+      // Flush any remaining UART buffers
+      if (uart0Buffer.length > 0) {
+        emit({ type: 'serial', line: uart0Buffer })
+        uart0Buffer = ''
+      }
+      if (uart1Buffer.length > 0) {
+        emit({ type: 'serial', line: `[UART1] ${uart1Buffer}` })
+        uart1Buffer = ''
       }
       emit({ type: 'stopped' })
       emit({ type: 'serial', line: '[rp2040] simulation stopped' })
@@ -794,7 +802,8 @@ onmessage = (event: MessageEvent<WorkerIn>) => {
         applyBootVector()
         lastPinState.clear()
         lastPwmDuty.clear()
-        serialBuffer = ''
+        uart0Buffer = ''
+        uart1Buffer = ''
         emit({ type: 'serial', line: '[rp2040] reset' })
       }
       break
