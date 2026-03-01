@@ -412,7 +412,7 @@ function createLCDDevice(address: number, deviceType: string, config?: Record<st
   let cursorCol = 0
   let displayOn = true
   let backlightOn = true
-  let lastNibbleHigh = false
+  const lastNibbleHigh = false
   let lastByteRS = false
   let dataByte = 0 // accumulated 4-bit nibbles → 8-bit byte
   let nibbleCount = 0

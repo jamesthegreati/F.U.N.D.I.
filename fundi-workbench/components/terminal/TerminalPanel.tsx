@@ -141,9 +141,12 @@ function ArduinoUploadTab({ isActive }: { isActive: boolean }) {
     }
 
     const filesForCompilation = (files || [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((f) => !!f && (f as any).includeInSimulation)
       .reduce((acc, f) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const path = String((f as any).path || '')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const content = String((f as any).content || '')
         if (path) acc[path] = content
         return acc

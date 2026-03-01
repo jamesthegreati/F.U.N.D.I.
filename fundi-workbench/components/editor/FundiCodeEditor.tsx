@@ -17,6 +17,7 @@ if (typeof window !== 'undefined') {
 
   // Ensure Monaco can always resolve its language/editor workers.
   // Without this, Turbopack/dev can fail to serve worker assets, and Monaco init fails silently.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(window as any).MonacoEnvironment = {
     getWorkerUrl: function (_moduleId: string, label: string) {
       switch (label) {
