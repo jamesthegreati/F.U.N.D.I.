@@ -4,9 +4,13 @@ Startup validation script for FUNDI Backend.
 Checks that all required dependencies and configurations are in place.
 """
 import os
+import json
+import subprocess
 import shutil
 import sys
 from pathlib import Path
+
+from app.services.esp32_qemu_runner import _find_qemu_binary
 
 
 def check_python_version():
@@ -77,6 +81,77 @@ def check_requirements():
         return False
 
 
+def _get_installed_core_ids(arduino_cli: str) -> set[str]:
+    """Get installed Arduino core IDs from `arduino-cli core list --format json`."""
+    proc = subprocess.run(
+        [arduino_cli, "core", "list", "--format", "json", "--no-color"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=30,
+    )
+    payload = json.loads((proc.stdout or "").strip() or "{}")
+    installed = payload.get("installed_platforms", []) if isinstance(payload, dict) else []
+    if not isinstance(installed, list):
+        return set()
+    return {
+        entry.get("id", "").strip()
+        for entry in installed
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry.get("id", "").strip()
+    }
+
+
+def check_simulation_readiness():
+    """Check backend prerequisites for realistic ESP32/RP2040 simulation flows."""
+    print("\n🔍 Checking simulation readiness (Wokwi-like workflows)...")
+    arduino_cli = shutil.which("arduino-cli")
+    if not arduino_cli:
+        print("❌ arduino-cli not found in PATH")
+        return False
+
+    try:
+        installed_core_ids = _get_installed_core_ids(arduino_cli)
+    except Exception as exc:  # noqa: BLE001
+        print(f"❌ Failed to inspect installed Arduino cores: {exc}")
+        return False
+
+    required_cores = {
+        "arduino:avr": "AVR (Uno/Nano/Mega) compile path",
+        "esp32:esp32": "ESP32 compile + QEMU simulation path",
+        "rp2040:rp2040": "RP2040 compile path",
+    }
+
+    missing = []
+    for core_id, label in required_cores.items():
+        if core_id in installed_core_ids:
+            print(f"✅ Core installed: {core_id} ({label})")
+        else:
+            print(f"⚠️  Core missing: {core_id} ({label})")
+            missing.append(core_id)
+
+    qemu_path = _find_qemu_binary()
+    if qemu_path:
+        print(f"✅ ESP32 QEMU found at: {qemu_path}")
+    else:
+        print("⚠️  ESP32 QEMU not found (qemu-system-xtensa)")
+        missing.append("qemu-system-xtensa")
+
+    print(
+        "ℹ️  ESP32 compile is usually slower than AVR because ESP32 toolchains and"
+        " libraries are much larger, and the first compile can include board-core/tool downloads."
+    )
+
+    if missing:
+        print("   Run: python bootstrap_board_cores.py")
+        print("   Set QEMU_ESP32_PATH or add qemu-system-xtensa to PATH for ESP32 simulation.")
+        return False
+
+    print("✅ Simulation prerequisites look ready for realistic compile/sim flows.")
+    return True
+
+
 def main():
     """Run all validation checks."""
     print("=" * 60)
@@ -88,6 +163,7 @@ def main():
         check_arduino_cli(),
         check_requirements(),
         check_env_file(),
+        check_simulation_readiness(),
     ]
     
     print("\n" + "=" * 60)
