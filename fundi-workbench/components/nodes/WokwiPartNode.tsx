@@ -61,6 +61,8 @@ interface WokwiPartNodeData {
 
     /** Analog joystick move callback (ADC values 0-1023) */
     onJoystickMove?: (partId: string, horz: number, vert: number) => void;
+    /** Whether simulation is currently running (disables editing features) */
+    isSimulating?: boolean;
 }
 
 interface WokwiPartNodeProps {
@@ -91,6 +93,7 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
     const onDeletePart = data?.onDeletePart;
     const simulationPinStates = data?.simulationPinStates;
     const pwmValue = data?.pwmValue;
+    const isSimulating = data?.isSimulating ?? false;
     const partType = propPartType ?? getPartTypeFromData(data) ?? 'arduino-uno';
 
     const [hoveredPin, setHoveredPin] = useState<string | null>(null);
@@ -173,14 +176,16 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
 
             // Sensor UX: clicking the sensor opens its value popup.
             if (supportsSensorPopup) {
-                setIsSelected(true);
                 openSensorPopup();
                 return;
             }
 
+            // During simulation, don't toggle selection (editing is locked).
+            if (isSimulating) return;
+
             setIsSelected((prev) => !prev);
         },
-        [nodeId, openSensorPopup, supportsSensorPopup]
+        [nodeId, openSensorPopup, supportsSensorPopup, isSimulating]
     );
 
     const sensorValues = useMemo(() => {
@@ -1223,8 +1228,8 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             }}
             onClick={handleClick}
         >
-            {/* Delete button - appears when selected */}
-            {isSelected && nodeId !== 'preview' && onDeletePart && (
+            {/* Delete button - hidden during simulation */}
+            {isSelected && nodeId !== 'preview' && onDeletePart && !isSimulating && (
                 <button
                     onClick={handleDelete}
                     className="absolute -top-3 -right-3 z-50 p-1.5 bg-red-500/90 hover:bg-red-600 text-white rounded-full shadow-lg transition-all duration-150 hover:scale-110"
@@ -1249,8 +1254,24 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 </button>
             )}
 
+            {/* Simulation: show "Adjust" badge on sensor input components */}
+            {isSimulating && supportsSensorPopup && nodeId !== 'preview' && (
+                <div className="absolute -top-5 left-0 right-0 flex justify-center z-40">
+                    <span
+                        role="button"
+                        tabIndex={0}
+                        className="px-1.5 py-0.5 text-[9px] font-semibold bg-ide-accent/90 text-white rounded shadow-sm cursor-pointer hover:bg-ide-accent transition-colors"
+                        onClick={(e) => { e.stopPropagation(); openSensorPopup(); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openSensorPopup(); } }}
+                        title="Click to adjust sensor value"
+                    >
+                        ⚙ Adjust
+                    </span>
+                </div>
+            )}
+
             {/* Selection indicator label */}
-            {isSelected && (
+            {isSelected && !isSimulating && (
                 <div className="absolute -top-6 left-0 right-0 flex justify-center pointer-events-none z-40">
                     <span className="px-2 py-0.5 text-[10px] font-medium bg-cyan-500/90 text-white rounded shadow-sm">
                         {partConfig?.name || partType}
@@ -1413,6 +1434,11 @@ export default memo(WokwiPartNode, (prevProps, nextProps) => {
 
     // Always re-render if pwmValue changed
     if (prevPwm !== nextPwm) {
+        return false; // Should re-render
+    }
+
+    // Always re-render if simulation state changed (affects UI lock behavior)
+    if (prevProps.data?.isSimulating !== nextProps.data?.isSimulating) {
         return false; // Should re-render
     }
 

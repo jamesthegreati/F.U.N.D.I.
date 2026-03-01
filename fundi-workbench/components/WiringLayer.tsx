@@ -21,6 +21,8 @@ interface WiringLayerProps {
   containerRef: React.RefObject<HTMLElement | null>;
   /** Optional transient overrides for inner waypoints (used during part dragging for 60fps). */
   wirePointOverrides?: Map<string, WirePoint[] | undefined>;
+  /** When true, wire creation and editing are disabled (simulation is running). */
+  isSimulating?: boolean;
 }
 
 type Mode = 'idle' | 'creating' | 'dragging-segment';
@@ -121,13 +123,19 @@ function getGridSizeForZoom(zoom: number): number {
   return zoom < 0.75 ? WOKWI_GRID_PX * 2 : WOKWI_GRID_PX;
 }
 
-function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
+function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringLayerProps) {
   const connections = useAppStore((s) => s.connections);
   const addConnection = useAppStore((s) => s.addConnection);
   const allocateNextWireColor = useAppStore((s) => s.allocateNextWireColor);
   const removeConnection = useAppStore((s) => s.removeConnection);
   const updateWireColor = useAppStore((s) => s.updateWireColor);
   const updateWire = useAppStore((s) => s.updateWire);
+
+  // Track isSimulating in a ref so the pointer event closure always sees the latest value.
+  const isSimulatingRef = useRef(false);
+  useEffect(() => {
+    isSimulatingRef.current = isSimulating ?? false;
+  }, [isSimulating]);
 
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -378,6 +386,8 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     const onPointerDownCapture = (e: PointerEvent) => {
       if (e.button !== 0) return;
       if (!isEventInsideContainer(e, container)) return;
+      // Block wire creation and segment dragging while simulation is running.
+      if (isSimulatingRef.current) return;
 
       // Click-away deselect: clicking anywhere else in the canvas clears wire selection,
       // except when interacting with the wire toolbar or wire hit targets.
