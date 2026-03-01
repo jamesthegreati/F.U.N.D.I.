@@ -11,6 +11,7 @@ FUNDI is a full-stack IoT development workbench that combines visual circuit des
 ### Frontend (Next.js)
 ```bash
 npm run dev          # Start development server (http://localhost:3000)
+npm run typecheck    # TypeScript checks
 npm run build        # Build for production
 npm run lint         # Run ESLint
 ```
@@ -26,19 +27,46 @@ docker compose down       # Stop services
 For local backend development (without Docker):
 ```bash
 cd fundi-workbench/backend
+python -m venv venv
+# PowerShell: .\\venv\\Scripts\\Activate.ps1
+# Git Bash: source venv/Scripts/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python validate_setup.py
+# Ensure Arduino CLI is available (PATH and/or ARDUINO_CLI_PATH)
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+For Windows local setup used in this workspace (`fundi-workbench/launch.md`):
+
+```powershell
+cd fundi-workbench/backend
+$env:PATH = "C:\arduino-cli;$env:PATH"
+$env:ARDUINO_CLI_PATH = "C:\arduino-cli\arduino-cli.exe"
+$env:ARDUINO_SKETCHBOOK_DIR = "C:\Users\henry\Documents\Arduino"
+$env:ARDUINO_LIBRARIES_DIR = "C:\Users\henry\Documents\Arduino\libraries"
+$env:FUNDI_AUTO_BOOTSTRAP_CORES = "0"
+$env:FUNDI_CORE_INSTALL_RETRIES = "4"
+$env:FUNDI_CORE_INSTALL_TIMEOUT_S = "12000"
+$env:FUNDI_ARDUINO_NETWORK_TIMEOUT_S = "900"
+.\venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Testing
 ```bash
+# Frontend quality checks
+cd fundi-workbench
+npm run lint
+npm run typecheck
+npm run build
+
 # Backend tests
 cd fundi-workbench/backend
-pip install pytest
 pytest
 
 # API testing
-python test_api.py  # Standalone API test script in root
+cd ../
+python test_api.py --compile
 ```
 
 ## Architecture
@@ -185,13 +213,18 @@ Use `test_api.py` in the project root:
 
 ### Required
 ```bash
-# Frontend (optional - defaults to http://localhost:8000)
-echo "NEXT_PUBLIC_BACKEND_URL=http://localhost:8000" > fundi-workbench/.env.local
+# Frontend (optional - defaults to http://127.0.0.1:8000)
+echo "NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000" > fundi-workbench/.env.local
 
 # Backend (required for AI features)
-cd fundi-workbench
+cd fundi-workbench/backend
 cp .env.example .env
-# Edit .env and add: GEMINI_API_KEY=your_key_here
+# Edit .env and add one of:
+# GEMINI_API_KEY=your_key_here
+# OPENROUTER_API_KEY=your_key_here
+# Optional model overrides:
+# GEMINI_MODEL=models/gemini-flash-lite-latest
+# OPENROUTER_MODEL=google/gemini-2.0-flash-001
 ```
 
 ### Docker Setup
@@ -251,9 +284,9 @@ The Docker Compose already mounts volumes, so backend changes are reflected imme
 - Backend not running: `docker compose up backend` or check port 8000
 - CORS issue: Check `ALLOWED_ORIGINS` in `backend/app/core/config.py`
 
-### "GEMINI_API_KEY is not set"
-- Copy `.env.example` to `.env`
-- Add valid API key: `GEMINI_API_KEY=AIzaSy...`
+### "No LLM API key is configured"
+- Copy `backend/.env.example` to `backend/.env`
+- Add valid key: `GEMINI_API_KEY=...` or `OPENROUTER_API_KEY=...`
 - Restart Docker: `docker compose down && docker compose up`
 
 ### "No supported microcontroller found"
