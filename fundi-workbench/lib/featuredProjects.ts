@@ -3,7 +3,18 @@
 import smartFacilityGuardian from '../data/featured-projects/smart-facility-guardian.json';
 import esp32TouchLedcDac from '../data/featured-projects/esp32-touch-ledc-dac.json';
 import esp32DualCoreRtosHub from '../data/featured-projects/esp32-dual-core-rtos-hub.json';
+import esp32BlinkLed from '../data/featured-projects/esp32-blink-led.json';
+import esp32ButtonLedPwm from '../data/featured-projects/esp32-button-led-pwm.json';
+import esp32WifiScanner from '../data/featured-projects/esp32-wifi-scanner.json';
+import esp32ServoTrafficLight from '../data/featured-projects/esp32-servo-traffic-light.json';
 import picoInternalTempPwm from '../data/featured-projects/pico-internal-temp-pwm.json';
+import picoBlinkLed from '../data/featured-projects/pico-blink-led.json';
+import picoButtonLed from '../data/featured-projects/pico-button-led.json';
+import picoTrafficLight from '../data/featured-projects/pico-traffic-light.json';
+import picoPotentiometerLed from '../data/featured-projects/pico-potentiometer-led.json';
+import picoBuzzerMelody from '../data/featured-projects/pico-buzzer-melody.json';
+import picoServoSweep from '../data/featured-projects/pico-servo-sweep.json';
+import picoMultiLedPattern from '../data/featured-projects/pico-multi-led-pattern.json';
 
 /**
  * Featured Projects - Wokwi Project Loader
@@ -782,6 +793,17 @@ void loop() {
   },
   esp32TouchLedcDac as unknown as FeaturedProject,
   esp32DualCoreRtosHub as unknown as FeaturedProject,
+  esp32BlinkLed as unknown as FeaturedProject,
+  esp32ButtonLedPwm as unknown as FeaturedProject,
+  esp32WifiScanner as unknown as FeaturedProject,
+  esp32ServoTrafficLight as unknown as FeaturedProject,
+  picoBlinkLed as unknown as FeaturedProject,
+  picoButtonLed as unknown as FeaturedProject,
+  picoTrafficLight as unknown as FeaturedProject,
+  picoPotentiometerLed as unknown as FeaturedProject,
+  picoBuzzerMelody as unknown as FeaturedProject,
+  picoServoSweep as unknown as FeaturedProject,
+  picoMultiLedPattern as unknown as FeaturedProject,
   picoInternalTempPwm as unknown as FeaturedProject,
   smartFacilityGuardian as unknown as FeaturedProject
 ];

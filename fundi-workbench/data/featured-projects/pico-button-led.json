@@ -1,0 +1,27 @@
+{
+  "id": "pico-button-led",
+  "name": "Pico Button & LED",
+  "description": "Press a pushbutton to toggle an LED — learn digital input with internal pull-up on the Raspberry Pi Pico",
+  "difficulty": "beginner",
+  "tags": ["pico", "rp2040", "button", "led", "digital-input", "pull-up"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -90, "left": 200, "attrs": { "color": "red" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -50, "left": 200, "attrs": { "value": "220" } },
+      { "type": "wokwi-pushbutton", "id": "btn1", "top": -90, "left": -120 }
+    ],
+    "connections": [
+      ["pico:GP15", "r1:1", "green", []],
+      ["r1:2", "led1:A", "green", []],
+      ["led1:C", "pico:GND.1", "black", []],
+      ["btn1:1.l", "pico:GP14", "blue", []],
+      ["btn1:2.l", "pico:GND.2", "black", []]
+    ]
+  },
+  "code": "// Pico Button & LED\n// Press the button on GP14 to toggle the LED on GP15.\n// Uses INPUT_PULLUP so no external resistor is needed for the button.\n\n#include <Arduino.h>\n\nconst int BUTTON_PIN = 14;  // Push button on GP14\nconst int LED_PIN    = 15;  // LED on GP15\n\nbool ledState = false;\nbool lastButtonState = HIGH;\nunsigned long lastDebounce = 0;\nconst unsigned long DEBOUNCE_MS = 50;\n\nvoid setup() {\n  pinMode(BUTTON_PIN, INPUT_PULLUP);\n  pinMode(LED_PIN, OUTPUT);\n  Serial.begin(115200);\n  delay(100);\n  Serial.println(\"Pico Button & LED ready\");\n}\n\nvoid loop() {\n  bool reading = digitalRead(BUTTON_PIN);\n\n  if (reading != lastButtonState) {\n    lastDebounce = millis();\n  }\n\n  if ((millis() - lastDebounce) > DEBOUNCE_MS) {\n    static bool buttonState = HIGH;\n    if (reading != buttonState) {\n      buttonState = reading;\n      if (buttonState == LOW) {  // pressed\n        ledState = !ledState;\n        digitalWrite(LED_PIN, ledState ? HIGH : LOW);\n        Serial.print(\"LED toggled: \");\n        Serial.println(ledState ? \"ON\" : \"OFF\");\n      }\n    }\n  }\n\n  lastButtonState = reading;\n}\n"
+}

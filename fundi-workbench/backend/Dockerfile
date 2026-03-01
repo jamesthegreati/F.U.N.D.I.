@@ -62,6 +62,45 @@ RUN arduino-cli core update-index --additional-urls https://raw.githubuserconten
     (arduino-cli core install esp32:esp32 --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json || \
      echo "WARNING: ESP32 core installation failed. Will be available for manual installation.")
 
+# --- Espressif QEMU for ESP32 simulation ---
+# Install prebuilt qemu-system-xtensa from Espressif's fork.
+# Tag uses hyphens, asset filenames use underscores.
+ARG QEMU_ESP32_TAG=esp-develop-9.2.2-20250817
+ARG QEMU_ESP32_FILE_VERSION=esp_develop_9.2.2_20250817
+RUN set -eux; \
+    arch=$(uname -m); \
+    case "$arch" in \
+        x86_64)  qemu_arch="x86_64-linux-gnu" ;; \
+        aarch64) qemu_arch="aarch64-linux-gnu" ;; \
+        *)       echo "Unsupported arch for QEMU: $arch"; exit 0 ;; \
+    esac; \
+    asset="qemu-xtensa-softmmu-${QEMU_ESP32_FILE_VERSION}-${qemu_arch}.tar.xz"; \
+    url="https://github.com/espressif/qemu/releases/download/${QEMU_ESP32_TAG}/${asset}"; \
+    echo "Downloading Espressif QEMU from: $url"; \
+    apt-get update && apt-get install -y --no-install-recommends xz-utils && rm -rf /var/lib/apt/lists/*; \
+    max_retries=3; retry_count=0; \
+    while [ $retry_count -lt $max_retries ]; do \
+        if curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o /tmp/qemu-esp32.tar.xz; then \
+            echo "Espressif QEMU downloaded successfully"; \
+            break; \
+        else \
+            retry_count=$((retry_count + 1)); \
+            echo "QEMU download attempt $retry_count failed. Retrying..."; \
+            sleep 5; \
+        fi; \
+    done; \
+    if [ -f /tmp/qemu-esp32.tar.xz ]; then \
+        mkdir -p /opt/qemu-esp32; \
+        tar -xJf /tmp/qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1; \
+        rm -f /tmp/qemu-esp32.tar.xz; \
+        ln -sf /opt/qemu-esp32/bin/qemu-system-xtensa /usr/local/bin/qemu-system-xtensa; \
+        qemu-system-xtensa --version || echo "WARNING: QEMU verification failed"; \
+    else \
+        echo "WARNING: Failed to download Espressif QEMU. ESP32 simulation will not be available."; \
+    fi
+
+ENV QEMU_ESP32_PATH=/usr/local/bin/qemu-system-xtensa
+
 # Install RP2040 core (Raspberry Pi Pico) with error handling
 RUN arduino-cli core update-index && \
     (arduino-cli core install arduino:mbed_rp2040 || \

@@ -65,6 +65,7 @@ import {
 import { simFeatureFlags, boardFamily } from '@/utils/simulation/featureFlags';
 import { Rp2040EngineAdapter } from '@/utils/simulation/engines/rp2040/Rp2040EngineAdapter';
 import { Esp32EngineAdapter } from '@/utils/simulation/engines/esp32/Esp32EngineAdapter';
+import { esp32PinToGpio } from '@/utils/simulation/engines/esp32/esp32PinMap';
 import type { SimulationEngine, SimulationArtifact as EngineSimulationArtifact } from '@/utils/simulation/engines/SimulationEngine';
 import { buildAdjacency as buildNetAdjacency, findConnectedBoardPinId } from '@/utils/simulation/net/NetGraph';
 
@@ -637,6 +638,9 @@ export function useSimulation(
     setHasRunner(false);
     if (engineRef.current) {
       void engineRef.current.stop();
+      if ('dispose' in engineRef.current && typeof (engineRef.current as { dispose: () => void }).dispose === 'function') {
+        (engineRef.current as { dispose: () => void }).dispose();
+      }
       engineRef.current = null;
     }
     nonAvrControlPinMapRef.current = new Map();
@@ -753,17 +757,94 @@ export function useSimulation(
             engineRef.current.setHandlers({
               onSerial: (line) => appendSerialLine(line),
               onPinChange: (pinId, level) => {
-                const m = pinId.match(/^(?:D)?(\d+)$/i) ?? pinId.match(/^A(\d+)$/i);
-                if (!m) return;
-                const idx = Number.parseInt(m[1], 10);
-                const pin = /^A/i.test(pinId) ? 14 + idx : idx;
-                if (!Number.isFinite(pin)) return;
+                let pin: number | null = null;
+
+                if (family === 'esp32') {
+                  // ESP32 pins: D2, GPIO23, 23, A0, TX0, etc.
+                  pin = esp32PinToGpio(pinId);
+                  if (pin === null || pin < 0 || pin > 39) return;
+                } else {
+                  // RP2040 pins come as GP0..GP29; also support D0..D29 and A0..A2
+                  const gpMatch = pinId.match(/^GP(\d+)$/i);
+                  const dMatch = pinId.match(/^(?:D)?(\d+)$/i);
+                  const aMatch = pinId.match(/^A(\d+)$/i);
+                  const m = gpMatch ?? dMatch ?? aMatch;
+                  if (!m) return;
+                  if (gpMatch) {
+                    pin = Number.parseInt(gpMatch[1], 10);
+                  } else if (aMatch) {
+                    // A0..A2 → GP26..GP28
+                    pin = 26 + Number.parseInt(aMatch[1], 10);
+                  } else {
+                    pin = Number.parseInt(m[1], 10);
+                  }
+                  if (!Number.isFinite(pin) || pin < 0 || pin >= 30) return;
+                }
+
                 pinStatesRef.current[pin] = level === 1;
                 uiDirtyRef.current.pins = true;
                 flushUiSignalsIfNeeded();
               },
             });
             await engineRef.current.init({ board: partType, artifact });
+
+            // Register I2C/SPI devices found in the circuit on the RP2040 worker
+            if (family === 'rp2040' && engineRef.current instanceof Rp2040EngineAdapter) {
+              const rp2040 = engineRef.current as Rp2040EngineAdapter;
+              for (const part of circuitParts) {
+                const t = part.type.toLowerCase();
+                if (t.includes('lcd1602') || t.includes('lcd-1602')) {
+                  const addr = (part.attrs?.address as number) || 0x27;
+                  rp2040.registerI2CDevice(0, addr, 'lcd1602');
+                } else if (t.includes('lcd2004') || t.includes('lcd-2004')) {
+                  const addr = (part.attrs?.address as number) || 0x27;
+                  rp2040.registerI2CDevice(0, addr, 'lcd2004');
+                } else if (t.includes('ssd1306')) {
+                  const addr = (part.attrs?.address as number) || 0x3c;
+                  const w = (part.attrs?.width as number) || 128;
+                  const h = (part.attrs?.height as number) || 64;
+                  rp2040.registerI2CDevice(0, addr, 'ssd1306', { width: w, height: h });
+                } else if (t.includes('ds1307')) {
+                  rp2040.registerI2CDevice(0, 0x68, 'ds1307');
+                } else if (t.includes('mpu6050')) {
+                  const addr = (part.attrs?.address as number) || 0x68;
+                  rp2040.registerI2CDevice(0, addr, 'mpu6050');
+                }
+              }
+            }
+
+            // Register I2C/SPI devices found in the circuit on the ESP32 QEMU session
+            if (family === 'esp32' && engineRef.current instanceof Esp32EngineAdapter) {
+              const esp32 = engineRef.current as Esp32EngineAdapter;
+              for (const part of circuitParts) {
+                const t = part.type.toLowerCase();
+                if (t.includes('lcd1602') || t.includes('lcd-1602')) {
+                  const addr = (part.attrs?.address as number) || 0x27;
+                  esp32.registerI2CDevice(0, addr, 'lcd1602');
+                } else if (t.includes('lcd2004') || t.includes('lcd-2004')) {
+                  const addr = (part.attrs?.address as number) || 0x27;
+                  esp32.registerI2CDevice(0, addr, 'lcd2004');
+                } else if (t.includes('ssd1306')) {
+                  const addr = (part.attrs?.address as number) || 0x3c;
+                  const w = (part.attrs?.width as number) || 128;
+                  const h = (part.attrs?.height as number) || 64;
+                  esp32.registerI2CDevice(0, addr, 'ssd1306', { width: w, height: h });
+                } else if (t.includes('ds1307')) {
+                  esp32.registerI2CDevice(0, 0x68, 'ds1307');
+                } else if (t.includes('mpu6050')) {
+                  const addr = (part.attrs?.address as number) || 0x68;
+                  esp32.registerI2CDevice(0, addr, 'mpu6050');
+                } else if (t.includes('ili9341')) {
+                  esp32.registerSPIDevice(0, 'ili9341', 5);
+                } else if (t.includes('max7219')) {
+                  esp32.registerSPIDevice(0, 'max7219', 5);
+                } else if (t.includes('neopixel') || t.includes('ws2812')) {
+                  // WS2812 uses single-wire protocol, registered as SPI device for data relay
+                  const pinAttr = (part.attrs?.pin as number) ?? 16;
+                  esp32.registerSPIDevice(0, 'ws2812', pinAttr);
+                }
+              }
+            }
           }
 
           await engineRef.current.start();

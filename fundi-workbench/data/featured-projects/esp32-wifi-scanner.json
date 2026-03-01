@@ -1,0 +1,51 @@
+{
+  "id": "esp32-wifi-scanner",
+  "name": "ESP32 WiFi Scanner",
+  "description": "Scan nearby WiFi networks and display results via serial. Demonstrates WiFi.scanNetworks() — an ESP32/WiFi-only feature not available on AVR.",
+  "difficulty": "intermediate",
+  "tags": [
+    "esp32",
+    "wifi",
+    "networking",
+    "scanner",
+    "non-avr"
+  ],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      {
+        "type": "wokwi-esp32-devkit-v1",
+        "id": "esp",
+        "top": 0,
+        "left": 0
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led1",
+        "top": -30,
+        "left": 280,
+        "attrs": {
+          "color": "blue"
+        }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r1",
+        "top": 20,
+        "left": 280,
+        "attrs": {
+          "value": "220"
+        }
+      }
+    ],
+    "connections": [
+      ["esp:2", "r1:1", "cyan", []],
+      ["r1:2", "led1:A", "cyan", []],
+      ["led1:C", "esp:GND.1", "black", []]
+    ]
+  },
+  "code": "// ESP32 WiFi Scanner\n// ===================\n// Scans for nearby WiFi networks and prints SSID, RSSI, and\n// encryption type every 10 seconds. Blinks LED during scan.\n//\n// This feature is unique to ESP32 — not available on AVR Arduino.\n//\n// Circuit: GPIO2 -> 220R -> Blue LED -> GND (scan activity indicator)\n\n#include <Arduino.h>\n#include <WiFi.h>\n\nconst int LED_PIN = 2;\nint scanCount = 0;\n\nconst char* encryptionTypeStr(wifi_auth_mode_t type) {\n  switch (type) {\n    case WIFI_AUTH_OPEN:            return \"Open\";\n    case WIFI_AUTH_WEP:             return \"WEP\";\n    case WIFI_AUTH_WPA_PSK:         return \"WPA-PSK\";\n    case WIFI_AUTH_WPA2_PSK:        return \"WPA2-PSK\";\n    case WIFI_AUTH_WPA_WPA2_PSK:    return \"WPA/WPA2\";\n    case WIFI_AUTH_WPA2_ENTERPRISE: return \"WPA2-ENT\";\n    default:                        return \"Unknown\";\n  }\n}\n\nvoid setup() {\n  Serial.begin(115200);\n  pinMode(LED_PIN, OUTPUT);\n  delay(300);\n\n  Serial.println(\"========================\");\n  Serial.println(\"  ESP32 WiFi Scanner\");\n  Serial.println(\"========================\");\n  Serial.println();\n\n  // Set WiFi to station mode (not AP)\n  WiFi.mode(WIFI_STA);\n  WiFi.disconnect();\n  delay(100);\n\n  Serial.println(\"WiFi initialized in station mode.\");\n  Serial.println(\"Scanning every 10 seconds...\");\n  Serial.println(\"---\");\n}\n\nvoid loop() {\n  scanCount++;\n  digitalWrite(LED_PIN, HIGH);  // LED on during scan\n\n  Serial.print(\"\\n=== Scan #\");\n  Serial.print(scanCount);\n  Serial.println(\" ===\");\n\n  int numNetworks = WiFi.scanNetworks();\n\n  digitalWrite(LED_PIN, LOW);   // LED off after scan\n\n  if (numNetworks == 0) {\n    Serial.println(\"No networks found.\");\n  } else {\n    Serial.print(numNetworks);\n    Serial.println(\" network(s) found:\\n\");\n\n    Serial.println(\"  #  | RSSI | Ch | Encryption  | SSID\");\n    Serial.println(\"-----+------+----+-------------+--------------------\");\n\n    for (int i = 0; i < numNetworks; i++) {\n      // Formatted table output\n      char line[120];\n      snprintf(line, sizeof(line), \"  %2d | %4d | %2d | %-11s | %s\",\n        i + 1,\n        WiFi.RSSI(i),\n        WiFi.channel(i),\n        encryptionTypeStr(WiFi.encryptionType(i)),\n        WiFi.SSID(i).c_str()\n      );\n      Serial.println(line);\n    }\n  }\n\n  // Clean up scan results from memory\n  WiFi.scanDelete();\n\n  // Wait 10 seconds before next scan\n  Serial.println(\"\\nNext scan in 10 seconds...\");\n  delay(10000);\n}"
+}

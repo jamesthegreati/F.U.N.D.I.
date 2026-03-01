@@ -54,6 +54,22 @@
       "file": "esp32-dual-core-rtos-hub.json"
     },
     {
+      "id": "esp32-blink-led",
+      "file": "esp32-blink-led.json"
+    },
+    {
+      "id": "esp32-button-led-pwm",
+      "file": "esp32-button-led-pwm.json"
+    },
+    {
+      "id": "esp32-wifi-scanner",
+      "file": "esp32-wifi-scanner.json"
+    },
+    {
+      "id": "esp32-servo-traffic-light",
+      "file": "esp32-servo-traffic-light.json"
+    },
+    {
       "id": "pico-internal-temp-pwm",
       "file": "pico-internal-temp-pwm.json"
     }

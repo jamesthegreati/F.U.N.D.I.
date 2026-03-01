@@ -11,6 +11,7 @@ import {
   moveSegment,
   snapPointToGrid,
   avoidParallelOverlaps,
+  WOKWI_GRID_PX,
   type ComponentBounds,
 } from '@/utils/wireRouting';
 
@@ -116,8 +117,8 @@ function getSegmentMidpoints(points: WirePoint[]): WirePoint[] {
 }
 
 function getGridSizeForZoom(zoom: number): number {
-  // Simple heuristic: coarser grid when zoomed out.
-  return zoom < 0.75 ? 20 : 10;
+  // Wokwi-style pitch: 2.54mm ≈ 9.525px. Use 2x pitch when zoomed out.
+  return zoom < 0.75 ? WOKWI_GRID_PX * 2 : WOKWI_GRID_PX;
 }
 
 function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
@@ -214,37 +215,43 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef, dimensions.width, dimensions.height, transform, flowNodes]);
 
-  // Precompute component bounding boxes for obstacle avoidance
+  // Precompute component bounding boxes for obstacle avoidance.
+  // Aggregate all elements sharing the same data-node-id into one union box.
   const componentBounds = useMemo(() => {
     const container = containerRef.current;
     if (!container) return [] as ComponentBounds[];
 
     const containerRect = container.getBoundingClientRect();
-    // Get all node elements (excluding the wiring layer itself which is in an SVG)
-    // Looking for elements with data-node-id attribute
     const nodeElements = container.querySelectorAll<HTMLElement>('[data-node-id]');
-    const bounds: ComponentBounds[] = [];
+    const boundsMap = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
 
     nodeElements.forEach((el) => {
       const partId = el.getAttribute('data-node-id');
       if (!partId) return;
 
-      // Get the bounding box of the node element
       const rect = el.getBoundingClientRect();
-
-      // Convert to container-relative coordinates
       const x = rect.left - containerRect.left;
       const y = rect.top - containerRect.top;
       const width = rect.width;
       const height = rect.height;
 
-      // Filter out tiny elements (like the pin hitboxes which have node-id too)
+      // Filter out tiny elements (e.g. pin hitboxes)
       if (width < 20 || height < 20) return;
 
-      // Check if we already have bounds for this part (multiple pin elements might exist)
-      if (!bounds.find(b => b.id === partId)) {
-        bounds.push({ id: partId, x, y, width, height });
+      const existing = boundsMap.get(partId);
+      if (existing) {
+        existing.minX = Math.min(existing.minX, x);
+        existing.minY = Math.min(existing.minY, y);
+        existing.maxX = Math.max(existing.maxX, x + width);
+        existing.maxY = Math.max(existing.maxY, y + height);
+      } else {
+        boundsMap.set(partId, { minX: x, minY: y, maxX: x + width, maxY: y + height });
       }
+    });
+
+    const bounds: ComponentBounds[] = [];
+    boundsMap.forEach((b, id) => {
+      bounds.push({ id, x: b.minX, y: b.minY, width: b.maxX - b.minX, height: b.maxY - b.minY });
     });
 
     return bounds;
@@ -259,7 +266,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
   );
 
   const wireGeometry = useMemo(() => {
-    const routingGrid = Math.max(12, gridSize);
+    const routingGrid = gridSize;
 
     const base = connections
       .map((c) => {
@@ -274,9 +281,13 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
           ? wirePointOverrides.get(c.id) ?? []
           : c.points ?? [];
 
+        // Don't block routing through the source/target component itself.
+        const excludeIds = [c.from.partId, c.to.partId];
+
         const points = calculateOrthogonalPoints(start, end, waypoints, {
           firstLeg: 'auto',
           obstacles: componentBounds,
+          excludeIds,
           gridSize: routingGrid,
         });
         return { id: c.id, color: c.color, points };
@@ -532,6 +543,7 @@ function WiringLayer({ containerRef, wirePointOverrides }: WiringLayerProps) {
     const points = calculateOrthogonalPoints(creating.fromPoint, end, creating.waypoints, {
       firstLeg: 'auto',
       obstacles: componentBounds,
+      excludeIds: [creating.from.partId, creating.hoveredPin?.partId].filter(Boolean) as string[],
       gridSize,
     });
     return { d: pointsToPathD(points), color: creating.color };

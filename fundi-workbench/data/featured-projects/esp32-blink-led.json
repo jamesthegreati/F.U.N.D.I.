@@ -1,0 +1,51 @@
+{
+  "id": "esp32-blink-led",
+  "name": "ESP32 Blink LED",
+  "description": "Classic blink sketch on ESP32 — uses the built-in LED on GPIO2 and serial output at 115200 baud.",
+  "difficulty": "beginner",
+  "tags": [
+    "esp32",
+    "led",
+    "digital-output",
+    "starter",
+    "non-avr"
+  ],
+  "estimatedTime": "5 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      {
+        "type": "wokwi-esp32-devkit-v1",
+        "id": "esp",
+        "top": 0,
+        "left": 0
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led1",
+        "top": -30,
+        "left": 280,
+        "attrs": {
+          "color": "red"
+        }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r1",
+        "top": 20,
+        "left": 280,
+        "attrs": {
+          "value": "220"
+        }
+      }
+    ],
+    "connections": [
+      ["esp:2", "r1:1", "green", []],
+      ["r1:2", "led1:A", "green", []],
+      ["led1:C", "esp:GND.1", "black", []]
+    ]
+  },
+  "code": "// ESP32 Blink LED\n// ================\n// The classic blink sketch running on ESP32.\n// Uses the built-in LED on GPIO2 and faster 115200 baud serial.\n//\n// Circuit: GPIO2 -> 220R -> Red LED -> GND\n\n#include <Arduino.h>\n\nconst int LED_PIN = 2;  // GPIO2 (built-in LED on most ESP32 DevKit boards)\n\nvoid setup() {\n  pinMode(LED_PIN, OUTPUT);\n\n  Serial.begin(115200);\n  delay(200);\n\n  Serial.println(\"========================\");\n  Serial.println(\"  ESP32 Blink LED Demo\");\n  Serial.println(\"========================\");\n  Serial.println();\n  Serial.print(\"CPU Freq: \");\n  Serial.print(getCpuFrequencyMhz());\n  Serial.println(\" MHz\");\n  Serial.println(\"Blinking GPIO2 every 1 second...\");\n  Serial.println(\"---\");\n}\n\nvoid loop() {\n  digitalWrite(LED_PIN, HIGH);\n  Serial.println(\"LED ON\");\n  delay(1000);\n\n  digitalWrite(LED_PIN, LOW);\n  Serial.println(\"LED OFF\");\n  delay(1000);\n}"
+}

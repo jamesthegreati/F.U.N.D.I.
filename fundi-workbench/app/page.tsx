@@ -1455,6 +1455,25 @@ export default function Home() {
         const v = pinStates[pinNum]
         return typeof v === 'boolean' ? v : null
       }
+      // RP2040 Pi Pico GPIO pins: "GP0"..."GP29"
+      const gpMatch = pinId.match(/^GP(\d+)$/i)
+      if (gpMatch) {
+        const gpioIdx = parseInt(gpMatch[1], 10)
+        if (gpioIdx >= 0 && gpioIdx < 30) {
+          const v = pinStates[gpioIdx]
+          return typeof v === 'boolean' ? v : null
+        }
+      }
+      // Analog pins: "A0"..."A2" → GPIO 26..28 (Pico) or 14+ (AVR)
+      const aMatch = pinId.match(/^A(\d+)$/i)
+      if (aMatch) {
+        const aIdx = parseInt(aMatch[1], 10)
+        // For Pico: A0=GP26, A1=GP27, A2=GP28
+        const isPico = mcuPart?.type.includes('pi-pico')
+        const pinNum = isPico ? 26 + aIdx : 14 + aIdx
+        const v = pinStates[pinNum]
+        return typeof v === 'boolean' ? v : null
+      }
       return null
     }
 
@@ -1505,6 +1524,24 @@ export default function Home() {
       const pinId = k.slice(idx + 1)
       if (!states[partId]) states[partId] = {}
       states[partId][pinId] = v
+    }
+
+    // Inject MCU board's own internal pin states (e.g. built-in LED on GP25 for Pi Pico)
+    if (mcuPart) {
+      if (!states[mcuPart.id]) states[mcuPart.id] = {}
+      if (mcuPart.type.includes('pi-pico')) {
+        // GP25 = built-in LED on Pi Pico
+        const gp25Val = pinStates[25]
+        if (typeof gp25Val === 'boolean') {
+          states[mcuPart.id]['GP25'] = gp25Val
+        }
+      } else if (mcuPart.type.includes('arduino')) {
+        // Pin 13 = built-in LED on Arduino Uno/Nano/Mega
+        const pin13Val = pinStates[13]
+        if (typeof pin13Val === 'boolean') {
+          states[mcuPart.id]['13'] = pin13Val
+        }
+      }
     }
 
     return states

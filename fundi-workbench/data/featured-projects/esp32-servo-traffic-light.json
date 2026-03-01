@@ -1,0 +1,92 @@
+{
+  "id": "esp32-servo-traffic-light",
+  "name": "ESP32 Servo Traffic Light",
+  "description": "Traffic light with servo barrier gate. Demonstrates multi-LED sequencing and servo control using ESP32 LEDC PWM — no Servo library needed.",
+  "difficulty": "intermediate",
+  "tags": [
+    "esp32",
+    "servo",
+    "led",
+    "traffic-light",
+    "ledc",
+    "state-machine",
+    "non-avr"
+  ],
+  "estimatedTime": "15 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      {
+        "type": "wokwi-esp32-devkit-v1",
+        "id": "esp",
+        "top": 0,
+        "left": 0
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led-red",
+        "top": -50,
+        "left": 280,
+        "attrs": { "color": "red" }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r1",
+        "top": 0,
+        "left": 280,
+        "attrs": { "value": "220" }
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led-yellow",
+        "top": 40,
+        "left": 280,
+        "attrs": { "color": "yellow" }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r2",
+        "top": 90,
+        "left": 280,
+        "attrs": { "value": "220" }
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led-green",
+        "top": 130,
+        "left": 280,
+        "attrs": { "color": "green" }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r3",
+        "top": 180,
+        "left": 280,
+        "attrs": { "value": "220" }
+      },
+      {
+        "type": "wokwi-servo",
+        "id": "servo1",
+        "top": 230,
+        "left": 260
+      }
+    ],
+    "connections": [
+      ["esp:16", "r1:1", "red", []],
+      ["r1:2", "led-red:A", "red", []],
+      ["led-red:C", "esp:GND.1", "black", []],
+      ["esp:17", "r2:1", "orange", []],
+      ["r2:2", "led-yellow:A", "orange", []],
+      ["led-yellow:C", "esp:GND.2", "black", []],
+      ["esp:18", "r3:1", "green", []],
+      ["r3:2", "led-green:A", "green", []],
+      ["led-green:C", "esp:GND.3", "black", []],
+      ["servo1:V+", "esp:3V3", "red", []],
+      ["servo1:GND", "esp:GND.4", "black", []],
+      ["servo1:PWM", "esp:19", "purple", []]
+    ]
+  },
+  "code": "// ESP32 Servo Traffic Light\n// =========================\n// Three-phase traffic light (red/yellow/green) with a servo\n// barrier gate that opens on green and closes on red.\n//\n// Uses ESP32 LEDC channels for both LED control and servo PWM\n// — no external Servo library needed!\n//\n// Circuit:\n//   GPIO16 -> 220R -> Red LED    -> GND\n//   GPIO17 -> 220R -> Yellow LED -> GND\n//   GPIO18 -> 220R -> Green LED  -> GND\n//   GPIO19 -> Servo PWM (50 Hz LEDC channel)\n\n#include <Arduino.h>\n\n// --- LED Pins ---\nconst int RED_PIN    = 16;\nconst int YELLOW_PIN = 17;\nconst int GREEN_PIN  = 18;\n\n// --- Servo via LEDC ---\nconst int SERVO_PIN     = 19;\nconst int SERVO_CH      = 3;    // LEDC channel 3\nconst int SERVO_FREQ    = 50;   // 50 Hz for servo\nconst int SERVO_RES     = 16;   // 16-bit resolution\n\n// Servo pulse widths (in 16-bit duty for 50 Hz)\n// 50 Hz period = 20 ms; 16-bit max = 65535\n// 1 ms pulse (0 deg)  = 65535 * 1/20  = ~3277\n// 2 ms pulse (180 deg) = 65535 * 2/20 = ~6554\nconst int SERVO_MIN = 3277;   // ~0 degrees\nconst int SERVO_MAX = 6554;   // ~180 degrees\n\n// Timing (ms)\nconst unsigned long RED_TIME    = 5000;\nconst unsigned long YELLOW_TIME = 2000;\nconst unsigned long GREEN_TIME  = 5000;\n\nvoid setServoAngle(int angle) {\n  int duty = map(angle, 0, 180, SERVO_MIN, SERVO_MAX);\n  ledcWrite(SERVO_CH, duty);\n}\n\nvoid allLedsOff() {\n  digitalWrite(RED_PIN, LOW);\n  digitalWrite(YELLOW_PIN, LOW);\n  digitalWrite(GREEN_PIN, LOW);\n}\n\nvoid setup() {\n  Serial.begin(115200);\n  delay(200);\n\n  Serial.println(\"==============================\");\n  Serial.println(\"  ESP32 Servo Traffic Light\");\n  Serial.println(\"==============================\");\n  Serial.println();\n\n  // LED pins as outputs\n  pinMode(RED_PIN, OUTPUT);\n  pinMode(YELLOW_PIN, OUTPUT);\n  pinMode(GREEN_PIN, OUTPUT);\n  allLedsOff();\n\n  // Configure servo LEDC channel\n  ledcSetup(SERVO_CH, SERVO_FREQ, SERVO_RES);\n  ledcAttachPin(SERVO_PIN, SERVO_CH);\n  setServoAngle(0);  // Gate closed\n\n  Serial.println(\"Traffic light + servo gate ready.\");\n  Serial.println(\"---\");\n}\n\nvoid loop() {\n  // RED phase — gate closed\n  Serial.println(\"[RED] STOP — gate closing\");\n  allLedsOff();\n  digitalWrite(RED_PIN, HIGH);\n  setServoAngle(0);\n  delay(RED_TIME);\n\n  // YELLOW phase — gate still closed\n  Serial.println(\"[YELLOW] CAUTION — preparing to open\");\n  allLedsOff();\n  digitalWrite(YELLOW_PIN, HIGH);\n  delay(YELLOW_TIME);\n\n  // GREEN phase — gate opens\n  Serial.println(\"[GREEN] GO — gate opening!\");\n  allLedsOff();\n  digitalWrite(GREEN_PIN, HIGH);\n  setServoAngle(90);\n  delay(GREEN_TIME);\n\n  // Brief YELLOW before returning to RED\n  Serial.println(\"[YELLOW] CAUTION — gate will close\");\n  allLedsOff();\n  digitalWrite(YELLOW_PIN, HIGH);\n  setServoAngle(45);  // Half-close\n  delay(YELLOW_TIME);\n}"
+}

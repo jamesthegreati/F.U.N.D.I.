@@ -1,0 +1,22 @@
+{
+  "id": "pico-buzzer-melody",
+  "name": "Pico Buzzer Melody",
+  "description": "Play a melody through a piezo buzzer using tone() on the Raspberry Pi Pico — learn timing and frequency output",
+  "difficulty": "intermediate",
+  "tags": ["pico", "rp2040", "buzzer", "tone", "music", "pwm"],
+  "estimatedTime": "15 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
+      { "type": "wokwi-buzzer", "id": "bz1", "top": -100, "left": 200 }
+    ],
+    "connections": [
+      ["bz1:1", "pico:GP15", "orange", []],
+      ["bz1:2", "pico:GND.1", "black", []]
+    ]
+  },
+  "code": "// Pico Buzzer Melody\n// Plays \"Twinkle Twinkle Little Star\" on a buzzer connected to GP15.\n\n#include <Arduino.h>\n\nconst int BUZZER_PIN = 15;\n\n// Note frequencies (Hz)\n#define NOTE_C4  262\n#define NOTE_D4  294\n#define NOTE_E4  330\n#define NOTE_F4  349\n#define NOTE_G4  392\n#define NOTE_A4  440\n#define NOTE_B4  494\n#define NOTE_C5  523\n#define REST     0\n\n// Melody: note, duration (4=quarter, 8=eighth, 2=half)\nint melody[] = {\n  NOTE_C4, 4,  NOTE_C4, 4,  NOTE_G4, 4,  NOTE_G4, 4,\n  NOTE_A4, 4,  NOTE_A4, 4,  NOTE_G4, 2,\n  NOTE_F4, 4,  NOTE_F4, 4,  NOTE_E4, 4,  NOTE_E4, 4,\n  NOTE_D4, 4,  NOTE_D4, 4,  NOTE_C4, 2,\n  NOTE_G4, 4,  NOTE_G4, 4,  NOTE_F4, 4,  NOTE_F4, 4,\n  NOTE_E4, 4,  NOTE_E4, 4,  NOTE_D4, 2,\n  NOTE_G4, 4,  NOTE_G4, 4,  NOTE_F4, 4,  NOTE_F4, 4,\n  NOTE_E4, 4,  NOTE_E4, 4,  NOTE_D4, 2,\n  NOTE_C4, 4,  NOTE_C4, 4,  NOTE_G4, 4,  NOTE_G4, 4,\n  NOTE_A4, 4,  NOTE_A4, 4,  NOTE_G4, 2,\n  NOTE_F4, 4,  NOTE_F4, 4,  NOTE_E4, 4,  NOTE_E4, 4,\n  NOTE_D4, 4,  NOTE_D4, 4,  NOTE_C4, 2\n};\n\nint noteCount = sizeof(melody) / sizeof(melody[0]) / 2;\n\nvoid setup() {\n  pinMode(BUZZER_PIN, OUTPUT);\n  Serial.begin(115200);\n  delay(100);\n  Serial.println(\"Pico Buzzer Melody - Twinkle Twinkle\");\n}\n\nvoid loop() {\n  for (int i = 0; i < noteCount; i++) {\n    int note = melody[i * 2];\n    int duration = 1000 / melody[i * 2 + 1];\n\n    if (note != REST) {\n      tone(BUZZER_PIN, note, duration);\n      Serial.print(\"Note: \");\n      Serial.print(note);\n      Serial.println(\" Hz\");\n    }\n\n    delay(duration * 1.3);  // pause between notes\n    noTone(BUZZER_PIN);\n  }\n\n  Serial.println(\"--- Melody complete, restarting ---\");\n  delay(2000);\n}\n"
+}

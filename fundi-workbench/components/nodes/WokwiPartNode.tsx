@@ -3,6 +3,7 @@
 import '@wokwi/elements';
 import '@wokwi/elements/dist/esm/pir-motion-sensor-element';
 import '@wokwi/elements/dist/esm/photoresistor-sensor-element';
+import '@/lib/piPicoElement';
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { ElementType } from 'react';
 import { Trash2 } from 'lucide-react';
@@ -657,6 +658,16 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                     }
                     if (typeof ringEl.requestUpdate === 'function') ringEl.requestUpdate();
                 }
+            }
+        }
+
+        // Pi Pico on-board LED (GP25) — set ledBuiltIn property on custom element
+        if (partType === 'pi-pico' || partType === 'wokwi-pi-pico') {
+            const picoEl = element as HTMLElement & { ledBuiltIn?: boolean };
+            if ('ledBuiltIn' in picoEl) {
+                // GP25 is the built-in LED; check simulationPinStates for GP25
+                const gp25 = simulationPinStates?.['GP25'];
+                picoEl.ledBuiltIn = gp25 === true || gp25 === 1;
             }
         }
 

@@ -1,0 +1,34 @@
+{
+  "id": "pico-traffic-light",
+  "name": "Pico Traffic Light",
+  "description": "Simulate a traffic light sequence with three LEDs — Red, Yellow, Green — on the Raspberry Pi Pico",
+  "difficulty": "beginner",
+  "tags": ["pico", "rp2040", "led", "sequence", "timing"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "ledR", "top": -130, "left": 180, "attrs": { "color": "red" } },
+      { "type": "wokwi-led", "id": "ledY", "top": -130, "left": 230, "attrs": { "color": "yellow" } },
+      { "type": "wokwi-led", "id": "ledG", "top": -130, "left": 280, "attrs": { "color": "green" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -80, "left": 180, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r2", "top": -80, "left": 230, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r3", "top": -80, "left": 280, "attrs": { "value": "220" } }
+    ],
+    "connections": [
+      ["pico:GP13", "r1:1", "red", []],
+      ["r1:2", "ledR:A", "red", []],
+      ["ledR:C", "pico:GND.1", "black", []],
+      ["pico:GP14", "r2:1", "orange", []],
+      ["r2:2", "ledY:A", "orange", []],
+      ["ledY:C", "pico:GND.2", "black", []],
+      ["pico:GP15", "r3:1", "green", []],
+      ["r3:2", "ledG:A", "green", []],
+      ["ledG:C", "pico:GND.3", "black", []]
+    ]
+  },
+  "code": "// Pico Traffic Light\n// Red → Red+Yellow → Green → Yellow → repeat\n\n#include <Arduino.h>\n\nconst int RED_PIN    = 13;  // GP13\nconst int YELLOW_PIN = 14;  // GP14\nconst int GREEN_PIN  = 15;  // GP15\n\nvoid allOff() {\n  digitalWrite(RED_PIN, LOW);\n  digitalWrite(YELLOW_PIN, LOW);\n  digitalWrite(GREEN_PIN, LOW);\n}\n\nvoid setup() {\n  pinMode(RED_PIN, OUTPUT);\n  pinMode(YELLOW_PIN, OUTPUT);\n  pinMode(GREEN_PIN, OUTPUT);\n  Serial.begin(115200);\n  delay(100);\n  Serial.println(\"Pico Traffic Light started\");\n}\n\nvoid loop() {\n  // RED\n  allOff();\n  digitalWrite(RED_PIN, HIGH);\n  Serial.println(\"RED - STOP\");\n  delay(3000);\n\n  // RED + YELLOW (get ready)\n  digitalWrite(YELLOW_PIN, HIGH);\n  Serial.println(\"RED+YELLOW - GET READY\");\n  delay(1000);\n\n  // GREEN\n  allOff();\n  digitalWrite(GREEN_PIN, HIGH);\n  Serial.println(\"GREEN - GO\");\n  delay(3000);\n\n  // YELLOW (caution)\n  allOff();\n  digitalWrite(YELLOW_PIN, HIGH);\n  Serial.println(\"YELLOW - CAUTION\");\n  delay(1500);\n}\n"
+}

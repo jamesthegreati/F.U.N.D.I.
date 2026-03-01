@@ -1,0 +1,49 @@
+{
+  "id": "pico-multi-led-pattern",
+  "name": "Pico LED Light Show",
+  "description": "Create mesmerizing LED patterns with 6 LEDs — chase, bounce, and random sparkle effects on the Raspberry Pi Pico",
+  "difficulty": "intermediate",
+  "tags": ["pico", "rp2040", "led", "pattern", "animation", "array"],
+  "estimatedTime": "15 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -130, "left": 140, "attrs": { "color": "red" } },
+      { "type": "wokwi-led", "id": "led2", "top": -130, "left": 175, "attrs": { "color": "orange" } },
+      { "type": "wokwi-led", "id": "led3", "top": -130, "left": 210, "attrs": { "color": "yellow" } },
+      { "type": "wokwi-led", "id": "led4", "top": -130, "left": 245, "attrs": { "color": "green" } },
+      { "type": "wokwi-led", "id": "led5", "top": -130, "left": 280, "attrs": { "color": "blue" } },
+      { "type": "wokwi-led", "id": "led6", "top": -130, "left": 315, "attrs": { "color": "white" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -80, "left": 140, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r2", "top": -80, "left": 175, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r3", "top": -80, "left": 210, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r4", "top": -80, "left": 245, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r5", "top": -80, "left": 280, "attrs": { "value": "220" } },
+      { "type": "wokwi-resistor", "id": "r6", "top": -80, "left": 315, "attrs": { "value": "220" } }
+    ],
+    "connections": [
+      ["pico:GP10", "r1:1", "red", []],
+      ["r1:2", "led1:A", "red", []],
+      ["led1:C", "pico:GND.1", "black", []],
+      ["pico:GP11", "r2:1", "orange", []],
+      ["r2:2", "led2:A", "orange", []],
+      ["led2:C", "pico:GND.1", "black", []],
+      ["pico:GP12", "r3:1", "yellow", []],
+      ["r3:2", "led3:A", "yellow", []],
+      ["led3:C", "pico:GND.2", "black", []],
+      ["pico:GP13", "r4:1", "green", []],
+      ["r4:2", "led4:A", "green", []],
+      ["led4:C", "pico:GND.2", "black", []],
+      ["pico:GP14", "r5:1", "blue", []],
+      ["r5:2", "led5:A", "blue", []],
+      ["led5:C", "pico:GND.3", "black", []],
+      ["pico:GP15", "r6:1", "gray", []],
+      ["r6:2", "led6:A", "gray", []],
+      ["led6:C", "pico:GND.3", "black", []]
+    ]
+  },
+  "code": "// Pico LED Light Show\n// 6 LEDs on GP10-GP15 cycle through chase, bounce, and sparkle patterns.\n\n#include <Arduino.h>\n\nconst int NUM_LEDS = 6;\nconst int LED_PINS[NUM_LEDS] = {10, 11, 12, 13, 14, 15};\n\nvoid allOff() {\n  for (int i = 0; i < NUM_LEDS; i++)\n    digitalWrite(LED_PINS[i], LOW);\n}\n\nvoid allOn() {\n  for (int i = 0; i < NUM_LEDS; i++)\n    digitalWrite(LED_PINS[i], HIGH);\n}\n\n// Pattern 1: Chase left to right\nvoid chase(int speed) {\n  Serial.println(\"Pattern: Chase\");\n  for (int repeat = 0; repeat < 3; repeat++) {\n    for (int i = 0; i < NUM_LEDS; i++) {\n      allOff();\n      digitalWrite(LED_PINS[i], HIGH);\n      delay(speed);\n    }\n  }\n}\n\n// Pattern 2: Bounce (Knight Rider)\nvoid bounce(int speed) {\n  Serial.println(\"Pattern: Bounce\");\n  for (int repeat = 0; repeat < 3; repeat++) {\n    for (int i = 0; i < NUM_LEDS; i++) {\n      allOff();\n      digitalWrite(LED_PINS[i], HIGH);\n      delay(speed);\n    }\n    for (int i = NUM_LEDS - 2; i > 0; i--) {\n      allOff();\n      digitalWrite(LED_PINS[i], HIGH);\n      delay(speed);\n    }\n  }\n}\n\n// Pattern 3: Random sparkle\nvoid sparkle(int speed, int count) {\n  Serial.println(\"Pattern: Sparkle\");\n  for (int i = 0; i < count; i++) {\n    allOff();\n    int led = random(NUM_LEDS);\n    digitalWrite(LED_PINS[led], HIGH);\n    delay(speed);\n  }\n}\n\n// Pattern 4: Stack fill\nvoid stackFill(int speed) {\n  Serial.println(\"Pattern: Stack Fill\");\n  for (int fill = 0; fill < NUM_LEDS; fill++) {\n    for (int i = 0; i < NUM_LEDS - fill; i++) {\n      allOff();\n      // Keep already-stacked LEDs on\n      for (int s = NUM_LEDS - 1; s >= NUM_LEDS - fill; s--)\n        digitalWrite(LED_PINS[s], HIGH);\n      digitalWrite(LED_PINS[i], HIGH);\n      delay(speed);\n    }\n  }\n  delay(500);\n}\n\nvoid setup() {\n  for (int i = 0; i < NUM_LEDS; i++)\n    pinMode(LED_PINS[i], OUTPUT);\n\n  Serial.begin(115200);\n  delay(100);\n  Serial.println(\"Pico LED Light Show started!\");\n  randomSeed(analogRead(26));  // seed from ADC noise\n}\n\nvoid loop() {\n  chase(100);\n  delay(300);\n\n  bounce(80);\n  delay(300);\n\n  sparkle(60, 30);\n  delay(300);\n\n  stackFill(80);\n  delay(300);\n\n  // Flash all for finale\n  for (int i = 0; i < 5; i++) {\n    allOn();  delay(150);\n    allOff(); delay(150);\n  }\n  Serial.println(\"--- Show complete, restarting ---\");\n  delay(1000);\n}\n"
+}

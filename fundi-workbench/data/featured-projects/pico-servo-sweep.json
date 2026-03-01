@@ -1,0 +1,23 @@
+{
+  "id": "pico-servo-sweep",
+  "name": "Pico Servo Sweep",
+  "description": "Sweep a servo motor back and forth using the Servo library on the Raspberry Pi Pico",
+  "difficulty": "intermediate",
+  "tags": ["pico", "rp2040", "servo", "pwm", "motor"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
+      { "type": "wokwi-servo", "id": "servo1", "top": -120, "left": 200 }
+    ],
+    "connections": [
+      ["servo1:PWM", "pico:GP15", "orange", []],
+      ["servo1:V+", "pico:VBUS", "red", []],
+      ["servo1:GND", "pico:GND.1", "black", []]
+    ]
+  },
+  "code": "// Pico Servo Sweep\n// Sweeps a servo motor from 0° to 180° and back on GP15.\n\n#include <Arduino.h>\n#include <Servo.h>\n\nconst int SERVO_PIN = 15;\nServo myServo;\n\nvoid setup() {\n  myServo.attach(SERVO_PIN);\n  Serial.begin(115200);\n  delay(100);\n  Serial.println(\"Pico Servo Sweep started\");\n}\n\nvoid loop() {\n  // Sweep from 0 to 180\n  for (int angle = 0; angle <= 180; angle += 2) {\n    myServo.write(angle);\n    if (angle % 30 == 0) {\n      Serial.print(\"Angle: \");\n      Serial.println(angle);\n    }\n    delay(20);\n  }\n\n  // Sweep from 180 to 0\n  for (int angle = 180; angle >= 0; angle -= 2) {\n    myServo.write(angle);\n    if (angle % 30 == 0) {\n      Serial.print(\"Angle: \");\n      Serial.println(angle);\n    }\n    delay(20);\n  }\n}\n"
+}

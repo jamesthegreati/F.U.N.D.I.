@@ -1,0 +1,24 @@
+{
+  "id": "pico-blink-led",
+  "name": "Pico Blink LED",
+  "description": "Classic blink project for the Raspberry Pi Pico — blinks an external LED on GP15 and the built-in LED on GP25",
+  "difficulty": "beginner",
+  "tags": ["pico", "rp2040", "led", "digital-output", "starter"],
+  "estimatedTime": "5 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -90, "left": 200, "attrs": { "color": "green" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -50, "left": 200, "attrs": { "value": "220" } }
+    ],
+    "connections": [
+      ["pico:GP15", "r1:1", "green", []],
+      ["r1:2", "led1:A", "green", []],
+      ["led1:C", "pico:GND.1", "black", []]
+    ]
+  },
+  "code": "// Pico Blink LED - Raspberry Pi Pico Starter\n// Blinks an external LED on GP15 and the built-in LED on GP25.\n\n#include <Arduino.h>\n\nconst int LED_PIN = 15;       // External LED on GP15\nconst int BUILTIN_LED = 25;   // On-board LED on GP25\n\nvoid setup() {\n  pinMode(LED_PIN, OUTPUT);\n  pinMode(BUILTIN_LED, OUTPUT);\n  Serial.begin(115200);\n  delay(100);\n  Serial.println(\"Pico Blink LED started!\");\n}\n\nvoid loop() {\n  digitalWrite(LED_PIN, HIGH);\n  digitalWrite(BUILTIN_LED, HIGH);\n  Serial.println(\"LED ON\");\n  delay(1000);\n\n  digitalWrite(LED_PIN, LOW);\n  digitalWrite(BUILTIN_LED, LOW);\n  Serial.println(\"LED OFF\");\n  delay(1000);\n}\n"
+}

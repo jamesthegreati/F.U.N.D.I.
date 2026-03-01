@@ -1,20 +1,77 @@
 {
   "id": "esp32-dual-core-rtos-hub",
   "name": "ESP32 Dual-Core RTOS Hub",
-  "description": "ESP32-only FreeRTOS demo using two core-pinned tasks, queue messaging, and ADC on input-only GPIO",
+  "description": "ESP32-only FreeRTOS demo pinning tasks to separate cores with queue-based messaging, ADC input, and LED feedback.",
   "difficulty": "advanced",
-  "tags": ["esp32", "freertos", "dual-core", "queue", "adc", "non-avr"],
+  "tags": [
+    "esp32",
+    "freertos",
+    "dual-core",
+    "queue",
+    "adc",
+    "multitask",
+    "non-avr"
+  ],
   "estimatedTime": "25 min",
   "diagram": {
     "version": 1,
     "author": "FUNDI Featured",
     "editor": "wokwi",
     "parts": [
-      { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0 },
-      { "type": "wokwi-pushbutton", "id": "btn1", "top": -150, "left": 220 },
-      { "type": "wokwi-potentiometer", "id": "pot1", "top": -20, "left": 250 },
-      { "type": "wokwi-led", "id": "led1", "top": 110, "left": 250, "attrs": { "color": "green" } },
-      { "type": "wokwi-resistor", "id": "r1", "top": 150, "left": 250, "attrs": { "value": "220" } }
+      {
+        "type": "wokwi-esp32-devkit-v1",
+        "id": "esp",
+        "top": 0,
+        "left": 0
+      },
+      {
+        "type": "wokwi-pushbutton",
+        "id": "btn1",
+        "top": -50,
+        "left": 280
+      },
+      {
+        "type": "wokwi-potentiometer",
+        "id": "pot1",
+        "top": 50,
+        "left": 300
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led1",
+        "top": 140,
+        "left": 280,
+        "attrs": {
+          "color": "green"
+        }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r1",
+        "top": 190,
+        "left": 280,
+        "attrs": {
+          "value": "220"
+        }
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led2",
+        "top": 240,
+        "left": 280,
+        "attrs": {
+          "color": "red"
+        }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r2",
+        "top": 290,
+        "left": 280,
+        "attrs": {
+          "value": "220"
+        }
+      }
     ],
     "connections": [
       ["btn1:1.l", "esp:15", "blue", []],
@@ -24,8 +81,11 @@
       ["pot1:SIG", "esp:34", "green", []],
       ["esp:2", "r1:1", "green", []],
       ["r1:2", "led1:A", "green", []],
-      ["led1:C", "esp:GND.3", "black", []]
+      ["led1:C", "esp:GND.3", "black", []],
+      ["esp:4", "r2:1", "red", []],
+      ["r2:2", "led2:A", "red", []],
+      ["led2:C", "esp:GND.4", "black", []]
     ]
   },
-  "code": "// ESP32 Dual-Core RTOS Hub\\n// Board-specific features not available on classic AVR Arduino:\\n// - xTaskCreatePinnedToCore (core affinity)\\n// - FreeRTOS Queue handoff between tasks\\n// - ADC on GPIO34 (input-only ESP32 pin)\\n\\n#if !defined(ARDUINO_ARCH_ESP32)\\n#error This sketch targets ESP32 only (wokwi-esp32-devkit-v1).\\n#endif\\n\\n#include <Arduino.h>\\n\\nconst int BUTTON_PIN = 15;\\nconst int LED_PIN = 2;\\nconst int ADC_PIN = 34;\\n\\nQueueHandle_t sensorQueue;\\n\\nstruct SensorMsg {\\n  uint16_t adc;\\n  bool pressed;\\n  uint32_t ms;\\n};\\n\\nvoid sensorTask(void* /*arg*/) {\\n  pinMode(BUTTON_PIN, INPUT_PULLUP);\\n  for (;;) {\\n    SensorMsg msg;\\n    msg.adc = analogRead(ADC_PIN);\\n    msg.pressed = (digitalRead(BUTTON_PIN) == LOW);\\n    msg.ms = millis();\\n    xQueueOverwrite(sensorQueue, &msg);\\n    vTaskDelay(pdMS_TO_TICKS(40));\\n  }\\n}\\n\\nvoid controlTask(void* /*arg*/) {\\n  pinMode(LED_PIN, OUTPUT);\\n  SensorMsg msg{};\\n  for (;;) {\\n    if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {\\n      int threshold = map(msg.adc, 0, 4095, 100, 3500);\\n      bool on = msg.pressed || (msg.adc > threshold);\\n      digitalWrite(LED_PIN, on ? HIGH : LOW);\\n\\n      Serial.print(\\\"[core \\\");\\n      Serial.print(xPortGetCoreID());\\n      Serial.print(\\\"] t=\\\");\\n      Serial.print(msg.ms);\\n      Serial.print(\\\" adc=\\\");\\n      Serial.print(msg.adc);\\n      Serial.print(\\\" threshold=\\\");\\n      Serial.print(threshold);\\n      Serial.print(\\\" btn=\\\");\\n      Serial.print(msg.pressed ? 1 : 0);\\n      Serial.print(\\\" led=\\\");\\n      Serial.println(on ? 1 : 0);\\n    }\\n  }\\n}\\n\\nvoid setup() {\\n  Serial.begin(115200);\\n  delay(200);\\n  Serial.println(\\\"ESP32 Dual-Core RTOS Hub\\\");\\n\\n  analogReadResolution(12);\\n  sensorQueue = xQueueCreate(1, sizeof(SensorMsg));\\n\\n  xTaskCreatePinnedToCore(sensorTask, \\\"sensorTask\\\", 4096, nullptr, 1, nullptr, 0);\\n  xTaskCreatePinnedToCore(controlTask, \\\"controlTask\\\", 4096, nullptr, 1, nullptr, 1);\\n}\\n\\nvoid loop() {\\n  // Main loop intentionally idle: work is handled by two RTOS tasks.\\n  vTaskDelay(pdMS_TO_TICKS(1000));\\n}"
+  "code": "// ESP32 Dual-Core RTOS Hub\n// ========================\n// Demonstrates FreeRTOS dual-core task execution:\n// - Core 0: Sensor task reads button + potentiometer, sends via queue\n// - Core 1: Control task receives data, drives LEDs, prints telemetry\n//\n// Circuit:\n//   GPIO15 <- Pushbutton -> GND  (INPUT_PULLUP)\n//   GPIO34 <- Potentiometer SIG  (ADC, input-only pin)\n//   GPIO2  -> 220R -> Green LED -> GND  (ADC threshold indicator)\n//   GPIO4  -> 220R -> Red LED -> GND    (Button press indicator)\n//\n// ESP32-only features used:\n//   xTaskCreatePinnedToCore(), analogReadResolution(12), GPIO34 input-only\n\n#include <Arduino.h>\n\n// --- Pin Assignments ---\nconst int BUTTON_PIN  = 15;   // Pushbutton with internal pull-up\nconst int ADC_PIN     = 34;   // Potentiometer (input-only GPIO)\nconst int LED_GREEN   = 2;    // ADC threshold indicator\nconst int LED_RED     = 4;    // Button press indicator\n\n// --- RTOS handles ---\nQueueHandle_t sensorQueue;\n\nstruct SensorMsg {\n  uint16_t adc;       // 12-bit ADC reading (0-4095)\n  bool     pressed;   // true when button is held\n  uint32_t timestamp; // millis() at sample time\n};\n\n// ---- Task pinned to Core 0: Read sensors ----\nvoid sensorTask(void* /*param*/) {\n  pinMode(BUTTON_PIN, INPUT_PULLUP);\n  Serial.println(\"[Core 0] Sensor task started\");\n\n  for (;;) {\n    SensorMsg msg;\n    msg.adc       = analogRead(ADC_PIN);\n    msg.pressed   = (digitalRead(BUTTON_PIN) == LOW);\n    msg.timestamp = millis();\n\n    // Overwrite (latest-value) semantics: never blocks\n    xQueueOverwrite(sensorQueue, &msg);\n    vTaskDelay(pdMS_TO_TICKS(50));  // 20 Hz sample rate\n  }\n}\n\n// ---- Task pinned to Core 1: Control outputs ----\nvoid controlTask(void* /*param*/) {\n  pinMode(LED_GREEN, OUTPUT);\n  pinMode(LED_RED, OUTPUT);\n  Serial.println(\"[Core 1] Control task started\");\n\n  SensorMsg msg = {};\n  uint32_t lastPrint = 0;\n\n  for (;;) {\n    if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {\n      // Green LED: on when potentiometer above mid-range\n      bool adcHigh = (msg.adc > 2048);\n      digitalWrite(LED_GREEN, adcHigh ? HIGH : LOW);\n\n      // Red LED: on while button pressed\n      digitalWrite(LED_RED, msg.pressed ? HIGH : LOW);\n\n      // Throttled serial output (~4 Hz)\n      if (msg.timestamp - lastPrint >= 250) {\n        lastPrint = msg.timestamp;\n        Serial.print(\"[core \");\n        Serial.print(xPortGetCoreID());\n        Serial.print(\"] t=\");\n        Serial.print(msg.timestamp);\n        Serial.print(\"  adc=\");\n        Serial.print(msg.adc);\n        Serial.print(\"  btn=\");\n        Serial.print(msg.pressed ? \"DOWN\" : \"UP\");\n        Serial.print(\"  green=\");\n        Serial.print(adcHigh ? \"ON\" : \"OFF\");\n        Serial.print(\"  red=\");\n        Serial.println(msg.pressed ? \"ON\" : \"OFF\");\n      }\n    }\n  }\n}\n\nvoid setup() {\n  Serial.begin(115200);\n  delay(300);\n\n  Serial.println(\"===========================\");\n  Serial.println(\"  ESP32 Dual-Core RTOS Hub\");\n  Serial.println(\"===========================\");\n  Serial.println();\n\n  // 12-bit ADC for full ESP32 range\n  analogReadResolution(12);\n\n  // Create 1-element queue (latest value)\n  sensorQueue = xQueueCreate(1, sizeof(SensorMsg));\n  if (!sensorQueue) {\n    Serial.println(\"ERROR: Failed to create queue!\");\n    while (true) { delay(1000); }\n  }\n\n  // Pin tasks to separate cores\n  xTaskCreatePinnedToCore(sensorTask,  \"sensor\",  4096, nullptr, 1, nullptr, 0);\n  xTaskCreatePinnedToCore(controlTask, \"control\", 4096, nullptr, 1, nullptr, 1);\n\n  Serial.println(\"Tasks created. Main loop idle.\");\n  Serial.println(\"---\");\n}\n\nvoid loop() {\n  // Main Arduino loop intentionally idle.\n  // All real work happens in the two RTOS tasks.\n  vTaskDelay(pdMS_TO_TICKS(1000));\n}"
 }

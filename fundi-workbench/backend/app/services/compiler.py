@@ -95,8 +95,8 @@ class CompilerService:
         "wokwi-arduino-mega": "arduino:avr:mega",
         # ESP32 boards
         "wokwi-esp32-devkit-v1": "esp32:esp32:esp32",
-        # RP2040 boards (Raspberry Pi Pico)
-        "wokwi-pi-pico": "arduino:mbed_rp2040:pico",
+        # RP2040 boards (Raspberry Pi Pico) – Earle Philhower core (much faster compilation)
+        "wokwi-pi-pico": "rp2040:rp2040:rpipico",
     }
 
     SUPPORTED_BOARDS: frozenset[str] = frozenset(FQBN_MAP.keys())
@@ -114,7 +114,7 @@ class CompilerService:
         "wokwi-arduino-nano": "arduino:avr",
         "wokwi-arduino-mega": "arduino:avr",
         "wokwi-esp32-devkit-v1": "esp32:esp32",
-        "wokwi-pi-pico": "arduino:mbed_rp2040",
+        "wokwi-pi-pico": "rp2040:rp2040",
     }
 
     UPLOAD_SUPPORTED_BOARDS: frozenset[str] = frozenset(
@@ -239,6 +239,10 @@ class CompilerService:
                 out_dir = temp_path / "out"
                 out_dir.mkdir(parents=True, exist_ok=True)
 
+                # Non-AVR boards (RP2040, ESP32) need much longer for first compile.
+                engine = self.BOARD_ENGINE.get(board, "avr")
+                timeout_s = 120 if engine == "avr" else 600
+
                 def run_compile() -> subprocess.CompletedProcess[str]:
                     cmd = self._cli_cmd(
                         arduino_cli,
@@ -260,7 +264,7 @@ class CompilerService:
                         encoding="utf-8",
                         errors="replace",
                         check=False,
-                        timeout=120,  # 2 minute timeout for compilation
+                        timeout=timeout_s,
                     )
 
                 try:
@@ -268,7 +272,7 @@ class CompilerService:
                 except subprocess.TimeoutExpired:
                     return CompileResult(
                         success=False,
-                        error="Compilation timed out after 2 minutes. The code may be too complex or there may be an infinite loop during compilation."
+                        error=f"Compilation timed out after {timeout_s // 60} minutes. The code may be too complex or the board core may need a first-time build (try again)."
                     )
                 except FileNotFoundError:
                     return CompileResult(
@@ -313,7 +317,7 @@ class CompilerService:
                                 )
 
                             if proc_core_retry.returncode == 0:
-                                artifact_path = self._find_artifact(out_dir)
+                                artifact_path = self._find_artifact(out_dir, board)
                                 if not artifact_path:
                                     return CompileResult(
                                         success=False,
@@ -375,7 +379,7 @@ class CompilerService:
                             )
 
                         if proc_retry.returncode == 0:
-                            artifact_path = self._find_artifact(out_dir)
+                            artifact_path = self._find_artifact(out_dir, board)
                             if not artifact_path:
                                 return CompileResult(
                                     success=False,
@@ -404,7 +408,7 @@ class CompilerService:
                     # ESP32 core not installed is a common case; return compiler output as-is.
                     return CompileResult(success=False, error=last_output or combined or "Compilation failed (no output).")
 
-                artifact_path = self._find_artifact(out_dir)
+                artifact_path = self._find_artifact(out_dir, board)
                 if not artifact_path:
                     return CompileResult(
                         success=False,
@@ -648,10 +652,13 @@ class CompilerService:
                 if url:
                     additional_urls.append(url)
 
-        # Ensure ESP32 board manager index is always available for bootstrap/install flows.
+        # Ensure ESP32 and RP2040 board manager indexes are always available.
         esp32_url = "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+        rp2040_url = "https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json"
         if esp32_url not in additional_urls:
             additional_urls.append(esp32_url)
+        if rp2040_url not in additional_urls:
+            additional_urls.append(rp2040_url)
 
         if _CLI_CONFIG_PATH:
             return _CLI_CONFIG_PATH
@@ -901,9 +908,39 @@ class CompilerService:
         except Exception:
             return set()
 
-    def _find_artifact(self, out_dir: Path) -> Optional[Path]:
-        # Prefer AVR .hex (including with_bootloader) first, then ESP32 .bin.
+    def _find_artifact(self, out_dir: Path, board: str = "") -> Optional[Path]:
+        # Non-AVR boards (RP2040, ESP32) need raw .bin for simulation;
+        # AVR boards prefer Intel HEX.
+        engine = self.BOARD_ENGINE.get(board, "avr")
+        prefer_bin = engine in ("rp2040", "esp32")
+
         hex_candidates = list(out_dir.rglob("*.hex"))
+        bin_candidates = list(out_dir.rglob("*.bin"))
+
+        # For ESP32: merge bootloader + partitions + app into a single flash image
+        if engine == "esp32" and bin_candidates:
+            return self._build_esp32_flash_image(out_dir, bin_candidates)
+
+        # For RP2040, Arduino toolchains may emit multiple .bin files, including
+        # small boot stage binaries (e.g. boot2). We need the main sketch image.
+        if engine == "rp2040" and bin_candidates:
+            def rp2040_bin_rank(p: Path) -> tuple[int, int, str]:
+                name = p.name.lower()
+                is_boot_stage = int(
+                    "boot2" in name
+                    or "boot_stage" in name
+                    or "bootloader" in name
+                    or "stage2" in name
+                )
+                # Prefer non-boot-stage, then larger size (likely sketch image), then name.
+                size_rank = -int(p.stat().st_size)
+                return (is_boot_stage, size_rank, name)
+
+            return sorted(bin_candidates, key=rp2040_bin_rank)[0]
+
+        if prefer_bin and bin_candidates:
+            return sorted(bin_candidates, key=lambda p: p.name.lower())[0]
+
         if hex_candidates:
             def hex_rank(p: Path) -> tuple[int, str]:
                 name = p.name.lower()
@@ -911,11 +948,56 @@ class CompilerService:
 
             return sorted(hex_candidates, key=hex_rank)[0]
 
-        bin_candidates = list(out_dir.rglob("*.bin"))
         if bin_candidates:
             return sorted(bin_candidates, key=lambda p: p.name.lower())[0]
 
         return None
+
+    def _build_esp32_flash_image(self, out_dir: Path, bin_candidates: list[Path]) -> Optional[Path]:
+        """Merge ESP32 compile artifacts into a single flash image for QEMU.
+
+        Arduino CLI for ESP32 produces multiple .bin files:
+        - sketch.ino.bin (application)
+        - sketch.ino.bootloader.bin (second-stage bootloader)
+        - sketch.ino.partitions.bin (partition table)
+
+        This method merges them into a single 4MB flash image.
+        """
+        from app.services.esp32_qemu_runner import create_flash_image
+
+        app_bin: bytes | None = None
+        bootloader_bin: bytes | None = None
+        partition_bin: bytes | None = None
+
+        for f in bin_candidates:
+            name = f.name.lower()
+            data = f.read_bytes()
+            if "bootloader" in name:
+                bootloader_bin = data
+            elif "partition" in name:
+                partition_bin = data
+            elif not app_bin:
+                app_bin = data
+
+        if not app_bin:
+            return None
+
+        try:
+            flash_data = create_flash_image(
+                app_bin=app_bin,
+                bootloader_bin=bootloader_bin,
+                partition_bin=partition_bin,
+            )
+            flash_path = out_dir / "esp32_flash.bin"
+            flash_path.write_bytes(flash_data)
+            return flash_path
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("ESP32 flash image merge failed: %s", exc)
+            # Fall back to just the app binary
+            if bin_candidates:
+                return sorted(bin_candidates, key=lambda p: p.name.lower())[0]
+            return None
 
     def _infer_artifact_type(self, board: str, artifact_path: Path) -> str:
         suffix = artifact_path.suffix.lower()
@@ -947,6 +1029,32 @@ class CompilerService:
         }
         if cpu_hz is not None:
             hints["cpuHz"] = cpu_hz
+
+        # ESP32-specific simulation hints for QEMU
+        if engine == "esp32":
+            hints["flashSize"] = 4 * 1024 * 1024
+            hints["psramSize"] = 4 * 1024 * 1024
+            hints["isMergedFlash"] = True  # artifact is a complete flash image
+            hints["gpioCount"] = 40
+            hints["i2cBuses"] = [{"bus": 0, "sda": 21, "scl": 22}]
+            hints["spiBuses"] = [
+                {"bus": "VSPI", "mosi": 23, "miso": 19, "sck": 18, "ss": 5},
+                {"bus": "HSPI", "mosi": 13, "miso": 12, "sck": 14, "ss": 15},
+            ]
+            hints["uartPorts"] = [
+                {"port": 0, "tx": 1, "rx": 3},
+                {"port": 2, "tx": 17, "rx": 16},
+            ]
+            hints["adcChannels"] = 18  # ADC1 (8 ch) + ADC2 (10 ch)
+            hints["dacChannels"] = 2
+            hints["touchPads"] = 10
+            hints["pwmChannels"] = 16  # 16 LEDC channels
+            hints["capabilities"] = [
+                "wifi", "bluetooth", "i2c", "spi", "uart", "adc", "dac",
+                "pwm", "touch", "gpio", "timer", "watchdog", "crypto",
+                "ethernet", "sdmmc", "ledc", "rmt", "pcnt",
+            ]
+
         return hints
 
     def _extract_missing_header(self, compiler_output: str) -> Optional[str]:

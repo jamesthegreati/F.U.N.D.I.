@@ -1,0 +1,28 @@
+{
+  "id": "pico-potentiometer-led",
+  "name": "Pico Potentiometer & LED",
+  "description": "Read a potentiometer on GP26 (ADC0) and use PWM to dim an LED on GP15 — learn analog input and PWM output on the Pico",
+  "difficulty": "intermediate",
+  "tags": ["pico", "rp2040", "adc", "pwm", "potentiometer", "led", "analog"],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
+      { "type": "wokwi-led", "id": "led1", "top": -90, "left": 200, "attrs": { "color": "blue" } },
+      { "type": "wokwi-resistor", "id": "r1", "top": -50, "left": 200, "attrs": { "value": "220" } },
+      { "type": "wokwi-potentiometer", "id": "pot1", "top": -120, "left": -150 }
+    ],
+    "connections": [
+      ["pico:GP15", "r1:1", "green", []],
+      ["r1:2", "led1:A", "green", []],
+      ["led1:C", "pico:GND.1", "black", []],
+      ["pot1:VCC", "pico:3V3", "red", []],
+      ["pot1:GND", "pico:GND.2", "black", []],
+      ["pot1:SIG", "pico:GP26", "purple", []]
+    ]
+  },
+  "code": "// Pico Potentiometer & LED\n// Read potentiometer on GP26 (ADC0), dim LED on GP15 via PWM.\n\n#include <Arduino.h>\n\nconst int POT_PIN = 26;   // GP26 = ADC0\nconst int LED_PIN = 15;   // GP15 (PWM capable)\n\nvoid setup() {\n  pinMode(LED_PIN, OUTPUT);\n  analogReadResolution(12);   // RP2040 has 12-bit ADC (0-4095)\n  Serial.begin(115200);\n  delay(100);\n  Serial.println(\"Pico Potentiometer & LED ready\");\n}\n\nvoid loop() {\n  int potValue = analogRead(POT_PIN);          // 0 - 4095\n  int pwmValue = map(potValue, 0, 4095, 0, 255);\n\n  analogWrite(LED_PIN, pwmValue);\n\n  Serial.print(\"Pot: \");\n  Serial.print(potValue);\n  Serial.print(\"  PWM: \");\n  Serial.println(pwmValue);\n\n  delay(100);\n}\n"
+}

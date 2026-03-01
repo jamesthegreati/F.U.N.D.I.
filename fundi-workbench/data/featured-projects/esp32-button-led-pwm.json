@@ -1,0 +1,70 @@
+{
+  "id": "esp32-button-led-pwm",
+  "name": "ESP32 Button + LED PWM",
+  "description": "Read a button to toggle an LED and use a potentiometer to control brightness via LEDC PWM. Demonstrates INPUT_PULLUP, ADC, and LEDC on ESP32.",
+  "difficulty": "beginner",
+  "tags": [
+    "esp32",
+    "button",
+    "led",
+    "pwm",
+    "ledc",
+    "potentiometer",
+    "non-avr"
+  ],
+  "estimatedTime": "10 min",
+  "diagram": {
+    "version": 1,
+    "author": "FUNDI Featured",
+    "editor": "wokwi",
+    "parts": [
+      {
+        "type": "wokwi-esp32-devkit-v1",
+        "id": "esp",
+        "top": 0,
+        "left": 0
+      },
+      {
+        "type": "wokwi-pushbutton",
+        "id": "btn1",
+        "top": -50,
+        "left": 280
+      },
+      {
+        "type": "wokwi-potentiometer",
+        "id": "pot1",
+        "top": 50,
+        "left": 300
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led1",
+        "top": 150,
+        "left": 280,
+        "attrs": {
+          "color": "yellow"
+        }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r1",
+        "top": 200,
+        "left": 280,
+        "attrs": {
+          "value": "220"
+        }
+      }
+    ],
+    "connections": [
+      ["btn1:1.l", "esp:15", "blue", []],
+      ["btn1:2.l", "esp:GND.1", "black", []],
+      ["pot1:VCC", "esp:3V3", "red", []],
+      ["pot1:GND", "esp:GND.2", "black", []],
+      ["pot1:SIG", "esp:34", "green", []],
+      ["esp:18", "r1:1", "orange", []],
+      ["r1:2", "led1:A", "orange", []],
+      ["led1:C", "esp:GND.3", "black", []]
+    ]
+  },
+  "code": "// ESP32 Button + LED PWM\n// ======================\n// Press the button to toggle the LED on/off.\n// When on, potentiometer controls brightness via LEDC PWM.\n//\n// Circuit:\n//   GPIO15 <- Button -> GND   (INPUT_PULLUP)\n//   GPIO34 <- Pot SIG          (ADC, input-only pin)\n//   GPIO18 -> 220R -> Yellow LED -> GND  (LEDC PWM)\n\n#include <Arduino.h>\n\n// Pin assignments\nconst int BUTTON_PIN = 15;\nconst int POT_PIN    = 34;   // Input-only on ESP32\nconst int LED_PIN    = 18;\n\n// LEDC PWM config\nconst int LEDC_CH   = 0;\nconst int LEDC_FREQ = 5000;\nconst int LEDC_RES  = 8;     // 0-255\n\nbool ledEnabled = false;\nbool lastBtnState = HIGH;\nunsigned long lastDebounce = 0;\nconst unsigned long DEBOUNCE_MS = 50;\n\nvoid setup() {\n  Serial.begin(115200);\n  delay(200);\n\n  Serial.println(\"==========================\");\n  Serial.println(\"  ESP32 Button + LED PWM\");\n  Serial.println(\"==========================\");\n  Serial.println();\n\n  pinMode(BUTTON_PIN, INPUT_PULLUP);\n  analogReadResolution(12);\n\n  ledcSetup(LEDC_CH, LEDC_FREQ, LEDC_RES);\n  ledcAttachPin(LED_PIN, LEDC_CH);\n  ledcWrite(LEDC_CH, 0);\n\n  Serial.println(\"Press button to toggle LED.\");\n  Serial.println(\"Turn pot to adjust brightness.\");\n  Serial.println(\"---\");\n}\n\nvoid loop() {\n  // Debounced button toggle\n  bool btnState = digitalRead(BUTTON_PIN);\n  if (btnState != lastBtnState && (millis() - lastDebounce) > DEBOUNCE_MS) {\n    lastDebounce = millis();\n    if (btnState == LOW) {\n      ledEnabled = !ledEnabled;\n      Serial.print(\"LED toggled: \");\n      Serial.println(ledEnabled ? \"ON\" : \"OFF\");\n    }\n  }\n  lastBtnState = btnState;\n\n  // Read potentiometer (12-bit: 0-4095)\n  int potRaw = analogRead(POT_PIN);\n  int brightness = map(potRaw, 0, 4095, 0, 255);\n\n  // Apply PWM\n  if (ledEnabled) {\n    ledcWrite(LEDC_CH, brightness);\n  } else {\n    ledcWrite(LEDC_CH, 0);\n  }\n\n  // Periodic telemetry\n  static unsigned long lastPrint = 0;\n  if (millis() - lastPrint >= 250) {\n    lastPrint = millis();\n    Serial.print(\"btn=\");\n    Serial.print(btnState == LOW ? \"DOWN\" : \"UP\");\n    Serial.print(\"  led=\");\n    Serial.print(ledEnabled ? \"ON\" : \"OFF\");\n    Serial.print(\"  pot=\");\n    Serial.print(potRaw);\n    Serial.print(\"  pwm=\");\n    Serial.println(ledEnabled ? brightness : 0);\n  }\n\n  delay(10);\n}"
+}

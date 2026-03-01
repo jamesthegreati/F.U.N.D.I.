@@ -50,6 +50,27 @@ export const ESP32_SVG = `<svg viewBox="0 0 48 64" fill="none" xmlns="http://www
   <text x="24" y="43" font-size="5" fill="#3b82f6" text-anchor="middle" font-family="monospace">ESP32</text>
 </svg>`;
 
+// Raspberry Pi Pico - Green board with RP2040
+export const PI_PICO_SVG = `<svg viewBox="0 0 36 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="32" height="60" rx="3" fill="#006837"/>
+  <rect x="3" y="3" width="30" height="58" rx="2" fill="#004e29"/>
+  <rect x="11" y="1" width="14" height="6" rx="1" fill="#aaa"/>
+  <rect x="12" y="2" width="12" height="4" rx="0.5" fill="#888"/>
+  <rect x="10" y="24" width="16" height="16" rx="1.5" fill="#1a1a1a"/>
+  <circle cx="14" cy="28" r="1" fill="#444"/>
+  <text x="18" y="35" font-size="3.5" fill="#666" text-anchor="middle" font-family="monospace">RP2040</text>
+  <circle cx="25" cy="12" r="2" fill="#1a3a1a" stroke="#444" stroke-width="0.5"/>
+  <rect x="5" y="12" width="7" height="3" rx="0.5" fill="#ccc"/>
+  <text x="8.5" y="14.3" font-size="2" fill="#444" text-anchor="middle" font-family="monospace">BOOT</text>
+  <circle cx="6" cy="10" r="1.5" fill="none" stroke="#c89632" stroke-width="0.8"/>
+  <circle cx="30" cy="10" r="1.5" fill="none" stroke="#c89632" stroke-width="0.8"/>
+  <circle cx="6" cy="54" r="1.5" fill="none" stroke="#c89632" stroke-width="0.8"/>
+  <circle cx="30" cy="54" r="1.5" fill="none" stroke="#c89632" stroke-width="0.8"/>
+  <rect x="3" y="42" width="30" height="2" fill="#333"/>
+  <rect x="3" y="56" width="30" height="2" fill="#333"/>
+  <text x="18" y="50" font-size="4" fill="#33865f" text-anchor="middle" font-family="monospace" font-weight="bold">PICO</text>
+</svg>`;
+
 // LED - Classic LED shape
 export const LED_SVG = `<svg viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">
   <ellipse cx="12" cy="10" rx="8" ry="10" fill="#ef4444" opacity="0.8"/>
@@ -207,6 +228,7 @@ export const COMPONENT_SVGS: Record<string, string> = {
     'arduino-nano': ARDUINO_NANO_SVG,
     'arduino-mega': ARDUINO_MEGA_SVG,
     'esp32-devkit-v1': ESP32_SVG,
+    'pi-pico': PI_PICO_SVG,
     'led': LED_SVG,
     'rgb-led': RGB_LED_SVG,
     'neopixel': NEOPIXEL_SVG,

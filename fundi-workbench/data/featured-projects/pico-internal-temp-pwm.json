@@ -3,26 +3,89 @@
   "name": "RP2040 Internal Temp + PWM Lab",
   "description": "RP2040-focused demo using internal ADC temperature sensor channel and high-resolution PWM behavior",
   "difficulty": "advanced",
-  "tags": ["rp2040", "pico", "internal-temp", "adc", "pwm", "non-avr"],
+  "tags": [
+    "rp2040",
+    "pico",
+    "internal-temp",
+    "adc",
+    "pwm",
+    "non-avr"
+  ],
   "estimatedTime": "20 min",
   "diagram": {
     "version": 1,
     "author": "FUNDI Featured",
     "editor": "wokwi",
     "parts": [
-      { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0 },
-      { "type": "wokwi-led", "id": "led1", "top": -90, "left": 230, "attrs": { "color": "yellow" } },
-      { "type": "wokwi-resistor", "id": "r1", "top": -50, "left": 230, "attrs": { "value": "220" } },
-      { "type": "wokwi-potentiometer", "id": "pot1", "top": 80, "left": 230 }
+      {
+        "type": "wokwi-pi-pico",
+        "id": "pico",
+        "top": 0,
+        "left": 0
+      },
+      {
+        "type": "wokwi-led",
+        "id": "led1",
+        "top": -90,
+        "left": 230,
+        "attrs": {
+          "color": "yellow"
+        }
+      },
+      {
+        "type": "wokwi-resistor",
+        "id": "r1",
+        "top": -50,
+        "left": 230,
+        "attrs": {
+          "value": "220"
+        }
+      },
+      {
+        "type": "wokwi-potentiometer",
+        "id": "pot1",
+        "top": 80,
+        "left": 230
+      }
     ],
     "connections": [
-      ["pico:GP15", "r1:1", "green", []],
-      ["r1:2", "led1:A", "green", []],
-      ["led1:C", "pico:GND.1", "black", []],
-      ["pot1:VCC", "pico:3V3", "red", []],
-      ["pot1:GND", "pico:GND.2", "black", []],
-      ["pot1:SIG", "pico:GP26", "blue", []]
+      [
+        "pico:GP15",
+        "r1:1",
+        "green",
+        []
+      ],
+      [
+        "r1:2",
+        "led1:A",
+        "green",
+        []
+      ],
+      [
+        "led1:C",
+        "pico:GND.1",
+        "black",
+        []
+      ],
+      [
+        "pot1:VCC",
+        "pico:3V3",
+        "red",
+        []
+      ],
+      [
+        "pot1:GND",
+        "pico:GND.2",
+        "black",
+        []
+      ],
+      [
+        "pot1:SIG",
+        "pico:GP26",
+        "blue",
+        []
+      ]
     ]
   },
-  "code": "// RP2040 Internal Temp + PWM Lab\\n// Board-specific focus beyond classic AVR:\\n// - RP2040 internal temperature sensor via ADC channel 4 (when pico-sdk headers available)\\n// - 12-bit analog path + high-resolution PWM scaling on Pico\\n\\n#if !defined(ARDUINO_ARCH_RP2040)\\n#error This sketch targets RP2040 only (wokwi-pi-pico).\\n#endif\\n\\n#include <Arduino.h>\\n\\n#if __has_include(\\\"hardware/adc.h\\\")\\n  #include \\\"hardware/adc.h\\\"\\n  #define HAS_RP2040_HW_ADC 1\\n#else\\n  #define HAS_RP2040_HW_ADC 0\\n#endif\\n\\nconst int LED_PIN = 15;\\nconst int POT_PIN = 26;\\n\\nfloat readInternalTempC() {\\n#if HAS_RP2040_HW_ADC\\n  adc_select_input(4);\\n  uint16_t raw = adc_read();\\n  const float conversion = 3.3f / 4096.0f;\\n  float voltage = raw * conversion;\\n  // RP2040 datasheet conversion:\\n  // T = 27 - (Vtemp - 0.706)/0.001721\\n  return 27.0f - (voltage - 0.706f) / 0.001721f;\\n#else\\n  // Fallback if low-level headers are unavailable in this core build\\n  return NAN;\\n#endif\\n}\\n\\nvoid setup() {\\n  Serial.begin(115200);\\n  delay(200);\\n  Serial.println(\\\"RP2040 Internal Temp + PWM Lab\\\");\\n\\n  pinMode(LED_PIN, OUTPUT);\\n  analogReadResolution(12);\\n\\n#if HAS_RP2040_HW_ADC\\n  adc_init();\\n  adc_set_temp_sensor_enabled(true);\\n#endif\\n}\\n\\nvoid loop() {\\n  int pot = analogRead(POT_PIN); // 0..4095 on RP2040 cores with 12-bit read\\n  int pwm = map(pot, 0, 4095, 0, 255);\\n  pwm = constrain(pwm, 0, 255);\\n  analogWrite(LED_PIN, pwm);\\n\\n  float t = readInternalTempC();\\n  Serial.print(\\\"pot=\\\");\\n  Serial.print(pot);\\n  Serial.print(\\\" pwm=\\\");\\n  Serial.print(pwm);\\n  Serial.print(\\\" tempC=\\\");\\n  if (isnan(t)) {\\n    Serial.println(\\\"n/a\\\");\\n  } else {\\n    Serial.println(t, 2);\\n  }\\n\\n  delay(150);\\n}"
+  "code": "// RP2040 Internal Temp + PWM Lab\n// Board-specific focus beyond classic AVR:\n// - RP2040 internal temperature sensor via ADC channel 4 (when pico-sdk headers available)\n// - 12-bit analog path + high-resolution PWM scaling on Pico\n\n#if !defined(ARDUINO_ARCH_RP2040)\n#error This sketch targets RP2040 only (wokwi-pi-pico).\n#endif\n\n#include <Arduino.h>\n\n#if __has_include(\"hardware/adc.h\")\n  #include \"hardware/adc.h\"\n  #define HAS_RP2040_HW_ADC 1\n#else\n  #define HAS_RP2040_HW_ADC 0\n#endif\n\nconst int LED_PIN = 15;\nconst int POT_PIN = 26;\n\nfloat readInternalTempC() {\n#if HAS_RP2040_HW_ADC\n  adc_select_input(4);\n  uint16_t raw = adc_read();\n  const float conversion = 3.3f / 4096.0f;\n  float voltage = raw * conversion;\n  // RP2040 datasheet conversion:\n  // T = 27 - (Vtemp - 0.706)/0.001721\n  return 27.0f - (voltage - 0.706f) / 0.001721f;\n#else\n  // Fallback if low-level headers are unavailable in this core build\n  return NAN;\n#endif\n}\n\nvoid setup() {\n  Serial.begin(115200);\n  delay(200);\n  Serial.println(\"RP2040 Internal Temp + PWM Lab\");\n\n  pinMode(LED_PIN, OUTPUT);\n  analogReadResolution(12);\n\n#if HAS_RP2040_HW_ADC\n  adc_init();\n  adc_set_temp_sensor_enabled(true);\n#endif\n}\n\nvoid loop() {\n  int pot = analogRead(POT_PIN); // 0..4095 on RP2040 cores with 12-bit read\n  int pwm = map(pot, 0, 4095, 0, 255);\n  pwm = constrain(pwm, 0, 255);\n  analogWrite(LED_PIN, pwm);\n\n  float t = readInternalTempC();\n  Serial.print(\"pot=\");\n  Serial.print(pot);\n  Serial.print(\" pwm=\");\n  Serial.print(pwm);\n  Serial.print(\" tempC=\");\n  if (isnan(t)) {\n    Serial.println(\"n/a\");\n  } else {\n    Serial.println(t, 2);\n  }\n\n  delay(150);\n}"
 }

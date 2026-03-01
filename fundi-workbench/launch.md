@@ -165,10 +165,10 @@ If compile reports `Platform '... not found: platform not installed'`, install t
 
 ```bash
 # ESP32 DevKit v1
-arduino-cli core install esp32:esp32
+arduino-cli core install esp32:esp32 --additional-urls "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
 
-# RP2040 Pico
-arduino-cli core install arduino:mbed_rp2040
+# RP2040 Pico (Earle Philhower core — fast compilation)
+arduino-cli core install rp2040:rp2040 --additional-urls "https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json"
 ```
 
 ### Port already in use
