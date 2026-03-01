@@ -543,6 +543,7 @@ function SimulationCanvasInner({
             ...node,
             data: {
               ...node.data,
+              isSimulating: isRunning,
               getCanvasRect,
               onDeletePart: removePart,
               onValueChange: handleValueChange,
@@ -560,7 +561,7 @@ function SimulationCanvasInner({
         return node
       })
     )
-  }, [circuitParts, getCanvasRect, handleButtonPress, handleButtonRelease, handleDipSwitchChange, handleEncoderRotate, handleJoystickMove, handleSwitchToggle, handleValueChange, interactiveValues, removePart, setNodes])
+  }, [circuitParts, getCanvasRect, handleButtonPress, handleButtonRelease, handleDipSwitchChange, handleEncoderRotate, handleJoystickMove, handleSwitchToggle, handleValueChange, interactiveValues, isRunning, removePart, setNodes])
 
   // Keep ReactFlow selection in sync with Zustand selection.
   useEffect(() => {
@@ -655,6 +656,8 @@ function SimulationCanvasInner({
   // Double-click to delete component
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      if (isRunning) return
+
       // Get the part type for a better confirmation message
       const part = circuitParts.find(p => p.id === node.id)
       const partName = part?.type.replace('wokwi-', '').replace(/-/g, ' ') || 'component'
@@ -663,7 +666,7 @@ function SimulationCanvasInner({
         removePart(node.id)
       }
     },
-    [circuitParts, removePart]
+    [isRunning, circuitParts, removePart]
   )
 
   // Group-drag engine
@@ -762,6 +765,8 @@ function SimulationCanvasInner({
   const transform = useStore((s) => s.transform as [number, number, number])
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
+      if (isRunning) return
+
       const container = canvasRef.current
       if (!container) return
 
@@ -799,15 +804,16 @@ function SimulationCanvasInner({
 
       setSelectedPartIds([id])
     },
-    [addPart, canvasRef, getCanvasRect, handleButtonPress, handleButtonRelease, handleValueChange, setNodes, setSelectedPartIds, transform]
+    [isRunning, addPart, canvasRef, getCanvasRect, handleButtonPress, handleButtonRelease, handleValueChange, setNodes, setSelectedPartIds, transform]
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (isRunning) return
     if (e.dataTransfer.types.includes(FUNDI_PART_MIME)) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
     }
-  }, [])
+  }, [isRunning])
 
   const handleResetView = useCallback(() => {
     setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 300 })
@@ -835,6 +841,18 @@ function SimulationCanvasInner({
 
       <SelectionOverlay containerRef={canvasRef} />
 
+      {/* Simulation lock banner - informs user that editing is disabled */}
+      {isRunning && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="flex items-center gap-2 rounded-full bg-ide-panel-bg/90 border border-ide-success/40 px-3 py-1.5 shadow-lg backdrop-blur-sm">
+            <div className="h-1.5 w-1.5 rounded-full bg-ide-success animate-pulse" />
+            <span className="text-[11px] font-medium text-ide-text-muted">
+              Simulation running — editing locked - Zoom &amp; pan enabled
+            </span>
+          </div>
+        </div>
+      )}
+
       <ReactFlow
         nodes={nodes}
         edges={styledEdges}
@@ -849,6 +867,8 @@ function SimulationCanvasInner({
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        nodesDraggable={!isRunning}
+        nodesConnectable={!isRunning}
         snapToGrid={true}
         snapGrid={[12, 12]}
         fitView
@@ -879,6 +899,7 @@ function SimulationCanvasInner({
         <WiringLayer
           containerRef={canvasRef}
           wirePointOverrides={wirePointOverrides ?? undefined}
+          isSimulating={isRunning}
         />
       </ReactFlow>
     </div>
