@@ -1927,7 +1927,8 @@ export const clearHistory = (): void => {
  * Works both inside and outside React components.
  */
 export function getBackendUrl(): string {
-  const url = useAppStore.getState().settings.backendUrl
-  if (url) return url.replace(/\/+$/, '')
-  return (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
+  const raw = useAppStore.getState().settings.backendUrl
+    || process.env.NEXT_PUBLIC_BACKEND_URL
+    || 'http://127.0.0.1:8000'
+  return raw.replace(/\/+$/, '')
 }

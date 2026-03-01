@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { 
   ArrowLeft, 
@@ -80,6 +80,12 @@ export default function SettingsPage() {
     setHasChanges(true)
   }
 
+  // Reset test status when the user changes the backend URL
+  useEffect(() => {
+    setBackendStatus('idle')
+    setBackendStatusMsg('')
+  }, [localSettings.backendUrl])
+
   const handleSave = () => {
     updateSettings(localSettings)
     setHasChanges(false)
@@ -103,9 +109,14 @@ export default function SettingsPage() {
         setBackendStatus('error')
         setBackendStatusMsg(`Server returned ${res.status}`)
       }
-    } catch {
+    } catch (err) {
       setBackendStatus('error')
-      setBackendStatusMsg(`Cannot reach ${url}. Make sure the backend is running.`)
+      const isTimeout = err instanceof DOMException && err.name === 'TimeoutError'
+      setBackendStatusMsg(
+        isTimeout
+          ? `Connection timed out after 5 seconds. Is ${url} correct?`
+          : `Cannot reach ${url}. Make sure the backend is running.`
+      )
     }
   }
 
