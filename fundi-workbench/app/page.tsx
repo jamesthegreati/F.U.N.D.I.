@@ -21,6 +21,7 @@ import {
   Settings,
   Share2,
   Sparkles,
+  FlaskConical,
   Square,
   Trash2,
   X,
@@ -57,6 +58,7 @@ import SelectionOverlay from '@/components/SelectionOverlay'
 import WiringLayer from '@/components/WiringLayer'
 import { TerminalPanel } from '@/components/terminal'
 import FeaturedProjectsPanel from '@/components/FeaturedProjectsPanel'
+import ComponentTestsPanel from '@/components/ComponentTestsPanel'
 import { useDiagramSync } from '@/hooks/useDiagramSync'
 import { useSimulation } from '@/hooks/useSimulation'
 import { useAppStore, type ProjectFile } from '@/store/useAppStore'
@@ -1327,6 +1329,7 @@ export default function Home() {
   const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false)
   const [showPublishModal, setShowPublishModal] = useState(false)
   const [showFeaturedProjects, setShowFeaturedProjects] = useState(false)
+  const [showTestsPanel, setShowTestsPanel] = useState(false)
 
   const files = useAppStore((s) => s.files)
   const circuitParts = useAppStore((s) => s.circuitParts)
@@ -1715,6 +1718,15 @@ export default function Home() {
           </button>
           <button
             type="button"
+            onClick={() => setShowTestsPanel(true)}
+            className="btn-press flex h-7 items-center gap-1.5 rounded-lg bg-cyan-500/10 px-3 text-xs font-medium text-cyan-400 hover:bg-cyan-500/20"
+            title="Component Tests"
+          >
+            <FlaskConical className="icon-balanced h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Tests</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowPublishModal(true)}
             className="btn-press flex h-7 items-center gap-1.5 rounded-lg bg-ide-accent/10 px-3 text-xs font-medium text-ide-accent hover:bg-ide-accent/20"
             title="Publish to Gallery"
@@ -1800,6 +1812,12 @@ export default function Home() {
       <FeaturedProjectsPanel
         isOpen={showFeaturedProjects}
         onClose={() => setShowFeaturedProjects(false)}
+      />
+
+      {/* Component Tests Panel */}
+      <ComponentTestsPanel
+        isOpen={showTestsPanel}
+        onClose={() => setShowTestsPanel(false)}
       />
 
       {/* Main IDE Layout - Resizable Panels */}
