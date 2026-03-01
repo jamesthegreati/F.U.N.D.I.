@@ -752,6 +752,14 @@ export function useSimulation(
 
       const startEngine = async () => {
         try {
+          if (engineRef.current) {
+            await engineRef.current.stop();
+            if ('dispose' in engineRef.current && typeof (engineRef.current as { dispose: () => void }).dispose === 'function') {
+              (engineRef.current as { dispose: () => void }).dispose();
+            }
+            engineRef.current = null;
+          }
+
           if (!engineRef.current) {
             engineRef.current = family === 'rp2040' ? new Rp2040EngineAdapter() : new Esp32EngineAdapter();
             engineRef.current.setHandlers({
