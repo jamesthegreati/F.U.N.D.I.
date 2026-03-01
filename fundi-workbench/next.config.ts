@@ -15,9 +15,8 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
-  // If you deploy to a GitHub Project Pages subdirectory (e.g. https://user.github.io/repo),
-  // uncomment and set this to your repo name:
-  // basePath: '/fundi-workbench',
+  // GitHub Pages project sites are served under /repo-name/
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
 }
 
 export default nextConfig
