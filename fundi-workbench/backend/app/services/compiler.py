@@ -93,8 +93,9 @@ class CompilerService:
         "wokwi-arduino-uno": "arduino:avr:uno",
         "wokwi-arduino-nano": "arduino:avr:nano",
         "wokwi-arduino-mega": "arduino:avr:mega",
-        # ESP32 boards
-        "wokwi-esp32-devkit-v1": "esp32:esp32:esp32",
+        # ESP32 boards – use DIO flash mode + 40 MHz to avoid QIO init
+        # crash in QEMU (esp_flash_init_default_chip assertion failure).
+        "wokwi-esp32-devkit-v1": "esp32:esp32:esp32:FlashMode=dio,FlashFreq=40",
         # RP2040 boards (Raspberry Pi Pico) – Earle Philhower core (much faster compilation)
         "wokwi-pi-pico": "rp2040:rp2040:rpipico",
     }
