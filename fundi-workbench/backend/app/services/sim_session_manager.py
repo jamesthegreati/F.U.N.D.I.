@@ -81,7 +81,7 @@ class SimulationSessionManager:
         session.updated_at = time.time()
         if session.task and not session.task.done():
             session.task.cancel()
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await session.task
 
         # Determine simulation engine based on board
@@ -113,7 +113,7 @@ class SimulationSessionManager:
 
         if session.task and not session.task.done():
             session.task.cancel()
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await session.task
             session.task = None
 

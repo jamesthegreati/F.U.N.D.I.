@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import os
@@ -264,8 +265,12 @@ class Esp32QemuRunner:
 
         if self._uart_reader and not self._uart_reader.done():
             self._uart_reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._uart_reader
         if self._gpio_poller and not self._gpio_poller.done():
             self._gpio_poller.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._gpio_poller
 
         if self._qmp_writer:
             try:
