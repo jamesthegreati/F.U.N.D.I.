@@ -13,6 +13,7 @@ import {
   avoidParallelOverlaps,
   WOKWI_GRID_PX,
   type ComponentBounds,
+  type PinObstacle,
 } from '@/utils/wireRouting';
 
 type PinRef = { partId: string; pinId: string };
@@ -223,6 +224,21 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef, dimensions.width, dimensions.height, transform, flowNodes]);
 
+  // Precompute pin obstacles: all pins become exclusion zones for wire routing.
+  // This prevents wires from running over pins and blocking access.
+  const pinObstacles = useMemo(() => {
+    const obstacles: PinObstacle[] = [];
+    pinCenters.forEach((point, id) => {
+      obstacles.push({
+        id,
+        x: point.x,
+        y: point.y,
+        radius: 15, // PIN_EXCLUSION_RADIUS from wireRouting.ts
+      });
+    });
+    return obstacles;
+  }, [pinCenters]);
+
   // Precompute component bounding boxes for obstacle avoidance.
   // Aggregate all elements sharing the same data-node-id into one union box.
   const componentBounds = useMemo(() => {
@@ -292,10 +308,18 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
         // Don't block routing through the source/target component itself.
         const excludeIds = [c.from.partId, c.to.partId];
 
+        // Don't block routing through the source/target pins themselves.
+        const excludePinIds = [
+          `${c.from.partId}:${c.from.pinId}`,
+          `${c.to.partId}:${c.to.pinId}`,
+        ];
+
         const points = calculateOrthogonalPoints(start, end, waypoints, {
           firstLeg: 'auto',
           obstacles: componentBounds,
+          pinObstacles: pinObstacles,
           excludeIds,
+          excludePinIds,
           gridSize: routingGrid,
         });
         return { id: c.id, color: c.color, points };
@@ -312,7 +336,7 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
       const points = adjusted.get(w.id) ?? w.points;
       return { ...w, points, d: pointsToPathD(points) };
     });
-  }, [connections, getPinPoint, wirePointOverrides, gridSize, componentBounds]);
+  }, [connections, getPinPoint, wirePointOverrides, gridSize, componentBounds, pinObstacles]);
 
   const selectedWire = useMemo(() => {
     if (!selectedId) return null;
@@ -550,14 +574,23 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
   const preview = useMemo(() => {
     if (!creating) return null;
     const end = creating.hoveredPoint ?? creating.cursor;
+
+    // Exclude source pin and target pin (if hovering over one) from obstacles
+    const excludePinIds = [
+      `${creating.from.partId}:${creating.from.pinId}`,
+      creating.hoveredPin ? `${creating.hoveredPin.partId}:${creating.hoveredPin.pinId}` : null,
+    ].filter(Boolean) as string[];
+
     const points = calculateOrthogonalPoints(creating.fromPoint, end, creating.waypoints, {
       firstLeg: 'auto',
       obstacles: componentBounds,
+      pinObstacles: pinObstacles,
       excludeIds: [creating.from.partId, creating.hoveredPin?.partId].filter(Boolean) as string[],
+      excludePinIds,
       gridSize,
     });
     return { d: pointsToPathD(points), color: creating.color };
-  }, [creating, componentBounds, gridSize]);
+  }, [creating, componentBounds, pinObstacles, gridSize]);
 
   if (dimensions.width === 0 || dimensions.height === 0) return null;
 

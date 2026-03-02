@@ -30,6 +30,9 @@ const COMPONENT_MARGIN = 12;
 /** Extra padding when routing a detour around a component */
 const DETOUR_PADDING = 18;
 
+/** Pin exclusion zone: wires must route around pins to keep them accessible */
+const PIN_EXCLUSION_RADIUS = 15;
+
 /** Maximum detour recursion depth */
 const MAX_DETOUR_DEPTH = 4;
 
@@ -41,6 +44,13 @@ export interface ComponentBounds {
     y: number;
     width: number;
     height: number;
+}
+
+export interface PinObstacle {
+    id: string; // Format: "partId:pinId"
+    x: number;
+    y: number;
+    radius: number;
 }
 
 /* ─── Grid helpers ─────────────────────────────────────────────────── */
@@ -56,6 +66,50 @@ export function snapPointToGrid(point: WirePoint, gridSize: number): WirePoint {
 }
 
 /* ─── Geometry helpers ─────────────────────────────────────────────── */
+
+/**
+ * Check if a segment intersects a circular pin obstacle.
+ */
+function segmentIntersectsPin(
+    start: WirePoint,
+    end: WirePoint,
+    pin: PinObstacle
+): boolean {
+    // Calculate distance from pin center to line segment
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+
+    if (lengthSquared === 0) {
+        // Zero-length segment: check distance from pin to point
+        const dist = Math.hypot(start.x - pin.x, start.y - pin.y);
+        return dist < pin.radius;
+    }
+
+    // Find closest point on segment to pin center
+    let t = ((pin.x - start.x) * dx + (pin.y - start.y) * dy) / lengthSquared;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestX = start.x + t * dx;
+    const closestY = start.y + t * dy;
+
+    const dist = Math.hypot(closestX - pin.x, closestY - pin.y);
+    return dist < pin.radius;
+}
+
+/**
+ * Convert pin obstacles to rectangular bounds for unified obstacle handling.
+ * Each pin becomes a square bounding box centered on the pin.
+ */
+function pinsToComponentBounds(pins: PinObstacle[]): ComponentBounds[] {
+    return pins.map((pin) => ({
+        id: pin.id,
+        x: pin.x - pin.radius,
+        y: pin.y - pin.radius,
+        width: pin.radius * 2,
+        height: pin.radius * 2,
+    }));
+}
 
 function segmentIntersectsBounds(
     start: WirePoint,
@@ -609,7 +663,9 @@ export function moveSegment(
  * @param options - Routing options
  *   - firstLeg: preferred initial direction
  *   - obstacles: component bounding boxes to avoid
+ *   - pinObstacles: pin exclusion zones to avoid (wires must not block pin access)
  *   - excludeIds: part IDs whose bounds should NOT be avoided (source/target parts)
+ *   - excludePinIds: pin IDs (format "partId:pinId") that should NOT be avoided (source/target pins)
  *   - gridSize: snap grid for routing
  */
 export function calculateOrthogonalPoints(
@@ -619,17 +675,27 @@ export function calculateOrthogonalPoints(
     options: {
         firstLeg?: FirstLeg;
         obstacles?: ComponentBounds[];
+        pinObstacles?: PinObstacle[];
         excludeIds?: string[];
+        excludePinIds?: string[];
         gridSize?: number;
     } = {}
 ): WirePoint[] {
     const firstLeg = options.firstLeg ?? 'auto';
     const rawObstacles = options.obstacles ?? [];
+    const rawPinObstacles = options.pinObstacles ?? [];
     const excludeIds = new Set(options.excludeIds ?? []);
+    const excludePinIds = new Set(options.excludePinIds ?? []);
     const gridSize = options.gridSize ?? WOKWI_GRID_PX;
 
     // Filter out source/target component bounds — wires MUST reach their own pins
     const obstacles = rawObstacles.filter((o) => !excludeIds.has(o.id));
+
+    // Filter out source/target pin obstacles
+    const pinObstacles = rawPinObstacles.filter((p) => !excludePinIds.has(p.id));
+
+    // Merge pin obstacles into the obstacles array as rectangular bounds
+    const allObstacles = [...obstacles, ...pinsToComponentBounds(pinObstacles)];
 
     const all = [start, ...waypoints, end];
     const out: WirePoint[] = [start];
@@ -643,7 +709,7 @@ export function calculateOrthogonalPoints(
         if (dx < 0.5) return 'vertical';
         if (dy < 0.5) return 'horizontal';
 
-        if (obstacles.length === 0) return dx >= dy ? 'horizontal' : 'vertical';
+        if (allObstacles.length === 0) return dx >= dy ? 'horizontal' : 'vertical';
 
         // Score both orientations by how many obstacles they hit
         const horizontalPath: WirePoint[] = [a, { x: b.x, y: a.y }, b];
@@ -652,7 +718,7 @@ export function calculateOrthogonalPoints(
         const countIntersections = (path: WirePoint[]): number => {
             let n = 0;
             for (let i = 0; i < path.length - 1; i++) {
-                n += findIntersectingBounds(path[i], path[i + 1], obstacles).length;
+                n += findIntersectingBounds(path[i], path[i + 1], allObstacles).length;
             }
             return n;
         };
@@ -679,7 +745,7 @@ export function calculateOrthogonalPoints(
             segmentPath = [a, { x: a.x, y: b.y }, b];
         }
 
-        if (obstacles.length === 0) {
+        if (allObstacles.length === 0) {
             // No obstacles: simple L-path
             for (let j = 1; j < segmentPath.length; j++) {
                 const p = segmentPath[j];
@@ -696,7 +762,7 @@ export function calculateOrthogonalPoints(
 
                 if (Math.abs(segStart.x - segEnd.x) < 0.5 && Math.abs(segStart.y - segEnd.y) < 0.5) continue;
 
-                const routed = routeSegmentAroundObstacles(segStart, segEnd, obstacles, gridSize);
+                const routed = routeSegmentAroundObstacles(segStart, segEnd, allObstacles, gridSize);
 
                 // Append skipping the first point (already in finalPath)
                 for (let j = 1; j < routed.length; j++) {
