@@ -327,13 +327,19 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
       .filter((x): x is { id: string; color: string; points: WirePoint[] } => Boolean(x));
 
     // Prevent PARALLEL overlaps between different wires (perpendicular crossings OK).
+    // Skip wires whose paths were manually set by the user — the user's intent must
+    // be preserved and should never be silently shifted by the auto-spacing pass.
+    const userWaypointedIds = new Set(
+      connections.filter((c) => c.points && c.points.length > 0).map((c) => c.id)
+    );
+    const autoRouted = base.filter((w) => !userWaypointedIds.has(w.id));
     const adjusted = avoidParallelOverlaps(
-      base.map((w) => ({ id: w.id, points: w.points })),
+      autoRouted.map((w) => ({ id: w.id, points: w.points })),
       { gridSize: routingGrid, maxLanes: 10 }
     );
 
     return base.map((w) => {
-      const points = adjusted.get(w.id) ?? w.points;
+      const points = (!userWaypointedIds.has(w.id) && adjusted.get(w.id)) ? adjusted.get(w.id)! : w.points;
       return { ...w, points, d: pointsToPathD(points) };
     });
   }, [connections, getPinPoint, wirePointOverrides, gridSize, componentBounds, pinObstacles]);
