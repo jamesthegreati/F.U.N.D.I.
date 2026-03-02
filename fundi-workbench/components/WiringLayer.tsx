@@ -340,7 +340,7 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
 
     return base.map((w) => {
       const points = (!userWaypointedIds.has(w.id) && adjusted.get(w.id)) ? adjusted.get(w.id)! : w.points;
-      return { ...w, points, d: pointsToPathD(points) };
+      return { ...w, points, d: pointsToPathD(points, 0) };
     });
   }, [connections, getPinPoint, wirePointOverrides, gridSize, componentBounds, pinObstacles]);
 
@@ -595,7 +595,7 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
       excludePinIds,
       gridSize,
     });
-    return { d: pointsToPathD(points), color: creating.color };
+    return { d: pointsToPathD(points, 0), color: creating.color };
   }, [creating, componentBounds, pinObstacles, gridSize]);
 
   if (dimensions.width === 0 || dimensions.height === 0) return null;
