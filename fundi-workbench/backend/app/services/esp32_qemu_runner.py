@@ -59,6 +59,11 @@ PARTITION_TABLE_OFFSET = 0x8000
 APP_OFFSET = 0x10000
 FLASH_SIZE = 4 * 1024 * 1024     # Default 4 MB
 
+# ESP32 image header byte-2 flash mode values
+_FLASH_MODE_DIO = 0x02
+# ESP32 image header byte-3 low-nibble flash frequency values
+_FLASH_FREQ_40M = 0x00
+
 
 def _find_qemu_binary() -> str | None:
     """Locate ``qemu-system-xtensa`` on the system."""
@@ -97,6 +102,35 @@ def _find_qemu_binary() -> str | None:
 
     # Fall back to PATH
     return shutil.which("qemu-system-xtensa")
+
+
+def _patch_flash_header(
+    image: bytearray,
+    offset: int,
+    *,
+    mode: int = _FLASH_MODE_DIO,
+    freq: int = _FLASH_FREQ_40M,
+) -> None:
+    """Patch the flash-mode and flash-frequency fields of an ESP32 image header
+    *in place*.
+
+    ESP32 image header layout (first 4 bytes at *offset*):
+      byte 0  – magic (0xE9)
+      byte 1  – segment count
+      byte 2  – SPI flash mode  (0x00=QIO, 0x02=DIO, …)
+      byte 3  – high nibble: flash size ID, low nibble: flash frequency
+
+    This is a safety-net for pre-merged images that may have been compiled
+    with QIO mode (which causes ``esp_flash_init_default_chip`` assertion
+    failures under QEMU).
+    """
+    if offset + 4 > len(image):
+        return
+    if image[offset] != 0xE9:
+        return  # not a valid ESP32 image header
+
+    image[offset + 2] = mode
+    image[offset + 3] = (image[offset + 3] & 0xF0) | (freq & 0x0F)
 
 
 def create_flash_image(
@@ -672,6 +706,12 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
             
         copy_len = min(len(raw), target_flash_size)
         padded[:copy_len] = raw[:copy_len]
+
+        # Safety-net: force DIO + 40 MHz in bootloader and app headers
+        # so QEMU does not hit QIO-mode flash init failures.
+        _patch_flash_header(padded, BOOTLOADER_OFFSET)
+        _patch_flash_header(padded, APP_OFFSET)
+
         return bytes(padded)
 
     # Standard app only (no bootloader included). Extract size from app header.
