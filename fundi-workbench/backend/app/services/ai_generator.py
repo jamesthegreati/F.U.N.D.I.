@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Optional, List
 
@@ -13,6 +14,8 @@ from app.services.agentic.context_builder import build_llm_context_block
 from app.services.agentic.output_validator import issues_to_repair_prompt, normalize_validate
 from app.services.agentic.planner import plan_generation
 from app.services.runtime_state import get_state_snapshot
+
+logger = logging.getLogger(__name__)
 
 # Import the new prompt manager (with fallback to embedded prompts)
 try:
@@ -334,6 +337,9 @@ class _OpenRouterModels:
         if config.get("response_mime_type") == "application/json":
             body["response_format"] = {"type": "json_object"}
 
+        logger.info("[OpenRouter] POST %s  model=%s  messages=%d",
+                    _OPENROUTER_BASE_URL, model, len(messages))
+
         resp = httpx.post(
             _OPENROUTER_BASE_URL,
             headers={
@@ -345,9 +351,36 @@ class _OpenRouterModels:
             json=body,
             timeout=120.0,
         )
-        resp.raise_for_status()
+        logger.info("[OpenRouter] HTTP %d  content-length=%s",
+                    resp.status_code, resp.headers.get("content-length", "?"))
+
+        if not resp.is_success:
+            # Include the full response body so errors are actionable in logs.
+            try:
+                err_body = resp.json()
+            except (json.JSONDecodeError, ValueError):
+                err_body = resp.text[:500]
+            logger.error("[OpenRouter] Request failed: HTTP %d  model=%s  body=%s",
+                         resp.status_code, model, err_body)
+            resp.raise_for_status()
+
         data = resp.json()
-        text = data["choices"][0]["message"]["content"]
+        if "error" in data:
+            logger.error("[OpenRouter] API error for model=%s: %s", model, data["error"])
+            raise RuntimeError(f"OpenRouter error: {data['error']}")
+
+        choices = data.get("choices") or []
+        if not choices:
+            logger.error("[OpenRouter] Empty choices in response for model=%s: %s",
+                         model, json.dumps(data)[:500])
+            raise RuntimeError(f"OpenRouter returned no choices for model '{model}'")
+
+        text = choices[0].get("message", {}).get("content", "")
+        if not text:
+            logger.error("[OpenRouter] Empty content in response for model=%s", model)
+            raise RuntimeError(f"OpenRouter returned empty content for model '{model}'")
+
+        logger.info("[OpenRouter] Success: model=%s  response_chars=%d", model, len(text))
         return _OpenRouterResponse(text)
 
 

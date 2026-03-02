@@ -716,12 +716,55 @@ def find_esp32_compile_artifacts(out_dir: str) -> dict[str, bytes | None]:
     return result
 
 
+_FLASH_SIZE_ID_MAP: dict[int, int] = {
+    0: 1 * 1024 * 1024,
+    1: 2 * 1024 * 1024,
+    2: 4 * 1024 * 1024,
+    3: 8 * 1024 * 1024,
+    4: 16 * 1024 * 1024,
+}
+
+# QEMU esp32 machine only supports flash sizes in the 4–16 MB range.
+_MIN_QEMU_FLASH_SIZE = 4 * 1024 * 1024    # 4 MB
+_MAX_QEMU_FLASH_SIZE = 16 * 1024 * 1024   # 16 MB
+
+
+def _resolve_flash_size(size_id: int, default: int = FLASH_SIZE) -> int:
+    """Clamp a flash-size ID to a QEMU-safe value (4–16 MB)."""
+    mapped = _FLASH_SIZE_ID_MAP.get(size_id, default)
+    if mapped < _MIN_QEMU_FLASH_SIZE:
+        return _MIN_QEMU_FLASH_SIZE
+    if mapped > _MAX_QEMU_FLASH_SIZE:
+        return _MAX_QEMU_FLASH_SIZE
+    return mapped
+
+
+def _pad_and_patch(raw: bytes, target_flash_size: int) -> bytes:
+    """Pad *raw* to *target_flash_size* with 0xFF and patch DIO/40 MHz headers."""
+    padded = bytearray(target_flash_size)
+    for i in range(target_flash_size):
+        padded[i] = 0xFF
+    copy_len = min(len(raw), target_flash_size)
+    padded[:copy_len] = raw[:copy_len]
+    # Safety-net: force DIO + 40 MHz in bootloader and app headers
+    # so QEMU does not hit QIO-mode flash init failures.
+    _patch_flash_header(padded, BOOTLOADER_OFFSET)
+    _patch_flash_header(padded, APP_OFFSET)
+    return bytes(padded)
+
+
 def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin") -> bytes:
     """Build a complete ESP32 flash image from a base64 compile artifact.
 
-    For raw-bin artifacts, this wraps the binary in a minimal flash image
-    with a default partition table. If it's a pre-merged image, it ensures
-    the flash file size exactly matches the size requested in the ESP32 header.
+    ``artifact_type`` values:
+    - ``"merged-flash"`` – the payload is already a complete flat flash image
+      (bootloader + partitions + app merged at their canonical offsets).
+      Headers are patched for DIO/40 MHz and the image is padded to the
+      correct size; no re-merging is performed.
+    - ``"raw-bin"`` – legacy / fallback path. If the payload looks like a
+      merged image (bootloader magic at 0x1000) it is treated as
+      ``"merged-flash"``. Otherwise the payload is assumed to be the
+      application binary only and is wrapped in a minimal flash layout.
     """
     logger.info("[ESP32-Flash] build_flash_image_from_b64: artifact_type=%s, b64_len=%d",
                 artifact_type, len(artifact_b64) if artifact_b64 else 0)
@@ -729,71 +772,58 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
     logger.info("[ESP32-Flash] decoded payload: %d bytes, first 16 bytes: %s",
                 len(raw), raw[:16].hex() if len(raw) >= 16 else raw.hex())
 
+    # ── Explicit merged-flash type ────────────────────────────────────────────
+    # The compile step builds a complete 4 MB flash layout (bootloader +
+    # partition table + app).  When the artifact_type is "merged-flash" we
+    # treat the whole payload as a pre-assembled flat image regardless of
+    # whether the bootloader happens to have its magic byte present.
+    if artifact_type == "merged-flash":
+        # Determine target size from whichever header is present.
+        target_flash_size = FLASH_SIZE
+        if len(raw) > BOOTLOADER_OFFSET + 4 and raw[BOOTLOADER_OFFSET] == 0xE9:
+            size_id = (raw[BOOTLOADER_OFFSET + 3] >> 4) & 0x0F
+            target_flash_size = _resolve_flash_size(size_id)
+            logger.info("[ESP32-Flash] merged-flash: bl size_id=%d, target=%d", size_id, target_flash_size)
+        elif len(raw) > APP_OFFSET + 4 and raw[APP_OFFSET] == 0xE9:
+            size_id = (raw[APP_OFFSET + 3] >> 4) & 0x0F
+            target_flash_size = _resolve_flash_size(size_id)
+            logger.info("[ESP32-Flash] merged-flash: app size_id=%d, target=%d", size_id, target_flash_size)
+        else:
+            logger.info("[ESP32-Flash] merged-flash: no size header found, using default %d", target_flash_size)
+        result = _pad_and_patch(raw, target_flash_size)
+        logger.info("[ESP32-Flash] Returning merged-flash image: %d bytes", len(result))
+        return result
+
+    # ── Legacy raw-bin path ───────────────────────────────────────────────────
     target_flash_size = FLASH_SIZE
 
-    # Check if this looks like a merged image (has bootloader magic at 0x1000)
-    # ESP32 bootloader starts with 0xE9 at the entry point
+    # Check whether the raw payload is already a merged image
+    # (has bootloader magic 0xE9 at the canonical bootloader offset 0x1000).
     has_bl_magic = len(raw) > BOOTLOADER_OFFSET + 4 and raw[BOOTLOADER_OFFSET] == 0xE9
     logger.info("[ESP32-Flash] raw_len=%d, has_bootloader_magic_at_0x1000=%s (byte=0x%02x)",
                 len(raw), has_bl_magic,
                 raw[BOOTLOADER_OFFSET] if len(raw) > BOOTLOADER_OFFSET else 0)
+
     if has_bl_magic:
-        # Extract the flash size ID from byte 3 (high 4 bits)
         size_id = (raw[BOOTLOADER_OFFSET + 3] >> 4) & 0x0F
-        mapped_size = {
-            0: 1024 * 1024,
-            1: 2 * 1024 * 1024,
-            2: 4 * 1024 * 1024,
-            3: 8 * 1024 * 1024,
-            4: 16 * 1024 * 1024,
-        }.get(size_id, FLASH_SIZE)
-        logger.info("[ESP32-Flash] Merged image detected: size_id=%d, mapped_size=%d", size_id, mapped_size)
+        target_flash_size = _resolve_flash_size(size_id)
+        logger.info("[ESP32-Flash] Merged image detected via bl magic: size_id=%d, target=%d",
+                    size_id, target_flash_size)
+        result = _pad_and_patch(raw, target_flash_size)
+        logger.info("[ESP32-Flash] Returning merged flash image: %d bytes", len(result))
+        return result
 
-        # QEMU esp32 machine supports 2, 4, 8, 16 MB. Min 4MB is safest.
-        if mapped_size < 4 * 1024 * 1024:
-            target_flash_size = 4 * 1024 * 1024
-        elif mapped_size > 16 * 1024 * 1024:
-            target_flash_size = 16 * 1024 * 1024
-        else:
-            target_flash_size = mapped_size
-
-        logger.info("[ESP32-Flash] target_flash_size=%d, padding and patching headers...", target_flash_size)
-
-        # Pad to exactly the required flash size
-        padded = bytearray(target_flash_size)
-        for i in range(target_flash_size):
-            padded[i] = 0xFF
-            
-        copy_len = min(len(raw), target_flash_size)
-        padded[:copy_len] = raw[:copy_len]
-
-        # Safety-net: force DIO + 40 MHz in bootloader and app headers
-        # so QEMU does not hit QIO-mode flash init failures.
-        _patch_flash_header(padded, BOOTLOADER_OFFSET)
-        _patch_flash_header(padded, APP_OFFSET)
-
-        logger.info("[ESP32-Flash] Returning merged flash image: %d bytes", len(padded))
-        return bytes(padded)
-
-    # Standard app only (no bootloader included). Extract size from app header.
+    # Standard app-only binary (no bootloader in payload).
     has_app_magic = len(raw) > 4 and raw[0] == 0xE9
     logger.info("[ESP32-Flash] App-only path: has_app_magic=%s (byte0=0x%02x)",
                 has_app_magic, raw[0] if raw else 0)
     if has_app_magic:
         size_id = (raw[3] >> 4) & 0x0F
-        mapped_size = {
-            0: 1024 * 1024,
-            1: 2 * 1024 * 1024,
-            2: 4 * 1024 * 1024,
-            3: 8 * 1024 * 1024,
-            4: 16 * 1024 * 1024,
-        }.get(size_id, FLASH_SIZE)
+        mapped_size = _FLASH_SIZE_ID_MAP.get(size_id, FLASH_SIZE)
         logger.info("[ESP32-Flash] App header size_id=%d, mapped_size=%d", size_id, mapped_size)
-        
-        if mapped_size >= 4 * 1024 * 1024 and mapped_size <= 16 * 1024 * 1024:
+        if _MIN_QEMU_FLASH_SIZE <= mapped_size <= _MAX_QEMU_FLASH_SIZE:
             target_flash_size = mapped_size
 
-    # Build the wrapper
     logger.info("[ESP32-Flash] Building wrapped flash image with app at 0x%x, flash_size=%d",
                 APP_OFFSET, target_flash_size)
     result = create_flash_image(app_bin=raw, flash_size=target_flash_size)

@@ -1012,6 +1012,13 @@ class CompilerService:
         if suffix == ".elf":
             return "elf"
         if suffix == ".bin":
+            # ESP32 .bin artifacts are always complete merged flash images built
+            # by _build_esp32_flash_image (bootloader + partitions + app).
+            # Using "merged-flash" lets the session manager skip re-detection
+            # and avoids double-wrapping when the bootloader binary is absent.
+            engine = self.BOARD_ENGINE.get(board, "avr")
+            if engine == "esp32":
+                return "merged-flash"
             return "raw-bin"
         if board.startswith("wokwi-arduino-"):
             return "intel-hex"
