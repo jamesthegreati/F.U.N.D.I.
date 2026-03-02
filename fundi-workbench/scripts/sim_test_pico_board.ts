@@ -23,6 +23,7 @@ const DEFAULT_BACKEND_URL = 'http://localhost:8000';
 const PICO_BOARD = 'wokwi-pi-pico';
 const PICO_CPU_HZ = 133_000_000;
 const RP2040_FLASH_START = 0x10000000;
+const RP2040_FLASH_END = 0x11000000;
 const RP2040_DEFAULT_SP = 0x20041f00;
 const DEFAULT_CHUNK_STEPS = 200_000;
 const DEFAULT_MAX_STEPS = 80_000_000;
@@ -77,25 +78,44 @@ function readEnvInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function resolveInitialStackPointer(firmware: Uint8Array): number {
-  const candidateSpAt100 = readLe32(firmware, 0x100);
-  if (candidateSpAt100 >= 0x20000000 && candidateSpAt100 <= 0x20042000) {
-    return candidateSpAt100;
-  }
+function resolveBootVector(firmware: Uint8Array): { sp: number; pc: number; vtor: number } {
+  const readAt = (offset: number) => ({ sp: readLe32(firmware, offset), pc: readLe32(firmware, offset + 4) });
+  const baseVec = readAt(0);
+  const altVec = readAt(0x100);
+  const hasValidVector = (sp: number, pc: number) =>
+    sp >= 0x20000000 && sp <= 0x20042000 && pc >= RP2040_FLASH_START && pc < RP2040_FLASH_END;
 
-  const candidateSpAt0 = readLe32(firmware, 0);
-  if (candidateSpAt0 >= 0x20000000 && candidateSpAt0 <= 0x20042000) {
-    return candidateSpAt0;
+  if (hasValidVector(baseVec.sp, baseVec.pc)) {
+    return { ...baseVec, vtor: RP2040_FLASH_START };
   }
-
-  return RP2040_DEFAULT_SP;
+  if (hasValidVector(altVec.sp, altVec.pc)) {
+    return { ...altVec, vtor: RP2040_FLASH_START + 0x100 };
+  }
+  return { sp: RP2040_DEFAULT_SP, pc: RP2040_FLASH_START, vtor: RP2040_FLASH_START };
 }
 
-function createSyntheticBootrom(firmware: Uint8Array): Uint32Array {
-  const bootrom = new Uint32Array(4 * 1024);
-  bootrom[0] = resolveInitialStackPointer(firmware) >>> 0;
-  bootrom[1] = (RP2040_FLASH_START | 1) >>> 0;
-  return bootrom;
+function applyBootVector(mcu: RP2040, bootVector: { sp: number; pc: number; vtor: number }): void {
+  mcu.core.VTOR = bootVector.vtor;
+
+  const core = mcu.core as unknown as {
+    SP: number;
+    SPmain?: number;
+    SPprocess?: number;
+    BXWritePC?: (value: number) => void;
+    PC: number;
+    xPSR: number;
+  };
+
+  core.SP = bootVector.sp;
+  if (typeof core.SPmain === 'number') core.SPmain = bootVector.sp;
+  if (typeof core.SPprocess === 'number') core.SPprocess = bootVector.sp;
+
+  if (typeof core.BXWritePC === 'function') {
+    core.BXWritePC(bootVector.pc);
+  } else {
+    core.PC = bootVector.pc & ~1;
+    core.xPSR = 0x01000000;
+  }
 }
 
 function collectLinesFromByte(charBuffer: { value: string }, lines: string[], byte: number): void {
@@ -182,10 +202,8 @@ function runPicoArtifact(
 
   const hintedHz = Number(hints?.cpuHz);
   mcu.clkSys = Number.isFinite(hintedHz) && hintedHz > 0 ? hintedHz : PICO_CPU_HZ;
-  mcu.loadBootrom(createSyntheticBootrom(firmware));
   mcu.flash.set(firmware);
-  mcu.reset();
-  mcu.core.PC = 0x00000000;
+  applyBootVector(mcu, resolveBootVector(firmware));
 
   const uart0Lines: string[] = [];
   const uart1Lines: string[] = [];
