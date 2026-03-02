@@ -34,7 +34,7 @@ const DETOUR_PADDING = 18;
 const PIN_EXCLUSION_RADIUS = 15;
 
 /** Maximum detour recursion depth */
-const MAX_DETOUR_DEPTH = 4;
+const MAX_DETOUR_DEPTH = 6;
 
 /* ─── Types ────────────────────────────────────────────────────────── */
 
@@ -203,6 +203,16 @@ function calculateDetour(
             ? Math.min(end.x, oRight)
             : Math.max(end.x, oLeft);
 
+        // Guard: obstacle spans the entire segment — route a clean U-shape at detourY
+        if ((goingRight && entryX > exitX) || (!goingRight && entryX < exitX)) {
+            return [
+                start,
+                { x: start.x, y: detourY },
+                { x: end.x, y: detourY },
+                end,
+            ];
+        }
+
         return [
             start,
             { x: entryX, y: start.y },
@@ -228,6 +238,16 @@ function calculateDetour(
     const exitY = goingDown
         ? Math.min(end.y, oBottom)
         : Math.max(end.y, oTop);
+
+    // Guard: obstacle spans the entire segment — route a clean U-shape at detourX
+    if ((goingDown && entryY > exitY) || (!goingDown && entryY < exitY)) {
+        return [
+            start,
+            { x: detourX, y: start.y },
+            { x: detourX, y: end.y },
+            end,
+        ];
+    }
 
     return [
         start,
@@ -655,6 +675,75 @@ export function moveSegment(
 /* ─── Main routing function ────────────────────────────────────────── */
 
 /**
+ * Check whether every segment in a path intersects at least one obstacle.
+ * Uses the standard COMPONENT_MARGIN for consistency with the rest of the router.
+ */
+function pathHasIntersections(points: WirePoint[], obstacles: ComponentBounds[]): boolean {
+    for (let i = 0; i < points.length - 1; i++) {
+        if (findIntersectingBounds(points[i], points[i + 1], obstacles).length > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Try to find a clean 3-segment path (VHV or HVH) that avoids all obstacles.
+ *
+ * VHV: vertical → horizontal → vertical  (middle segment at a shared Y)
+ * HVH: horizontal → vertical → horizontal (middle segment at a shared X)
+ *
+ * Candidates for the shared coordinate are tried in order of proximity to the
+ * geometric midpoint so the result stays as compact as possible.
+ */
+function routeThreeSegment(
+    start: WirePoint,
+    end: WirePoint,
+    obstacles: ComponentBounds[],
+    gridSize: number,
+    orientation: 'VHV' | 'HVH'
+): WirePoint[] | null {
+    if (orientation === 'VHV') {
+        const midY = (start.y + end.y) / 2;
+        const candidates: number[] = [midY, start.y, end.y];
+        for (const obs of obstacles) {
+            // Positions just outside each obstacle's top / bottom edges
+            candidates.push(obs.y - COMPONENT_MARGIN - gridSize);
+            candidates.push(obs.y + obs.height + COMPONENT_MARGIN + gridSize);
+        }
+        // Sort by closeness to midpoint so we pick the most compact path first
+        candidates.sort((a, b) => Math.abs(a - midY) - Math.abs(b - midY));
+
+        for (const rawY of candidates) {
+            const y = snapToGrid(rawY, gridSize);
+            const path: WirePoint[] = [start, { x: start.x, y }, { x: end.x, y }, end];
+            const cleaned = dedupeColinear(path);
+            if (!pathHasIntersections(cleaned, obstacles)) {
+                return cleaned;
+            }
+        }
+    } else {
+        const midX = (start.x + end.x) / 2;
+        const candidates: number[] = [midX, start.x, end.x];
+        for (const obs of obstacles) {
+            candidates.push(obs.x - COMPONENT_MARGIN - gridSize);
+            candidates.push(obs.x + obs.width + COMPONENT_MARGIN + gridSize);
+        }
+        candidates.sort((a, b) => Math.abs(a - midX) - Math.abs(b - midX));
+
+        for (const rawX of candidates) {
+            const x = snapToGrid(rawX, gridSize);
+            const path: WirePoint[] = [start, { x, y: start.y }, { x, y: end.y }, end];
+            const cleaned = dedupeColinear(path);
+            if (!pathHasIntersections(cleaned, obstacles)) {
+                return cleaned;
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Wokwi-style orthogonal routing between two points.
  *
  * @param start - Starting pin position
@@ -711,14 +800,16 @@ export function calculateOrthogonalPoints(
 
         if (allObstacles.length === 0) return dx >= dy ? 'horizontal' : 'vertical';
 
-        // Score both orientations by how many obstacles they hit
+        // Score both L-orientations using EXACT body overlap (margin=0) so the
+        // decision is stable across pan/zoom — it only flips when the path literally
+        // crosses a component body, not just passes within the clearance zone.
         const horizontalPath: WirePoint[] = [a, { x: b.x, y: a.y }, b];
         const verticalPath: WirePoint[] = [a, { x: a.x, y: b.y }, b];
 
         const countIntersections = (path: WirePoint[]): number => {
             let n = 0;
             for (let i = 0; i < path.length - 1; i++) {
-                n += findIntersectingBounds(path[i], path[i + 1], allObstacles).length;
+                n += findIntersectingBounds(path[i], path[i + 1], allObstacles, 0).length;
             }
             return n;
         };
@@ -737,42 +828,59 @@ export function calculateOrthogonalPoints(
 
         const leg = resolveFirstLeg(a, b);
 
-        // Build the L-shaped base path
-        let segmentPath: WirePoint[];
-        if (leg === 'horizontal') {
-            segmentPath = [a, { x: b.x, y: a.y }, b];
-        } else {
-            segmentPath = [a, { x: a.x, y: b.y }, b];
-        }
+        // Build the preferred L-shaped base path
+        const lPath: WirePoint[] = leg === 'horizontal'
+            ? [a, { x: b.x, y: a.y }, b]
+            : [a, { x: a.x, y: b.y }, b];
 
-        if (allObstacles.length === 0) {
-            // No obstacles: simple L-path
-            for (let j = 1; j < segmentPath.length; j++) {
-                const p = segmentPath[j];
+        // ── Fast path: no obstacles or L-path is already clear ──────────
+        if (allObstacles.length === 0 || !pathHasIntersections(lPath, allObstacles)) {
+            for (let j = 1; j < lPath.length; j++) {
+                const p = lPath[j];
                 if (Math.abs(p.x - a.x) >= 0.5 || Math.abs(p.y - a.y) >= 0.5) {
                     out.push(p);
                 }
             }
+            continue;
+        }
+
+        // ── L-path blocked: try a clean 3-segment route (Wokwi-style) ───
+        // Try both VHV and HVH and pick the shorter result.
+        const vhvPath = routeThreeSegment(a, b, allObstacles, gridSize, 'VHV');
+        const hvhPath = routeThreeSegment(a, b, allObstacles, gridSize, 'HVH');
+
+        let best: WirePoint[] | null = null;
+        if (vhvPath && hvhPath) {
+            best = vhvPath.length <= hvhPath.length ? vhvPath : hvhPath;
         } else {
-            // Route each sub-segment around obstacles
-            const finalPath: WirePoint[] = [a];
-            for (let segIdx = 0; segIdx < segmentPath.length - 1; segIdx++) {
-                const segStart = segmentPath[segIdx];
-                const segEnd = segmentPath[segIdx + 1];
+            best = vhvPath ?? hvhPath;
+        }
 
-                if (Math.abs(segStart.x - segEnd.x) < 0.5 && Math.abs(segStart.y - segEnd.y) < 0.5) continue;
-
-                const routed = routeSegmentAroundObstacles(segStart, segEnd, allObstacles, gridSize);
-
-                // Append skipping the first point (already in finalPath)
-                for (let j = 1; j < routed.length; j++) {
-                    finalPath.push(routed[j]);
-                }
+        if (best) {
+            for (let j = 1; j < best.length; j++) {
+                out.push(best[j]);
             }
+            continue;
+        }
 
-            for (let j = 1; j < finalPath.length; j++) {
-                out.push(finalPath[j]);
+        // ── Fallback: per-segment recursive detour (legacy) ─────────────
+        const finalPath: WirePoint[] = [a];
+        for (let segIdx = 0; segIdx < lPath.length - 1; segIdx++) {
+            const segStart = lPath[segIdx];
+            const segEnd = lPath[segIdx + 1];
+
+            if (Math.abs(segStart.x - segEnd.x) < 0.5 && Math.abs(segStart.y - segEnd.y) < 0.5) continue;
+
+            const routed = routeSegmentAroundObstacles(segStart, segEnd, allObstacles, gridSize);
+
+            // Append skipping the first point (already in finalPath)
+            for (let j = 1; j < routed.length; j++) {
+                finalPath.push(routed[j]);
             }
+        }
+
+        for (let j = 1; j < finalPath.length; j++) {
+            out.push(finalPath[j]);
         }
     }
 
