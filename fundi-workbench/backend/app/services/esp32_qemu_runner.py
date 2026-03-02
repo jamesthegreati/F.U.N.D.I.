@@ -238,7 +238,19 @@ class Esp32QemuRunner:
 
     async def start(self, event_callback: Callable[[dict[str, Any]], Any]) -> None:
         """Launch QEMU and begin streaming events."""
+        logger.info("[ESP32-QEMU] start() called for session %s", self.session_id)
+        logger.info("[ESP32-QEMU] flash_image_path=%s, exists=%s",
+                    self.flash_image_path, os.path.isfile(self.flash_image_path))
+        if os.path.isfile(self.flash_image_path):
+            fsize = os.path.getsize(self.flash_image_path)
+            logger.info("[ESP32-QEMU] flash image file size: %d bytes", fsize)
+            # Log first 16 bytes for header verification
+            with open(self.flash_image_path, 'rb') as f:
+                header = f.read(16)
+            logger.info("[ESP32-QEMU] flash image header (first 16 bytes): %s", header.hex())
+
         qemu_bin = _find_qemu_binary()
+        logger.info("[ESP32-QEMU] QEMU binary resolved to: %s", qemu_bin)
         if not qemu_bin:
             raise RuntimeError(
                 "qemu-system-xtensa not found. Install Espressif QEMU:\n"
@@ -251,6 +263,7 @@ class Esp32QemuRunner:
         # Pick free TCP ports for UART and QMP
         self.ports.uart = await _pick_free_port()
         self.ports.qmp = await _pick_free_port()
+        logger.info("[ESP32-QEMU] Ports: uart=%d, qmp=%d", self.ports.uart, self.ports.qmp)
 
         cmd = [
             qemu_bin,
@@ -272,13 +285,45 @@ class Esp32QemuRunner:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-        except FileNotFoundError:
-            raise RuntimeError(f"QEMU binary not found at: {qemu_bin}")
+            logger.info("[ESP32-QEMU] QEMU process launched, pid=%s", self._process.pid)
+        except FileNotFoundError as exc:
+            logger.error("[ESP32-QEMU] QEMU binary not found at: %s – %s", qemu_bin, exc)
+            raise RuntimeError(f"QEMU binary not found at: {qemu_bin}") from exc
+        except Exception as exc:
+            logger.error("[ESP32-QEMU] Failed to launch QEMU process: %r", exc)
+            raise
 
         self._running = True
 
         # Give QEMU a moment to open its TCP servers
+        logger.info("[ESP32-QEMU] Waiting 1.5s for QEMU TCP servers...")
         await asyncio.sleep(1.5)
+
+        # Check if QEMU exited early
+        if self._process.returncode is not None:
+            logger.error("[ESP32-QEMU] QEMU exited early with code %d", self._process.returncode)
+            stderr_data = b""
+            stdout_data = b""
+            if self._process.stderr:
+                stderr_data = await self._process.stderr.read()
+            if self._process.stdout:
+                stdout_data = await self._process.stdout.read()
+            stderr_text = stderr_data.decode('utf-8', errors='replace').strip()
+            stdout_text = stdout_data.decode('utf-8', errors='replace').strip()
+            logger.error("[ESP32-QEMU] QEMU stderr: %s", stderr_text[:2000])
+            logger.error("[ESP32-QEMU] QEMU stdout: %s", stdout_text[:2000])
+            self._running = False
+            self._emit({"type": "serial", "stream": "stderr",
+                        "line": f"[sim] QEMU exited with code {self._process.returncode}"})
+            if stderr_text:
+                for line in stderr_text.splitlines()[:20]:
+                    self._emit({"type": "serial", "stream": "stderr", "line": f"[QEMU] {line}"})
+            raise RuntimeError(
+                f"QEMU exited immediately with code {self._process.returncode}. "
+                f"stderr: {stderr_text[:500]}"
+            )
+
+        logger.info("[ESP32-QEMU] QEMU still running after 1.5s, connecting UART + QMP...")
 
         # Connect UART reader
         self._uart_reader = asyncio.create_task(
@@ -292,6 +337,7 @@ class Esp32QemuRunner:
 
         # Monitor QEMU stderr for diagnostics
         asyncio.create_task(self._read_stderr(), name=f"qemu-stderr-{self.session_id}")
+        logger.info("[ESP32-QEMU] All background tasks launched for session %s", self.session_id)
 
     async def stop(self) -> None:
         """Terminate the QEMU process and clean up."""
@@ -409,6 +455,7 @@ class Esp32QemuRunner:
     async def _read_stderr(self) -> None:
         """Forward QEMU stderr as diagnostic serial output."""
         if not self._process or not self._process.stderr:
+            logger.warning("[ESP32-QEMU] _read_stderr: no stderr pipe available")
             return
         try:
             while self._running:
@@ -418,11 +465,13 @@ class Esp32QemuRunner:
                 for raw_line in data.decode("utf-8", errors="replace").splitlines():
                     line = raw_line.strip()
                     if line:
-                        logger.debug("[QEMU-stderr] %s", line)
+                        logger.info("[QEMU-stderr] %s", line)
+                        # Also send to the WebSocket so the user sees it
+                        self._emit({"type": "serial", "stream": "stderr", "line": f"[QEMU] {line}"})
         except asyncio.CancelledError:
             pass
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[ESP32-QEMU] stderr reader error: %s", exc)
 
     # ─── QMP (GPIO polling) ──────────────────────────────────────────
 
@@ -674,13 +723,21 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
     with a default partition table. If it's a pre-merged image, it ensures
     the flash file size exactly matches the size requested in the ESP32 header.
     """
+    logger.info("[ESP32-Flash] build_flash_image_from_b64: artifact_type=%s, b64_len=%d",
+                artifact_type, len(artifact_b64) if artifact_b64 else 0)
     raw = base64.b64decode(artifact_b64)
+    logger.info("[ESP32-Flash] decoded payload: %d bytes, first 16 bytes: %s",
+                len(raw), raw[:16].hex() if len(raw) >= 16 else raw.hex())
 
     target_flash_size = FLASH_SIZE
 
     # Check if this looks like a merged image (has bootloader magic at 0x1000)
     # ESP32 bootloader starts with 0xE9 at the entry point
-    if len(raw) > BOOTLOADER_OFFSET + 4 and raw[BOOTLOADER_OFFSET] == 0xE9:
+    has_bl_magic = len(raw) > BOOTLOADER_OFFSET + 4 and raw[BOOTLOADER_OFFSET] == 0xE9
+    logger.info("[ESP32-Flash] raw_len=%d, has_bootloader_magic_at_0x1000=%s (byte=0x%02x)",
+                len(raw), has_bl_magic,
+                raw[BOOTLOADER_OFFSET] if len(raw) > BOOTLOADER_OFFSET else 0)
+    if has_bl_magic:
         # Extract the flash size ID from byte 3 (high 4 bits)
         size_id = (raw[BOOTLOADER_OFFSET + 3] >> 4) & 0x0F
         mapped_size = {
@@ -690,6 +747,7 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
             3: 8 * 1024 * 1024,
             4: 16 * 1024 * 1024,
         }.get(size_id, FLASH_SIZE)
+        logger.info("[ESP32-Flash] Merged image detected: size_id=%d, mapped_size=%d", size_id, mapped_size)
 
         # QEMU esp32 machine supports 2, 4, 8, 16 MB. Min 4MB is safest.
         if mapped_size < 4 * 1024 * 1024:
@@ -698,6 +756,8 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
             target_flash_size = 16 * 1024 * 1024
         else:
             target_flash_size = mapped_size
+
+        logger.info("[ESP32-Flash] target_flash_size=%d, padding and patching headers...", target_flash_size)
 
         # Pad to exactly the required flash size
         padded = bytearray(target_flash_size)
@@ -712,10 +772,14 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
         _patch_flash_header(padded, BOOTLOADER_OFFSET)
         _patch_flash_header(padded, APP_OFFSET)
 
+        logger.info("[ESP32-Flash] Returning merged flash image: %d bytes", len(padded))
         return bytes(padded)
 
     # Standard app only (no bootloader included). Extract size from app header.
-    if len(raw) > 4 and raw[0] == 0xE9:
+    has_app_magic = len(raw) > 4 and raw[0] == 0xE9
+    logger.info("[ESP32-Flash] App-only path: has_app_magic=%s (byte0=0x%02x)",
+                has_app_magic, raw[0] if raw else 0)
+    if has_app_magic:
         size_id = (raw[3] >> 4) & 0x0F
         mapped_size = {
             0: 1024 * 1024,
@@ -724,9 +788,14 @@ def build_flash_image_from_b64(artifact_b64: str, artifact_type: str = "raw-bin"
             3: 8 * 1024 * 1024,
             4: 16 * 1024 * 1024,
         }.get(size_id, FLASH_SIZE)
+        logger.info("[ESP32-Flash] App header size_id=%d, mapped_size=%d", size_id, mapped_size)
         
         if mapped_size >= 4 * 1024 * 1024 and mapped_size <= 16 * 1024 * 1024:
             target_flash_size = mapped_size
 
     # Build the wrapper
-    return create_flash_image(app_bin=raw, flash_size=target_flash_size)
+    logger.info("[ESP32-Flash] Building wrapped flash image with app at 0x%x, flash_size=%d",
+                APP_OFFSET, target_flash_size)
+    result = create_flash_image(app_bin=raw, flash_size=target_flash_size)
+    logger.info("[ESP32-Flash] Returning wrapped flash image: %d bytes", len(result))
+    return result

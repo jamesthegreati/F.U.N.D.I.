@@ -166,6 +166,11 @@ class SimulationSessionManager:
             # Create temp directory for flash image
             temp_dir = tempfile.mkdtemp(prefix="fundi-esp32-sim-")
             session._temp_dir = temp_dir
+            logger.info("[ESP32-QEMU] Session %s: temp_dir=%s", session.id, temp_dir)
+            logger.info("[ESP32-QEMU] Session %s: board=%s artifact_type=%s payload_len=%d hints=%s",
+                        session.id, session.board, session.artifact_type,
+                        len(session.artifact_payload) if session.artifact_payload else 0,
+                        session.simulation_hints)
 
             await session.queue.put({
                 "type": "serial",
@@ -175,11 +180,20 @@ class SimulationSessionManager:
 
             # Build flash image from compile artifact
             try:
+                logger.info("[ESP32-QEMU] Session %s: calling build_flash_image_from_b64 (artifact_type=%s, payload_len=%d)",
+                            session.id, session.artifact_type,
+                            len(session.artifact_payload) if session.artifact_payload else 0)
                 flash_data = build_flash_image_from_b64(
                     session.artifact_payload,
                     session.artifact_type,
                 )
+                logger.info("[ESP32-QEMU] Session %s: flash image built, size=%d bytes",
+                            session.id, len(flash_data))
             except Exception as exc:
+                import traceback
+                tb = traceback.format_exc()
+                logger.error("[ESP32-QEMU] Session %s: flash image build FAILED: %s\n%s",
+                             session.id, exc, tb)
                 await session.queue.put({
                     "type": "serial",
                     "stream": "stderr",
@@ -193,6 +207,8 @@ class SimulationSessionManager:
 
             flash_path = Path(temp_dir) / "esp32_flash.bin"
             flash_path.write_bytes(flash_data)
+            logger.info("[ESP32-QEMU] Session %s: flash image written to %s (%d bytes)",
+                        session.id, flash_path, len(flash_data))
 
             await session.queue.put({
                 "type": "serial",
@@ -215,7 +231,10 @@ class SimulationSessionManager:
                 except asyncio.QueueFull:
                     pass
 
+            logger.info("[ESP32-QEMU] Session %s: calling runner.start()", session.id)
             await runner.start(on_event)
+            logger.info("[ESP32-QEMU] Session %s: runner.start() returned, _running=%s",
+                        session.id, runner._running)
 
             await session.queue.put({
                 "type": "serial",
@@ -233,18 +252,23 @@ class SimulationSessionManager:
                     "timestamp": time.time(),
                 })
 
+            logger.info("[ESP32-QEMU] Session %s: run loop exited (status=%s, runner._running=%s)",
+                        session.id, session.status, runner._running)
+
         except asyncio.CancelledError:
-            pass
+            logger.info("[ESP32-QEMU] Session %s: cancelled", session.id)
         except Exception as exc:
-            logger.error("[ESP32-QEMU] Session %s error: %s", session.id, exc)
+            import traceback
+            tb = traceback.format_exc()
+            logger.error("[ESP32-QEMU] Session %s error: %r\n%s", session.id, exc, tb)
             await session.queue.put({
                 "type": "error",
-                "message": str(exc),
+                "message": str(exc) or f"Unhandled exception: {type(exc).__name__}",
             })
             await session.queue.put({
                 "type": "serial",
                 "stream": "stderr",
-                "line": f"[sim] ESP32 simulation error: {exc}",
+                "line": f"[sim] ESP32 simulation error: {type(exc).__name__}: {exc}",
             })
 
     # ─── Fallback non-QEMU run loop (for boards without QEMU support) ─
