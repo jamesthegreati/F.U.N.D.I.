@@ -158,7 +158,7 @@ def _build_minimal_partition_table(app_offset: int, app_max_size: int) -> bytes:
     # Offset (little-endian)
     struct.pack_into('<I', entry, 4, app_offset)
     # Size (little-endian) – cap at 1MB if space is tight, or use max available
-    size = min(app_max_size, max(app_max_size, 1 * 1024 * 1024))
+    size = min(app_max_size, 1 * 1024 * 1024)
     struct.pack_into('<I', entry, 8, size)
     # Label: "factory\0..."
     label = b'factory\x00' + b'\x00' * 12
