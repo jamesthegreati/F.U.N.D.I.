@@ -84,7 +84,7 @@ class PatchFlashHeaderTests(unittest.TestCase):
     def test_skips_when_offset_exceeds_buffer(self) -> None:
         buf = bytearray(4)
         _patch_flash_header(buf, 8)  # offset beyond buffer
-        # should not raise
+        self.assertEqual(buf, bytearray(4))  # buffer unchanged
 
     def test_patches_at_bootloader_offset(self) -> None:
         buf = bytearray(BOOTLOADER_OFFSET + 8)
