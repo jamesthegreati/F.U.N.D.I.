@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   runner.portD.setPin(2, true);
   runSeconds(0.1);
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 30).join('\n'));
 
   const sawPressed = serial.lines.some((l) => /Button\s+PRESSED/i.test(l));
@@ -66,12 +66,12 @@ async function main(): Promise<void> {
     throw new Error(`Button & LED test failed: did not observe pressed message. Lines: ${JSON.stringify(serial.lines.slice(0, 40))}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Button press detected via serial.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

@@ -144,12 +144,12 @@ async function main(): Promise<void> {
     throw new Error(`TM1637 test failed: missing serial marker. Lines: ${JSON.stringify(serial.lines)}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: TM1637 emulator captured expected segment bytes.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

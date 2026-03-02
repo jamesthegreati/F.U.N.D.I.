@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   const maxCycles = Math.floor(UNO_CPU_FREQUENCY_HZ * 1.2);
   runForCycles(runner, (cycles) => sensor.tick(cycles), maxCycles);
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 30).join('\n'));
 
   const sawDistance = serial.lines.some((l) => /Distance:\s*\d+(\.\d+)?\s*cm/i.test(l));
@@ -67,12 +67,12 @@ async function main(): Promise<void> {
     );
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Ultrasonic distance measurement works and triggers CLOSE.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

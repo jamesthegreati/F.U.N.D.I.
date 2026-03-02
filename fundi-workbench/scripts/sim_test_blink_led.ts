@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   const maxCycles = Math.floor(UNO_CPU_FREQUENCY_HZ * 2.4);
   runForCycles(runner, () => {}, maxCycles);
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 20).join('\n'));
 
   const hasOn = serial.lines.some((l) => /LED ON/i.test(l));
@@ -54,12 +54,12 @@ async function main(): Promise<void> {
     );
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Blink LED prints ON/OFF.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

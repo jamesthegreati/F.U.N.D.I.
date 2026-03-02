@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   const maxCycles = Math.floor(UNO_CPU_FREQUENCY_HZ * 6.2);
   runForCycles(runner, () => {}, maxCycles);
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 20).join('\n'));
 
   const sawStop = serial.lines.some((l) => /STOP\s*-\s*Red/i.test(l));
@@ -52,12 +52,12 @@ async function main(): Promise<void> {
     throw new Error(`Traffic light test failed (sawStop=${sawStop}, sawGo=${sawGo}). Lines: ${JSON.stringify(serial.lines.slice(0, 40))}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Traffic light progresses from STOP to GO.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

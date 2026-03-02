@@ -83,7 +83,7 @@ async function main(): Promise<void> {
 
   for (const phase of phases) {
     lux = phase.lux;
-    // eslint-disable-next-line no-console
+     
     console.log(`[LDR] Setting lux=${phase.lux} (${phase.label})`);
 
     const target = runner.cpu.cycles + cyclesPerPhase;
@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 20).join('\n'));
 
   if (luxReadings.length < 2) {
@@ -109,12 +109,12 @@ async function main(): Promise<void> {
     throw new Error(`Photoresistor test failed: expected lux to vary significantly (min=${minLux}, max=${maxLux}).`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Photoresistor lux changes with ADC input.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

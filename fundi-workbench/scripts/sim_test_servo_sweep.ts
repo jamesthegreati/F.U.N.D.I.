@@ -55,9 +55,9 @@ async function main(): Promise<void> {
   const maxCycles = Math.floor(UNO_CPU_FREQUENCY_HZ * 1.3);
   runForCycles(runner, (cycles) => servo.tick(cycles), maxCycles);
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 20).join('\n'));
-  // eslint-disable-next-line no-console
+   
   console.log('[SERVO] angleSamples=', angles.slice(0, 20));
 
   const unique = new Set(angles.map((a) => Math.round(a)));
@@ -73,12 +73,12 @@ async function main(): Promise<void> {
     );
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Servo PWM produces changing angles.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

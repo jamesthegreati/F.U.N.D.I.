@@ -119,13 +119,13 @@ async function main(): Promise<void> {
   }
 
   const lines = renderDisplay(lastState);
-  // eslint-disable-next-line no-console
+   
   console.log('[LCD2004] Line0:', JSON.stringify(lines[0] ?? ''));
-  // eslint-disable-next-line no-console
+   
   console.log('[LCD2004] Line1:', JSON.stringify(lines[1] ?? ''));
-  // eslint-disable-next-line no-console
+   
   console.log('[LCD2004] Line2:', JSON.stringify(lines[2] ?? ''));
-  // eslint-disable-next-line no-console
+   
   console.log('[LCD2004] Line3:', JSON.stringify(lines[3] ?? ''));
 
   const checks = [
@@ -144,12 +144,12 @@ async function main(): Promise<void> {
     );
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: LCD2004 renders all four rows correctly.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

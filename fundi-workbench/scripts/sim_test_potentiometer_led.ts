@@ -72,7 +72,7 @@ async function main(): Promise<void> {
 
   for (const phase of phases) {
     potValue = phase.pot;
-    // eslint-disable-next-line no-console
+     
     console.log(`[POT] Setting pot to ${phase.pot} (${phase.label})`);
 
     const target = runner.cpu.cycles + cyclesPerPhase;
@@ -85,12 +85,12 @@ async function main(): Promise<void> {
     }
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log(`[POT] ADC reads observed: ${adcReadCount}`);
 
   // Print sample output
   for (const line of serial.lines.slice(0, 25)) {
-    // eslint-disable-next-line no-console
+     
     console.log(line);
   }
 
@@ -105,12 +105,12 @@ async function main(): Promise<void> {
     );
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Potentiometer readings change and reach extremes.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

@@ -266,14 +266,14 @@ async function main(): Promise<void> {
 
   unsub();
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 16).join('\n'));
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Smart Facility Guardian triggers alarm and updates outputs.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

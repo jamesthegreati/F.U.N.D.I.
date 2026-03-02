@@ -232,7 +232,7 @@ void loop() {
 
   // Print what we got
   for (const line of serialLines.slice(0, 20)) {
-    // eslint-disable-next-line no-console
+     
     console.log(line);
   }
 
@@ -243,12 +243,12 @@ void loop() {
     throw new Error(`DHT22 sim test failed (hasReading=${hasReading}, hasErr=${hasErr}). Lines: ${JSON.stringify(serialLines.slice(0, 20))}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: DHT22 produced valid readings.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

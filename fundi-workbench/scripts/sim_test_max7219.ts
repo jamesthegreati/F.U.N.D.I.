@@ -124,12 +124,12 @@ async function main(): Promise<void> {
     throw new Error(`MAX7219 test failed: missing serial marker. Lines: ${JSON.stringify(serial.lines)}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: MAX7219 emulator captured expected row writes.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

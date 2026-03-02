@@ -77,7 +77,7 @@ async function main(): Promise<void> {
 
   for (const phase of phases) {
     tempC = phase.c;
-    // eslint-disable-next-line no-console
+     
     console.log(`[NTC] Setting tempC=${tempC} (${phase.label})`);
 
     const target = runner.cpu.cycles + cyclesPerPhase;
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 20).join('\n'));
 
   if (seenTemps.length < 2) {
@@ -103,12 +103,12 @@ async function main(): Promise<void> {
     throw new Error(`NTC test failed: expected temperature range to change (min=${minT}, max=${maxT}).`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: NTC temperature changes with ADC input.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

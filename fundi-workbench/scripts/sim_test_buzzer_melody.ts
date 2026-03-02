@@ -93,25 +93,25 @@ async function main(): Promise<void> {
     if (toggles > 0 && freqHz > 20 && freqHz < 10_000) freqs.push(freqHz);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 20).join('\n'));
 
   const sawAudible = freqs.length > 0;
   const sample = freqs.slice(0, 12).map((f) => Math.round(f));
 
-  // eslint-disable-next-line no-console
+   
   console.log('[BUZZ] audibleFrames=', freqs.length, 'sampleHz=', sample);
 
   if (!sawAudible) {
     throw new Error(`Buzzer test failed: no audible toggles detected. Serial: ${JSON.stringify(serial.lines.slice(0, 20))}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Buzzer pin toggles produce audible frequencies.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

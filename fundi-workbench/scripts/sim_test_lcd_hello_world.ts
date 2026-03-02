@@ -66,7 +66,7 @@ async function main(): Promise<void> {
 
   // Print serial (first few lines)
   for (const line of serial.lines.slice(0, 12)) {
-    // eslint-disable-next-line no-console
+     
     console.log(line);
   }
 
@@ -75,9 +75,9 @@ async function main(): Promise<void> {
   }
 
   const lines = renderDisplay(lastState);
-  // eslint-disable-next-line no-console
+   
   console.log('[LCD] Line0:', JSON.stringify(lines[0]));
-  // eslint-disable-next-line no-console
+   
   console.log('[LCD] Line1:', JSON.stringify(lines[1]));
 
   const line0 = lines[0] ?? '';
@@ -95,12 +95,12 @@ async function main(): Promise<void> {
     );
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: LCD display updated with expected text.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

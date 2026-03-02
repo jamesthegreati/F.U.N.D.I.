@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   const maxCycles = Math.floor(UNO_CPU_FREQUENCY_HZ * 4.0);
   runForCycles(runner, () => keypad.tick(), maxCycles);
 
-  // eslint-disable-next-line no-console
+   
   console.log(serial.lines.slice(0, 60).join('\n'));
 
   const sawGranted = serial.lines.some((l) => /ACCESS\s+GRANTED/i.test(l));
@@ -107,12 +107,12 @@ async function main(): Promise<void> {
     throw new Error(`Keypad password test failed: did not observe ACCESS GRANTED. Lines: ${JSON.stringify(serial.lines.slice(0, 80))}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Keypad accepts password and grants access.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });

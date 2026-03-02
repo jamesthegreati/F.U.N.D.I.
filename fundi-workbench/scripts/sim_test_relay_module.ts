@@ -86,12 +86,12 @@ async function main(): Promise<void> {
     throw new Error(`Relay test failed: missing serial marker. Lines: ${JSON.stringify(serial.lines)}`);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log('PASS: Relay module toggles COM between NC and NO.');
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exitCode = 1;
 });
