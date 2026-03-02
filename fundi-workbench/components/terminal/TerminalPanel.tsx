@@ -1,15 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Terminal, Bot, Activity, Wifi, Upload } from 'lucide-react'
+import { Terminal, Bot, Activity, Wifi, Upload, AlertTriangle } from 'lucide-react'
 import { CommandInterface } from './CommandInterface'
 import { SerialMonitor } from './SerialMonitor'
 import { LogicAnalyzerPanel } from '@/components/LogicAnalyzerPanel'
 import { NetworkPanel } from '@/components/NetworkPanel'
+import { ValidationPanel } from '@/components/ValidationPanel'
+import { useCircuitValidation } from '@/hooks/useCircuitValidation'
 import { cn } from '@/utils/cn'
 import { useAppStore, getBackendUrl } from '@/store/useAppStore'
 
-type TerminalTab = 'serial' | 'upload' | 'assistant' | 'logic' | 'network'
+type TerminalTab = 'serial' | 'upload' | 'assistant' | 'logic' | 'network' | 'validation'
 
 const ARDUINO_UPLOAD_BOARDS = [
   { id: 'wokwi-arduino-uno', label: 'Arduino Uno' },
@@ -345,14 +347,18 @@ export function TerminalPanel({
     serial: false,
     upload: false,
     assistant: true,
+    validation: false,
     logic: false,
     network: false,
   })
 
   const isESP32 = boardType?.toLowerCase().includes('esp32')
 
+  // Circuit validation hook
+  const validation = useCircuitValidation({ enabled: true })
+
   const availableTabs = useMemo(() => {
-    const base: TerminalTab[] = ['serial', 'upload', 'assistant', 'logic']
+    const base: TerminalTab[] = ['serial', 'upload', 'assistant', 'validation', 'logic']
     if (isESP32) base.push('network')
     return base
   }, [isESP32])
@@ -444,6 +450,32 @@ export function TerminalPanel({
         <button
           type="button"
           role="tab"
+          aria-selected={activeTab === 'validation'}
+          onClick={() => activateTab('validation')}
+          className={cn(
+            'tab-pill flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium',
+            activeTab === 'validation'
+              ? validation.hasCriticalIssues
+                ? 'border-red-500/30 bg-red-500/10 text-red-500'
+                : validation.hasErrors
+                ? 'border-orange-500/30 bg-orange-500/10 text-orange-500'
+                : validation.hasIssues
+                ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-500'
+                : 'border-green-500/30 bg-green-500/10 text-green-500'
+              : 'border-transparent text-ide-text-muted hover:border-ide-border-subtle hover:bg-ide-panel-hover hover:text-ide-text'
+          )}
+        >
+          <AlertTriangle className="icon-balanced h-3.5 w-3.5" />
+          <span>Validation</span>
+          {validation.hasIssues && (
+            <span className="ml-1 rounded-full bg-current px-1.5 py-0.5 text-[10px] font-bold text-white">
+              {validation.issues.length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={activeTab === 'logic'}
           onClick={() => activateTab('logic')}
           className={cn(
@@ -495,6 +527,13 @@ export function TerminalPanel({
         {mounted.assistant && (
           <div role="tabpanel" aria-label="AI Assistant" className={cn('h-full', activeTab !== 'assistant' && 'hidden')}>
             <CommandInterface />
+          </div>
+        )}
+        {mounted.validation && (
+          <div role="tabpanel" aria-label="Validation" className={cn('h-full overflow-auto', activeTab !== 'validation' && 'hidden')}>
+            <div className="p-4">
+              <ValidationPanel issues={validation.issues} />
+            </div>
           </div>
         )}
         {mounted.logic && (
