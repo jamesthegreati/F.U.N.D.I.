@@ -486,6 +486,16 @@ html.theme-light .fundi-monaco .monaco-editor .view-overlays .fundi-active-line 
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* AI typing indicator dots */
+@keyframes fundi-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.fundi-typing-dot {
+  animation: fundi-typing-bounce 1.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
