@@ -275,7 +275,8 @@ jobs:
         if: always()
         run: |
           if [ -f /tmp/backend_pid.txt ]; then
-            kill $(cat /tmp/backend_pid.txt) 2>/dev/null || true
+            PID=$(cat /tmp/backend_pid.txt)
+            kill "$PID" 2>/dev/null && sleep 2 || kill -9 "$PID" 2>/dev/null || true
           fi
 
       - name: Collect backend logs on failure

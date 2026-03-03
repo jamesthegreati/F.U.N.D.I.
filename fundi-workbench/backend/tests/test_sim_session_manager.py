@@ -44,8 +44,12 @@ class SimulationSessionManagerTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await manager.start(session.id)
-        # Give the async task time to fail (QEMU not found)
-        await asyncio.sleep(3.0)
+        # Poll for the expected state transition instead of a fixed sleep
+        for _ in range(30):
+            await asyncio.sleep(0.1)
+            current = await manager.get_session(session.id)
+            if current and current.status == "stopped":
+                break
 
         # Session should have transitioned to stopped, not stuck on running
         current = await manager.get_session(session.id)
