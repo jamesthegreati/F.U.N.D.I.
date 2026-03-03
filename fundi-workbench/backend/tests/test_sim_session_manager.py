@@ -26,6 +26,42 @@ class SimulationSessionManagerTests(unittest.IsolatedAsyncioTestCase):
         stopped = await manager.stop(session.id)
         self.assertEqual(stopped.status, "stopped")
 
+    async def test_esp32_session_stops_on_qemu_failure(self) -> None:
+        """When QEMU is not available, the ESP32 session should transition
+        from 'running' to 'stopped' after the task exits instead of
+        staying in a zombie 'running' state."""
+        manager = SimulationSessionManager()
+        # Use a minimal payload – flash image build may succeed, but
+        # runner.start() will fail because QEMU is not installed.
+        import base64
+        dummy_payload = base64.b64encode(b"\xe9\x01\x02\x20" + b"\x00" * 100).decode()
+
+        session = await manager.create_session(
+            board="wokwi-esp32-devkit-v1",
+            artifact_type="merged-flash",
+            artifact_payload=dummy_payload,
+            simulation_hints={"engine": "esp32"},
+        )
+
+        await manager.start(session.id)
+        # Give the async task time to fail (QEMU not found)
+        await asyncio.sleep(3.0)
+
+        # Session should have transitioned to stopped, not stuck on running
+        current = await manager.get_session(session.id)
+        self.assertIsNotNone(current)
+        self.assertEqual(current.status, "stopped",
+                         "Session should be 'stopped' after QEMU failure, not zombie 'running'")
+
+        # Collect events and verify we got an error event
+        events = []
+        while not current.queue.empty():
+            events.append(current.queue.get_nowait())
+
+        error_events = [e for e in events if e.get("type") == "error"]
+        self.assertTrue(len(error_events) > 0,
+                        "Expected at least one error event from failed QEMU launch")
+
 
 if __name__ == "__main__":
     unittest.main()

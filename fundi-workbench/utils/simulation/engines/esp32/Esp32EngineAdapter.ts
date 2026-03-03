@@ -331,11 +331,19 @@ export class Esp32EngineAdapter implements SimulationEngine {
         break
 
       case 'session-created':
-      case 'session-stopped':
-      case 'session-reset':
-      case 'session-closed':
-        // Session lifecycle events
         break
+
+      case 'session-stopped':
+      case 'session-closed':
+        // Backend session ended – mark adapter as not running so the
+        // frontend stops its RAF loop and updates the UI.
+        if (this.running) {
+          this.running = false
+          this.handlers.onSerial?.('[sim] ESP32 simulation session ended.')
+        }
+        break
+
+      case 'session-reset':
 
       default:
         // Unknown event type
