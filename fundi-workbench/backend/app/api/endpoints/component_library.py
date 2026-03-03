@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/components", tags=["components"])
 
-_CATALOG_PATH = Path(__file__).resolve().parent.parent.parent / "app" / "prompts" / "components" / "component_catalog.json"
-
-# Try a few reasonable relative locations
+# Try a few reasonable relative locations for the component catalog
 _SEARCH_PATHS = [
     Path(__file__).resolve().parent.parent.parent / "prompts" / "components" / "component_catalog.json",
     Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "components" / "component_catalog.json",

@@ -62,3 +62,5 @@ Place components in organized groups:
 4. Column 3: Complex (displays, ICs) at x ≈ 700, y starting at 0, step 120
 5. Displays: below MCU at x=0, y=350
 6. Support components (resistors) near their related parts
+
+Note: Columns 1-3 are to the RIGHT of the MCU (x≥400), so they safely avoid the reserved zone even when y starts at 0.
