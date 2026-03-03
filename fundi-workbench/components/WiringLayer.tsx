@@ -10,6 +10,7 @@ import {
   findSegmentIndex,
   moveSegment,
   snapPointToGrid,
+  avoidParallelOverlaps,
   WOKWI_GRID_PX,
   type ComponentBounds,
   type PinObstacle,
@@ -331,8 +332,12 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
       })
       .filter((x): x is { id: string; color: string; points: WirePoint[] } => Boolean(x));
 
+    // Apply parallel-wire spacing so overlapping wires get offset lanes.
+    const spacedPoints = avoidParallelOverlaps(base, { gridSize: routingGrid });
+
     return base.map((w) => {
-      return { ...w, points: w.points, d: pointsToPathD(w.points) };
+      const pts = spacedPoints.get(w.id) ?? w.points;
+      return { ...w, points: pts, d: pointsToPathD(pts) };
     });
   }, [connections, getPinPoint, wirePointOverrides, gridSize, componentBounds, pinObstacles]);
 

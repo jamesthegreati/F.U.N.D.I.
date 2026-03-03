@@ -1371,6 +1371,27 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                 {pins.map((pin) => {
                     const isHovered = hoveredPin === pin.id;
 
+                    // Compute tooltip position: offset away from cursor so it isn't blocked.
+                    // Offset direction depends on which edge the pin is on.
+                    const TT_W = 80;
+                    const TT_H = 22;
+                    const TT_GAP = 6;
+                    let ttX: number;
+                    let ttY: number;
+                    if (pin.row === 'right') {
+                        // Right-edge pin → tooltip to the left
+                        ttX = pin.x - TT_W - TT_GAP;
+                        ttY = pin.y - TT_H / 2;
+                    } else if (pin.row === 'top') {
+                        // Top-edge pin → tooltip below-right
+                        ttX = pin.x + TT_GAP;
+                        ttY = pin.y + TT_GAP;
+                    } else {
+                        // Bottom / left pins → tooltip upper-right
+                        ttX = pin.x + TT_GAP;
+                        ttY = pin.y - TT_H - TT_GAP;
+                    }
+
                     return (
                         <g key={pin.id}>
                             {/* Visual pin indicator - Copper Pad style */}
@@ -1390,21 +1411,21 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
                             {isHovered && (
                                 <g>
                                     <rect
-                                        x={pin.x - 15}
-                                        y={pin.row === 'top' || pin.row === 'left' ? pin.y + 6 : pin.y - 18}
-                                        width={30}
-                                        height={12}
-                                        rx={2}
-                                        fill="rgba(21, 27, 43, 0.95)"
-                                        stroke="rgba(212, 175, 55, 0.5)"
-                                        strokeWidth={0.5}
+                                        x={ttX}
+                                        y={ttY}
+                                        width={TT_W}
+                                        height={TT_H}
+                                        rx={4}
+                                        fill="rgba(21, 27, 43, 0.96)"
+                                        stroke="rgba(212, 175, 55, 0.6)"
+                                        strokeWidth={0.75}
                                     />
                                     <text
-                                        x={pin.x}
-                                        y={pin.row === 'top' || pin.row === 'left' ? pin.y + 15 : pin.y - 9}
+                                        x={ttX + TT_W / 2}
+                                        y={ttY + TT_H * 0.68}
                                         textAnchor="middle"
                                         fill="#D4AF37"
-                                        fontSize={6}
+                                        fontSize={11}
                                         fontFamily="monospace"
                                         fontWeight="bold"
                                     >
