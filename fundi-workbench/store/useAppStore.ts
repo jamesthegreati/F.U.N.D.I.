@@ -1009,12 +1009,12 @@ export const useAppStore = create<AppState>()(
       // Settings
       updateSettings: (newSettings) => {
         const merged = { ...get().settings, ...newSettings }
-        const patch: Record<string, unknown> = { settings: merged }
         // Keep the top-level teacherMode flag in sync with settings
         if ('teacherModeEnabled' in newSettings) {
-          patch.teacherMode = merged.teacherModeEnabled
+          set({ settings: merged, teacherMode: merged.teacherModeEnabled })
+        } else {
+          set({ settings: merged })
         }
-        set(patch as Partial<AppState>)
       },
 
       applyGeneratedCircuit: (parts, newConnections) => {

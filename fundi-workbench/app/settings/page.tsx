@@ -299,7 +299,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
-    const sectionEls = sections.map(s => document.getElementById(s.id)).filter(Boolean) as HTMLElement[]
+    const sectionEls = sections.map(s => document.getElementById(s.id)).filter((el): el is HTMLElement => el !== null)
     if (sectionEls.length === 0) return
 
     const observer = new IntersectionObserver(
@@ -311,6 +311,8 @@ export default function SettingsPage() {
           }
         }
       },
+      // Top 20% and bottom 60% are dead zones so the active section highlights
+      // when it enters the upper-middle band of the scroll container.
       { root: container, rootMargin: '-20% 0px -60% 0px', threshold: 0.1 }
     )
 
