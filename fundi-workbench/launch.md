@@ -53,7 +53,7 @@ export FUNDI_CORE_INSTALL_RETRIES="4"
 export FUNDI_CORE_INSTALL_TIMEOUT_S="1200"
 export FUNDI_ARDUINO_NETWORK_TIMEOUT_S="900"
 source venv/Scripts/activate
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --loop asyncio
 ```
 
 ### One-time board core setup (run separately)
