@@ -74,9 +74,14 @@ class SimulationSessionManagerTests(unittest.IsolatedAsyncioTestCase):
                         "Expected at least one error event from failed QEMU launch")
 
     async def test_esp32_session_stops_on_not_implemented_error(self) -> None:
-        """A NotImplementedError from asyncio.create_subprocess_exec (Windows
-        SelectorEventLoop) must be converted to a RuntimeError with a helpful
-        message and must transition the session to 'stopped'."""
+        """A RuntimeError from QEMU runner.start() (regardless of root cause)
+        must transition the session to 'stopped' and emit an error event.
+
+        Note: as of the Popen fallback fix, asyncio.create_subprocess_exec's
+        NotImplementedError on Windows SelectorEventLoop is now handled
+        transparently inside Esp32QemuRunner.start() and no longer bubbles up
+        as a RuntimeError.  This test retains value as a regression guard for
+        any future RuntimeError path that still reaches the session manager."""
         import base64
         dummy_payload = base64.b64encode(b"\xe9\x01\x02\x20" + b"\x00" * 100).decode()
 
