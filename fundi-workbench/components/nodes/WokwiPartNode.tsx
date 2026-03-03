@@ -416,14 +416,6 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
         const element = elementRef.current;
         if (!element) return;
 
-        // Debug log when simulation states or PWM values are received
-        const hasSimStates = simulationPinStates && Object.keys(simulationPinStates).length > 0;
-        const hasPwm = typeof pwmValue === 'number' && pwmValue > 0;
-
-        if (hasSimStates || hasPwm) {
-            console.log('[WokwiPartNode] Applying states:', { partType, nodeId, simulationPinStates, pwmValue });
-        }
-
         // For LED elements: if anode (A) is HIGH and cathode (C) is LOW or ground, turn ON
         // LED element has a 'value' property (boolean) to control on/off state
         // For PWM: use 'brightness' property (0-1) with gamma correction
@@ -440,33 +432,22 @@ function WokwiPartNode({ id: nodeId = 'preview', data, partType: propPartType }:
             // Wokwi uses gamma=2.8 by default
             const GAMMA = 2.8;
 
-            console.log('[LED] Processing LED update:', {
-                nodeId,
-                pwmValue,
-                anodeState,
-                currentValue: ledEl.value,
-                currentBrightness: ledEl.brightness
-            });
-
             // Check for PWM value first (from componentPwmStates), then fall back to pin state
             if (typeof pwmValue === 'number' && pwmValue > 0) {
                 // PWM mode from componentPwmStates
                 const normalized = pwmValue / 255;
                 const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
-                console.log('[LED] Setting PWM brightness:', pwmValue, '-> normalized:', normalized.toFixed(3), '-> gamma:', gammaCorrected.toFixed(3));
                 ledEl.value = true;
                 ledEl.brightness = gammaCorrected; // Use native Wokwi brightness property
             } else if (typeof anodeState === 'number') {
                 // PWM mode: anodeState is 0-255
                 const normalized = anodeState / 255;
                 const gammaCorrected = Math.pow(normalized, 1 / GAMMA);
-                console.log('[LED] PWM brightness from pin:', anodeState, '-> gamma:', gammaCorrected.toFixed(2));
                 ledEl.value = anodeState > 0;
                 ledEl.brightness = gammaCorrected; // Use native Wokwi brightness property
             } else {
                 // Boolean mode: simple on/off
                 const anodeHigh = anodeState === true;
-                console.log('[LED] Setting value:', anodeHigh, 'current:', ledEl.value);
                 ledEl.value = anodeHigh;
                 ledEl.brightness = anodeHigh ? 1.0 : 0; // Full brightness when on
             }
