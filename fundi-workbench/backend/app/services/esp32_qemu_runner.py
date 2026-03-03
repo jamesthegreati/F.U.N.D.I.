@@ -31,6 +31,7 @@ import platform
 import re
 import shutil
 import struct
+import subprocess as _subprocess_module
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -210,6 +211,65 @@ def _build_minimal_partition_table(app_offset: int, app_max_size: int) -> bytes:
     return bytes(entry + end_marker)
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Fallback subprocess wrapper for Windows SelectorEventLoop
+# (e.g. uvicorn --reload, where the worker process may use SelectorEventLoop)
+# ──────────────────────────────────────────────────────────────────────
+
+class _SyncSubprocessStream:
+    """Async-compatible wrapper around a blocking pipe.
+
+    Uses ``asyncio.to_thread`` so that blocking reads don't stall the event
+    loop.  This works with *any* event loop (Proactor or Selector).
+    """
+
+    def __init__(self, pipe: Any) -> None:
+        self._pipe = pipe
+
+    async def read(self, n: int = -1) -> bytes:
+        if n == -1:
+            return await asyncio.to_thread(self._pipe.read)
+        # Use read1() when available (BufferedReader) to mimic asyncio
+        # StreamReader.read(n) semantics: return *up to* n bytes as soon as
+        # any data is available, without waiting for exactly n bytes.
+        _read_fn = getattr(self._pipe, "read1", self._pipe.read)
+        return await asyncio.to_thread(_read_fn, n)
+
+
+class _SyncSubprocessWrapper:
+    """Wraps ``subprocess.Popen`` to match the interface used by
+    ``asyncio.subprocess.Process``.
+
+    Used as a transparent fallback when ``asyncio.create_subprocess_exec``
+    raises ``NotImplementedError`` (Windows ``SelectorEventLoop``).
+    """
+
+    def __init__(self, proc: _subprocess_module.Popen[bytes]) -> None:
+        self._proc = proc
+        self.stdout = _SyncSubprocessStream(proc.stdout) if proc.stdout else None
+        self.stderr = _SyncSubprocessStream(proc.stderr) if proc.stderr else None
+
+    @property
+    def pid(self) -> int:
+        return self._proc.pid
+
+    @property
+    def returncode(self) -> int | None:
+        self._proc.poll()
+        return self._proc.returncode
+
+    def terminate(self) -> None:
+        with contextlib.suppress(Exception):
+            self._proc.terminate()
+
+    def kill(self) -> None:
+        with contextlib.suppress(Exception):
+            self._proc.kill()
+
+    async def wait(self) -> int:
+        return await asyncio.to_thread(self._proc.wait)
+
+
 @dataclass
 class QemuPorts:
     """Dynamically chosen TCP ports for a QEMU session."""
@@ -224,7 +284,7 @@ class Esp32QemuRunner:
     session_id: str
     flash_image_path: str              # path to the flash file on disk
     ports: QemuPorts = field(default_factory=QemuPorts)
-    _process: asyncio.subprocess.Process | None = None
+    _process: asyncio.subprocess.Process | _SyncSubprocessWrapper | None = None
     _uart_reader: asyncio.Task[Any] | None = None
     _gpio_poller: asyncio.Task[Any] | None = None
     _qmp_writer: asyncio.StreamWriter | None = None
@@ -289,16 +349,23 @@ class Esp32QemuRunner:
         except FileNotFoundError as exc:
             logger.error("[ESP32-QEMU] QEMU binary not found at: %s – %s", qemu_bin, exc)
             raise RuntimeError(f"QEMU binary not found at: {qemu_bin}") from exc
-        except NotImplementedError as exc:
-            msg = (
-                "asyncio subprocess is not supported with the current event loop. "
-                "On Windows, uvicorn must use the ProactorEventLoop for subprocess support. "
-                "Start the backend with: python -m uvicorn app.main:app --loop asyncio\n"
-                "Or ensure main.py sets asyncio.WindowsProactorEventLoopPolicy() before "
-                "the event loop is created."
+        except NotImplementedError:
+            # Windows SelectorEventLoop (e.g. uvicorn --reload).  asyncio
+            # cannot spawn subprocesses with SelectorEventLoop, but plain
+            # subprocess.Popen works fine.  Wrap it in _SyncSubprocessWrapper
+            # so the rest of the code can use the same await-based API.
+            logger.warning(
+                "[ESP32-QEMU] asyncio subprocess unavailable on current event loop "
+                "(Windows SelectorEventLoop detected – likely uvicorn --reload). "
+                "Falling back to subprocess.Popen wrapper."
             )
-            logger.error("[ESP32-QEMU] %s", msg)
-            raise RuntimeError(msg) from exc
+            proc = _subprocess_module.Popen(
+                cmd,
+                stdout=_subprocess_module.PIPE,
+                stderr=_subprocess_module.PIPE,
+            )
+            self._process = _SyncSubprocessWrapper(proc)
+            logger.info("[ESP32-QEMU] QEMU process launched via Popen fallback, pid=%s", self._process.pid)
         except Exception as exc:
             logger.error("[ESP32-QEMU] Failed to launch QEMU process: %r", exc)
             raise
