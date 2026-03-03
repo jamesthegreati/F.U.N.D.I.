@@ -7,7 +7,7 @@ import {
   Cpu, Zap, Copy, Check, ChevronDown, ChevronRight, Lightbulb,
   CircuitBoard, BookOpen, Eye,
 } from 'lucide-react'
-import { useAppStore, type TerminalEntry, undo, redo, canUndo, canRedo, getUndoPreview, getRedoPreview } from '@/store/useAppStore'
+import { useAppStore, type TerminalEntry, undo, redo, canUndo, canRedo, getUndoPreview, getRedoPreview, getBackendUrl } from '@/store/useAppStore'
 import { cn } from '@/utils/cn'
 
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
@@ -259,6 +259,94 @@ function ContextBar() {
           <Code className="h-2.5 w-2.5" /> {fileCount} files
         </span>
       )}
+    </div>
+  )
+}
+
+/* ─── Teacher Hints (real-time suggestions) ───────────────────────────── */
+
+interface TeachingSuggestion {
+  type: string
+  message: string
+  priority: number
+}
+
+function TeacherHints({ onAsk }: { onAsk: (prompt: string) => void }) {
+  const parts = useAppStore((s) => s.circuitParts)
+  const connections = useAppStore((s) => s.connections)
+  const code = useAppStore((s) => s.code)
+  const teacherMode = useAppStore((s) => s.teacherMode)
+
+  const [hints, setHints] = useState<TeachingSuggestion[]>([])
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounced analysis on circuit changes (teacher mode only)
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+
+    if (!teacherMode) return
+
+    timerRef.current = setTimeout(() => {
+      const baseUrl = getBackendUrl()
+      fetch(`${baseUrl}/api/v1/ai-tools/analyze-circuit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          components: parts.map(p => ({ id: p.id, type: p.type })),
+          connections: connections.map(c => ({ from: c.from, to: c.to })),
+          code: code.slice(0, 2000),
+          teacher_mode: true,
+        }),
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.suggestions) setHints(data.suggestions)
+        })
+        .catch(() => { /* silent — hints are best-effort */ })
+    }, 1500) // 1.5s debounce
+
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [parts, connections, code, teacherMode])
+
+  const visibleHints = hints.filter(h => !dismissed.has(h.message)).slice(0, 2)
+  if (!teacherMode || visibleHints.length === 0) return null
+
+  return (
+    <div className="border-b border-ide-border/40 bg-ide-accent/[0.03] px-3 py-2 space-y-1.5">
+      {visibleHints.map((hint) => (
+        <div
+          key={hint.message}
+          className={cn(
+            'flex items-start gap-2 rounded-md px-2.5 py-1.5 text-[11px] leading-relaxed',
+            hint.type === 'warning' ? 'bg-ide-warning/10 text-ide-warning' :
+            hint.type === 'next_step' ? 'bg-ide-accent/10 text-ide-accent' :
+            hint.type === 'concept' ? 'bg-ide-info/10 text-ide-info' :
+            'bg-ide-panel-hover/50 text-ide-text-muted'
+          )}
+        >
+          <Lightbulb className="mt-0.5 h-3 w-3 shrink-0" />
+          <span className="flex-1">{hint.message}</span>
+          <div className="flex items-center gap-1 shrink-0">
+            {hint.type === 'next_step' && (
+              <button
+                type="button"
+                onClick={() => onAsk(hint.message)}
+                className="rounded px-1.5 py-0.5 text-[9px] font-medium bg-ide-accent/20 text-ide-accent hover:bg-ide-accent/30 transition-colors"
+              >
+                Ask
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setDismissed(prev => new Set(prev).add(hint.message))}
+              className="rounded px-1 py-0.5 text-[9px] text-ide-text-subtle hover:text-ide-text-muted transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -518,6 +606,9 @@ export function CommandInterface() {
 
       {/* ── Context awareness bar ── */}
       <ContextBar />
+
+      {/* ── Teacher real-time hints ── */}
+      <TeacherHints onAsk={doSubmit} />
 
       {/* ── Chat area ── */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
