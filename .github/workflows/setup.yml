@@ -1,0 +1,287 @@
+name: FUNDI Setup & ESP32 Simulation CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+  ARDUINO_CLI_VERSION: "latest"
+  # Espressif QEMU release tag (hyphens) and file version (underscores)
+  QEMU_ESP32_TAG: "esp-develop-9.2.2-20250817"
+  QEMU_ESP32_FILE_VERSION: "esp_develop_9.2.2_20250817"
+
+jobs:
+  # ─── Backend: install, test, validate simulation readiness ───
+  backend-setup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fundi-workbench/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: fundi-workbench/backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt pytest httpx
+
+      - name: Install Arduino CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s -- --dest /usr/local/bin
+          arduino-cli version
+
+      - name: Configure Arduino CLI & install AVR core
+        run: |
+          arduino-cli config init
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+
+      - name: Install ESP32 board core
+        run: |
+          arduino-cli config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Install common Arduino libraries
+        run: |
+          arduino-cli lib install "Servo" || true
+          arduino-cli lib install "Adafruit NeoPixel" || true
+          arduino-cli lib install "LiquidCrystal I2C" || true
+          arduino-cli lib install "DHT sensor library" || true
+
+      - name: Install Espressif QEMU (qemu-system-xtensa)
+        run: |
+          set -eux
+          arch=$(uname -m)
+          case "$arch" in
+            x86_64)  qemu_arch="x86_64-linux-gnu" ;;
+            aarch64) qemu_arch="aarch64-linux-gnu" ;;
+            *)       echo "Unsupported arch for QEMU: $arch"; exit 1 ;;
+          esac
+          asset="qemu-xtensa-softmmu-${{ env.QEMU_ESP32_FILE_VERSION }}-${qemu_arch}.tar.xz"
+          url="https://github.com/espressif/qemu/releases/download/${{ env.QEMU_ESP32_TAG }}/${asset}"
+          echo "Downloading Espressif QEMU from: $url"
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils
+          curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o /tmp/qemu-esp32.tar.xz
+          sudo mkdir -p /opt/qemu-esp32
+          sudo tar -xJf /tmp/qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
+          sudo ln -sf /opt/qemu-esp32/bin/qemu-system-xtensa /usr/local/bin/qemu-system-xtensa
+          qemu-system-xtensa --version
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+      - name: Verify simulation readiness
+        run: |
+          echo "--- Arduino CLI cores ---"
+          arduino-cli core list
+          echo "--- Arduino CLI libraries ---"
+          arduino-cli lib list
+          echo "--- QEMU version ---"
+          qemu-system-xtensa --version
+          echo "--- Python validate_setup ---"
+          python validate_setup.py || true
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+      - name: Run backend unit tests
+        run: pytest tests/ -v --tb=short --ignore=tests/test_ai_benchmark.py --ignore=tests/test_openrouter_fallback.py
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'models/gemini-flash-latest' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001' }}
+          ENVIRONMENT: dev
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+      - name: Test ESP32 compilation
+        run: |
+          echo "Starting backend server..."
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          SERVER_PID=$!
+          sleep 5
+
+          echo "Testing health endpoint..."
+          curl -sf http://localhost:8000/health | python -m json.tool
+
+          echo "Testing ESP32 compilation..."
+          curl -sf -X POST http://localhost:8000/api/v1/compile \
+            -H "Content-Type: application/json" \
+            -d '{
+              "code": "#include <Arduino.h>\nconst int LED=2;\nvoid setup(){pinMode(LED,OUTPUT);Serial.begin(115200);Serial.println(\"ESP32 Test\");}\nvoid loop(){digitalWrite(LED,HIGH);delay(500);digitalWrite(LED,LOW);delay(500);}",
+              "board": "wokwi-esp32-devkit-v1"
+            }' | python -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          print('Compile success:', r.get('success'))
+          print('Artifact type:', r.get('artifact_type'))
+          payload = r.get('artifact_payload', '')
+          print('Artifact payload length:', len(payload) if payload else 0)
+          if not r.get('success'):
+              print('ERROR:', r.get('error'))
+              sys.exit(1)
+          if r.get('artifact_type') != 'merged-flash':
+              print('ERROR: Expected artifact_type=merged-flash, got', r.get('artifact_type'))
+              sys.exit(1)
+          print('ESP32 compile: PASS')
+          "
+
+          kill $SERVER_PID 2>/dev/null || true
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+          ENVIRONMENT: dev
+
+  # ─── Frontend: install, lint, typecheck, build ───
+  frontend-setup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fundi-workbench
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: fundi-workbench/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BASE_PATH: /F.U.N.D.I.
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-setup
+          path: fundi-workbench/out/
+          retention-days: 7
+
+  # ─── ESP32 simulation integration test ───
+  esp32-simulation-test:
+    runs-on: ubuntu-latest
+    needs: [backend-setup, frontend-setup]
+    defaults:
+      run:
+        working-directory: fundi-workbench
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: fundi-workbench/backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: fundi-workbench/package-lock.json
+
+      - name: Install backend Python dependencies
+        run: pip install -r backend/requirements.txt pytest httpx websocket-client
+
+      - name: Install frontend Node.js dependencies
+        run: npm ci
+
+      - name: Install Arduino CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s -- --dest /usr/local/bin
+          arduino-cli version
+
+      - name: Configure Arduino CLI & install cores
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli core install esp32:esp32
+
+      - name: Install Arduino libraries
+        run: |
+          arduino-cli lib install "Servo" || true
+          arduino-cli lib install "Adafruit NeoPixel" || true
+          arduino-cli lib install "LiquidCrystal I2C" || true
+          arduino-cli lib install "DHT sensor library" || true
+
+      - name: Install Espressif QEMU (qemu-system-xtensa)
+        run: |
+          set -eux
+          arch=$(uname -m)
+          case "$arch" in
+            x86_64)  qemu_arch="x86_64-linux-gnu" ;;
+            aarch64) qemu_arch="aarch64-linux-gnu" ;;
+            *)       echo "Unsupported arch: $arch"; exit 1 ;;
+          esac
+          asset="qemu-xtensa-softmmu-${{ env.QEMU_ESP32_FILE_VERSION }}-${qemu_arch}.tar.xz"
+          url="https://github.com/espressif/qemu/releases/download/${{ env.QEMU_ESP32_TAG }}/${asset}"
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils
+          curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o /tmp/qemu-esp32.tar.xz
+          sudo mkdir -p /opt/qemu-esp32
+          sudo tar -xJf /tmp/qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
+          sudo ln -sf /opt/qemu-esp32/bin/qemu-system-xtensa /usr/local/bin/qemu-system-xtensa
+          qemu-system-xtensa --version
+
+      - name: Start backend server
+        run: |
+          cd backend
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/backend_pid.txt
+          sleep 5
+          curl -sf http://localhost:8000/health | python -m json.tool
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+          ENVIRONMENT: dev
+
+      - name: Run ESP32 compile tests
+        run: npm run sim:test:esp32-blink-led
+        env:
+          BACKEND_URL: http://localhost:8000
+
+      - name: Run ESP32 end-to-end simulation test
+        run: python test_esp32_sim.py
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+      - name: Stop backend server
+        if: always()
+        run: |
+          if [ -f /tmp/backend_pid.txt ]; then
+            kill $(cat /tmp/backend_pid.txt) 2>/dev/null || true
+          fi
+
+      - name: Collect backend logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend logs ==="
+          cat /tmp/backend.log 2>/dev/null || echo "No backend log file found"
+          echo "=== Process list ==="
+          ps aux | grep -i "uvicorn\|python\|qemu" || true

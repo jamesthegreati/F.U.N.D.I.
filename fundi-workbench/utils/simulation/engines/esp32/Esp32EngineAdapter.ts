@@ -56,9 +56,10 @@ export class Esp32EngineAdapter implements SimulationEngine {
       }),
     })
 
-    const data = (await res.json()) as { id?: string }
+    const data = (await res.json()) as { id?: string; detail?: string }
     if (!res.ok || !data?.id) {
-      throw new Error('Failed to create ESP32 simulation session')
+      const detail = data?.detail ?? 'unknown error'
+      throw new Error(`Failed to create ESP32 simulation session: ${detail}`)
     }
 
     this.sessionId = data.id
@@ -67,10 +68,22 @@ export class Esp32EngineAdapter implements SimulationEngine {
   async start(): Promise<void> {
     if (!this.sessionId) return
 
-    await fetch(`${this.baseUrl}/api/v1/simulate/session/${this.sessionId}/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    })
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/simulate/session/${this.sessionId}/start`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      const detail =
+        (body as Record<string, unknown> | null)?.detail ??
+        (body as Record<string, unknown> | null)?.error ??
+        res.statusText
+      throw new Error(`ESP32 simulation start failed: ${String(detail)}`)
+    }
 
     this._connectWebSocket()
     this.running = true
