@@ -84,7 +84,7 @@ jobs:
           asset="qemu-xtensa-softmmu-${{ env.QEMU_ESP32_FILE_VERSION }}-${qemu_arch}.tar.xz"
           url="https://github.com/espressif/qemu/releases/download/${{ env.QEMU_ESP32_TAG }}/${asset}"
           echo "Downloading Espressif QEMU from: $url"
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils libsdl2-2.0-0
           curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o qemu-esp32.tar.xz
           sudo mkdir -p /opt/qemu-esp32
           sudo tar -xJf qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
@@ -320,7 +320,7 @@ jobs:
           esac
           asset="qemu-xtensa-softmmu-${{ env.QEMU_ESP32_FILE_VERSION }}-${qemu_arch}.tar.xz"
           url="https://github.com/espressif/qemu/releases/download/${{ env.QEMU_ESP32_TAG }}/${asset}"
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils libsdl2-2.0-0
           curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o qemu-esp32.tar.xz
           sudo mkdir -p /opt/qemu-esp32
           sudo tar -xJf qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
