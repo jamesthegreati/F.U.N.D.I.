@@ -203,6 +203,8 @@ class SimulationSessionManager:
                     "type": "error",
                     "message": f"Flash image creation failed: {exc}",
                 })
+                session.status = "stopped"
+                session.updated_at = time.time()
                 return
 
             flash_path = Path(temp_dir) / "esp32_flash.bin"
@@ -255,6 +257,11 @@ class SimulationSessionManager:
             logger.info("[ESP32-QEMU] Session %s: run loop exited (status=%s, runner._running=%s)",
                         session.id, session.status, runner._running)
 
+            # QEMU exited on its own while session was supposed to be running
+            if session.status == "running":
+                session.status = "stopped"
+                session.updated_at = time.time()
+
         except asyncio.CancelledError:
             logger.info("[ESP32-QEMU] Session %s: cancelled", session.id)
         except Exception as exc:
@@ -270,6 +277,8 @@ class SimulationSessionManager:
                 "stream": "stderr",
                 "line": f"[sim] ESP32 simulation error: {type(exc).__name__}: {exc}",
             })
+            session.status = "stopped"
+            session.updated_at = time.time()
 
     # ─── Fallback non-QEMU run loop (for boards without QEMU support) ─
 
