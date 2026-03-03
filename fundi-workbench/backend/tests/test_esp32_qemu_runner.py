@@ -12,6 +12,8 @@ if str(_BACKEND_ROOT) not in sys.path:
 
 from app.services.esp32_qemu_runner import (  # noqa: E402
     Esp32QemuRunner,
+    _SyncSubprocessStream,
+    _SyncSubprocessWrapper,
     _build_minimal_partition_table,
     _patch_flash_header,
     _FLASH_MODE_DIO,
@@ -202,6 +204,62 @@ class InferArtifactTypeTests(unittest.TestCase):
     def test_hex_returns_intel_hex(self) -> None:
         p = Path("/tmp/sketch.ino.hex")
         self.assertEqual(self.service._infer_artifact_type("wokwi-arduino-uno", p), "intel-hex")
+
+
+class SyncSubprocessWrapperTests(unittest.IsolatedAsyncioTestCase):
+    """Unit tests for _SyncSubprocessWrapper / _SyncSubprocessStream.
+
+    These classes are used as a fallback when asyncio.create_subprocess_exec
+    raises NotImplementedError (Windows SelectorEventLoop, e.g. uvicorn
+    --reload).
+    """
+
+    _LONG_RUNNING_COMMAND = ["python", "-c", "import time; time.sleep(60)"]
+
+    async def test_stream_read_returns_data(self) -> None:
+        """_SyncSubprocessStream.read(n) returns bytes from a pipe."""
+        import io
+        pipe = io.BytesIO(b"hello world")
+        stream = _SyncSubprocessStream(pipe)
+        data = await stream.read(5)
+        self.assertEqual(data, b"hello")
+
+    async def test_stream_read_all(self) -> None:
+        """_SyncSubprocessStream.read() with no argument reads until EOF."""
+        import io
+        pipe = io.BytesIO(b"full content")
+        stream = _SyncSubprocessStream(pipe)
+        data = await stream.read()
+        self.assertEqual(data, b"full content")
+
+    async def test_wrapper_pid_and_returncode(self) -> None:
+        """_SyncSubprocessWrapper exposes pid and returncode from the Popen."""
+        import subprocess
+        proc = subprocess.Popen(
+            self._LONG_RUNNING_COMMAND,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            wrapper = _SyncSubprocessWrapper(proc)
+            self.assertEqual(wrapper.pid, proc.pid)
+            self.assertIsNone(wrapper.returncode)  # still running
+        finally:
+            proc.kill()
+            proc.wait()
+
+    async def test_wrapper_terminate_and_wait(self) -> None:
+        """_SyncSubprocessWrapper.terminate() + wait() stops the process."""
+        import subprocess
+        proc = subprocess.Popen(
+            self._LONG_RUNNING_COMMAND,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        wrapper = _SyncSubprocessWrapper(proc)
+        wrapper.terminate()
+        rc = await asyncio.wait_for(wrapper.wait(), timeout=5)
+        self.assertIsNotNone(rc)
 
 
 if __name__ == "__main__":
