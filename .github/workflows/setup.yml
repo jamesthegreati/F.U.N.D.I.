@@ -20,6 +20,9 @@ env:
   # Espressif QEMU release tag (hyphens) and file version (underscores)
   QEMU_ESP32_TAG: "esp-develop-9.2.2-20250817"
   QEMU_ESP32_FILE_VERSION: "esp_develop_9.2.2_20250817"
+  # Grep pattern used in multiple steps to detect QEMU launch failures
+  # (including the Windows NotImplementedError from SelectorEventLoop).
+  QEMU_ERROR_PATTERN: "Failed to launch QEMU|NotImplementedError|asyncio subprocess is not supported|qemu-system-xtensa not found"
 
 jobs:
   # ─── Backend: install, test, validate ESP32 simulation readiness ───
@@ -368,6 +371,27 @@ jobs:
         env:
           QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
 
+      - name: Scan backend logs for QEMU launch errors
+        if: always()
+        run: |
+          echo ""
+          echo "── Scanning backend log for QEMU / subprocess errors ──"
+          if [ ! -f /tmp/backend.log ]; then
+            echo "(no backend log file found)"
+          else
+            # Patterns that indicate QEMU failed to launch or the event loop
+            # doesn't support subprocesses (e.g. NotImplementedError on Windows).
+            if grep -E "$QEMU_ERROR_PATTERN" /tmp/backend.log; then
+              echo ""
+              echo "❌ QEMU launch error(s) detected in backend log (see lines above)."
+              echo "   On Windows ensure the backend uses ProactorEventLoop:"
+              echo "   python -m uvicorn app.main:app --loop asyncio"
+              exit 1
+            else
+              echo "✅ No QEMU launch errors found in backend log."
+            fi
+          fi
+
       - name: Stop backend server
         if: always()
         run: |
@@ -384,36 +408,39 @@ jobs:
           echo "║       ESP32 SIMULATION FAILURE DIAGNOSTICS              ║"
           echo "╚══════════════════════════════════════════════════════════╝"
           echo ""
-          echo "── 1. Backend Server Logs ──"
+          echo "── 1. Backend Server Logs (full) ──"
           if [ -f /tmp/backend.log ]; then
-            echo "(last 100 lines)"
-            tail -100 /tmp/backend.log
+            cat /tmp/backend.log
           else
             echo "(no backend log file found)"
           fi
           echo ""
-          echo "── 2. Arduino CLI ──"
+          echo "── 2. QEMU error lines in log ──"
+          grep -E "$QEMU_ERROR_PATTERN" \
+            /tmp/backend.log 2>/dev/null || echo "(none)"
+          echo ""
+          echo "── 3. Arduino CLI ──"
           arduino-cli version 2>/dev/null || echo "(not available)"
           arduino-cli core list 2>/dev/null || echo "(core list failed)"
           echo ""
-          echo "── 3. QEMU ──"
+          echo "── 4. QEMU ──"
           qemu-system-xtensa --version 2>/dev/null || echo "(not available)"
           echo "  path: $(which qemu-system-xtensa 2>/dev/null || echo 'not found')"
           echo "  QEMU_ESP32_PATH=$QEMU_ESP32_PATH"
           echo ""
-          echo "── 4. Health Check ──"
+          echo "── 5. Health Check ──"
           curl -sf http://localhost:8000/health 2>/dev/null | python -m json.tool 2>/dev/null || echo "(backend not reachable)"
           echo ""
-          echo "── 5. Quick Compile Probe ──"
+          echo "── 6. Quick Compile Probe ──"
           curl -sf -X POST http://localhost:8000/api/v1/compile \
             -H "Content-Type: application/json" \
             -d '{"code":"void setup(){} void loop(){}","board":"wokwi-esp32-devkit-v1"}' 2>/dev/null \
             | python -m json.tool 2>/dev/null || echo "(compile endpoint not reachable)"
           echo ""
-          echo "── 6. Running Processes ──"
+          echo "── 7. Running Processes ──"
           ps aux | grep -iE "uvicorn|python|qemu|arduino" | grep -v grep || echo "(none)"
           echo ""
-          echo "── 7. Environment ──"
+          echo "── 8. Environment ──"
           echo "  QEMU_ESP32_PATH=${QEMU_ESP32_PATH:-unset}"
           echo "  ENVIRONMENT=${ENVIRONMENT:-unset}"
           echo "  PATH=${PATH}"

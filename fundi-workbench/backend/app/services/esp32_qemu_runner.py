@@ -289,6 +289,16 @@ class Esp32QemuRunner:
         except FileNotFoundError as exc:
             logger.error("[ESP32-QEMU] QEMU binary not found at: %s – %s", qemu_bin, exc)
             raise RuntimeError(f"QEMU binary not found at: {qemu_bin}") from exc
+        except NotImplementedError as exc:
+            msg = (
+                "asyncio subprocess is not supported with the current event loop. "
+                "On Windows, uvicorn must use the ProactorEventLoop for subprocess support. "
+                "Start the backend with: python -m uvicorn app.main:app --loop asyncio\n"
+                "Or ensure main.py sets asyncio.WindowsProactorEventLoopPolicy() before "
+                "the event loop is created."
+            )
+            logger.error("[ESP32-QEMU] %s", msg)
+            raise RuntimeError(msg) from exc
         except Exception as exc:
             logger.error("[ESP32-QEMU] Failed to launch QEMU process: %r", exc)
             raise
