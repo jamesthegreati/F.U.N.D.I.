@@ -77,7 +77,7 @@ RUN set -eux; \
     asset="qemu-xtensa-softmmu-${QEMU_ESP32_FILE_VERSION}-${qemu_arch}.tar.xz"; \
     url="https://github.com/espressif/qemu/releases/download/${QEMU_ESP32_TAG}/${asset}"; \
     echo "Downloading Espressif QEMU from: $url"; \
-    apt-get update && apt-get install -y --no-install-recommends xz-utils && rm -rf /var/lib/apt/lists/*; \
+    apt-get update && apt-get install -y --no-install-recommends xz-utils libsdl2-2.0-0 && rm -rf /var/lib/apt/lists/*; \
     max_retries=3; retry_count=0; \
     while [ $retry_count -lt $max_retries ]; do \
         if curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o /tmp/qemu-esp32.tar.xz; then \

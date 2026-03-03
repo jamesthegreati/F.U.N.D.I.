@@ -1,0 +1,422 @@
+name: FUNDI ESP32 Simulation CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+  # Espressif QEMU release tag (hyphens) and file version (underscores)
+  QEMU_ESP32_TAG: "esp-develop-9.2.2-20250817"
+  QEMU_ESP32_FILE_VERSION: "esp_develop_9.2.2_20250817"
+
+jobs:
+  # ─── Backend: install, test, validate ESP32 simulation readiness ───
+  backend-esp32-setup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fundi-workbench/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: fundi-workbench/backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt pytest httpx
+
+      - name: Install Arduino CLI (direct tarball)
+        working-directory: /tmp
+        run: |
+          set -eux
+          url="https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz"
+          echo "Downloading Arduino CLI from: $url"
+          max_retries=3; attempt=0
+          while [ $attempt -lt $max_retries ]; do
+            if curl -fsSL --connect-timeout 30 --max-time 300 "$url" -o arduino-cli.tar.gz; then
+              echo "✅ Arduino CLI downloaded"; break
+            fi
+            attempt=$((attempt + 1))
+            echo "⚠️  Download attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ ! -f arduino-cli.tar.gz ]; then
+            echo "❌ Failed to download Arduino CLI after $max_retries attempts"; exit 1
+          fi
+          sudo tar -xzf arduino-cli.tar.gz -C /usr/local/bin arduino-cli
+          sudo chmod +x /usr/local/bin/arduino-cli
+          rm -f arduino-cli.tar.gz
+          arduino-cli version
+
+      - name: Install ESP32 board core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Install Espressif QEMU (qemu-system-xtensa)
+        working-directory: /tmp
+        run: |
+          set -eux
+          arch=$(uname -m)
+          case "$arch" in
+            x86_64)  qemu_arch="x86_64-linux-gnu" ;;
+            aarch64) qemu_arch="aarch64-linux-gnu" ;;
+            *)       echo "❌ Unsupported arch for QEMU: $arch"; exit 1 ;;
+          esac
+          asset="qemu-xtensa-softmmu-${{ env.QEMU_ESP32_FILE_VERSION }}-${qemu_arch}.tar.xz"
+          url="https://github.com/espressif/qemu/releases/download/${{ env.QEMU_ESP32_TAG }}/${asset}"
+          echo "Downloading Espressif QEMU from: $url"
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils libsdl2-2.0-0
+          curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o qemu-esp32.tar.xz
+          sudo mkdir -p /opt/qemu-esp32
+          sudo tar -xJf qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
+          sudo ln -sf /opt/qemu-esp32/bin/qemu-system-xtensa /usr/local/bin/qemu-system-xtensa
+          qemu-system-xtensa --version
+
+      - name: Verify ESP32 simulation readiness
+        run: |
+          echo "=== Arduino CLI cores ==="
+          arduino-cli core list
+          echo ""
+          echo "=== QEMU version ==="
+          qemu-system-xtensa --version
+          echo ""
+          echo "=== Python validate_setup ==="
+          python validate_setup.py || true
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+      - name: Run backend unit tests
+        run: pytest tests/ -v --tb=short --ignore=tests/test_ai_benchmark.py --ignore=tests/test_openrouter_fallback.py
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'models/gemini-flash-latest' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001' }}
+          ENVIRONMENT: dev
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+      - name: Test ESP32 compilation via backend API
+        run: |
+          echo "Starting backend server..."
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info 2>&1 | tee /tmp/backend.log &
+          SERVER_PID=$!
+          echo "$SERVER_PID" > /tmp/backend_pid.txt
+
+          echo "Waiting for backend to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Backend failed to start"
+              echo "=== Backend Logs ==="
+              cat /tmp/backend.log 2>/dev/null || true
+              kill "$SERVER_PID" 2>/dev/null || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo ""
+          echo "Testing ESP32 compilation..."
+          COMPILE_RESPONSE=$(curl -sf -X POST http://localhost:8000/api/v1/compile \
+            -H "Content-Type: application/json" \
+            -d '{
+              "code": "#include <Arduino.h>\nconst int LED=2;\nvoid setup(){pinMode(LED,OUTPUT);Serial.begin(115200);Serial.println(\"ESP32 Test\");}\nvoid loop(){digitalWrite(LED,HIGH);delay(500);digitalWrite(LED,LOW);delay(500);}",
+              "board": "wokwi-esp32-devkit-v1"
+            }' 2>&1) || true
+
+          echo "$COMPILE_RESPONSE" | python -c "
+          import sys, json
+          try:
+              r = json.load(sys.stdin)
+          except json.JSONDecodeError as e:
+              print(f'❌ Backend returned non-JSON response: {e}')
+              sys.exit(1)
+
+          print(f'  success:          {r.get(\"success\")}')
+          print(f'  artifact_type:    {r.get(\"artifact_type\")}')
+          payload = r.get('artifact_payload', '')
+          print(f'  artifact_payload: {len(payload) if payload else 0} chars')
+
+          if not r.get('success'):
+              print()
+              print(f'❌ ESP32 COMPILATION FAILED')
+              print(f'  Error: {r.get(\"error\")}')
+              if r.get('missing_header'):
+                  print(f'  Missing header: {r.get(\"missing_header\")}')
+              if r.get('library_suggestions'):
+                  print(f'  Library suggestions: {r.get(\"library_suggestions\")}')
+              sys.exit(1)
+
+          if r.get('artifact_type') != 'merged-flash':
+              print()
+              print(f'❌ WRONG ARTIFACT TYPE')
+              print(f'  Expected: merged-flash')
+              print(f'  Got:      {r.get(\"artifact_type\")}')
+              sys.exit(1)
+
+          print()
+          print(f'✅ ESP32 compilation PASSED')
+          "
+
+          kill "$SERVER_PID" 2>/dev/null || true
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+          ENVIRONMENT: dev
+
+      - name: Collect detailed diagnostics on failure
+        if: failure()
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════╗"
+          echo "║           ESP32 BACKEND FAILURE DIAGNOSTICS             ║"
+          echo "╚══════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "── Backend Logs ──"
+          cat /tmp/backend.log 2>/dev/null || echo "(no backend log)"
+          echo ""
+          echo "── Arduino CLI Info ──"
+          arduino-cli version 2>/dev/null || echo "(arduino-cli not available)"
+          arduino-cli core list 2>/dev/null || echo "(core list failed)"
+          echo ""
+          echo "── QEMU Info ──"
+          qemu-system-xtensa --version 2>/dev/null || echo "(qemu not available)"
+          which qemu-system-xtensa 2>/dev/null || echo "(qemu not in PATH)"
+          echo ""
+          echo "── Environment ──"
+          echo "QEMU_ESP32_PATH=$QEMU_ESP32_PATH"
+          echo "PATH=$PATH"
+          echo ""
+          echo "── Running Processes ──"
+          ps aux | grep -iE "uvicorn|python|qemu|arduino" | grep -v grep || echo "(none)"
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+  # ─── Frontend: install, lint, typecheck, build ───
+  frontend-setup:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fundi-workbench
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: fundi-workbench/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BASE_PATH: /F.U.N.D.I.
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-setup
+          path: fundi-workbench/out/
+          retention-days: 7
+
+  # ─── ESP32 end-to-end simulation test ───
+  esp32-simulation-test:
+    runs-on: ubuntu-latest
+    needs: [backend-esp32-setup, frontend-setup]
+    defaults:
+      run:
+        working-directory: fundi-workbench
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: fundi-workbench/backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: fundi-workbench/package-lock.json
+
+      - name: Install backend Python dependencies
+        run: pip install -r backend/requirements.txt pytest httpx websocket-client requests
+
+      - name: Install frontend Node.js dependencies
+        run: npm ci
+
+      - name: Install Arduino CLI (direct tarball)
+        working-directory: /tmp
+        run: |
+          set -eux
+          url="https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz"
+          echo "Downloading Arduino CLI from: $url"
+          max_retries=3; attempt=0
+          while [ $attempt -lt $max_retries ]; do
+            if curl -fsSL --connect-timeout 30 --max-time 300 "$url" -o arduino-cli.tar.gz; then
+              echo "✅ Arduino CLI downloaded"; break
+            fi
+            attempt=$((attempt + 1))
+            echo "⚠️  Download attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ ! -f arduino-cli.tar.gz ]; then
+            echo "❌ Failed to download Arduino CLI after $max_retries attempts"; exit 1
+          fi
+          sudo tar -xzf arduino-cli.tar.gz -C /usr/local/bin arduino-cli
+          sudo chmod +x /usr/local/bin/arduino-cli
+          rm -f arduino-cli.tar.gz
+          arduino-cli version
+
+      - name: Install ESP32 board core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Install Espressif QEMU (qemu-system-xtensa)
+        working-directory: /tmp
+        run: |
+          set -eux
+          arch=$(uname -m)
+          case "$arch" in
+            x86_64)  qemu_arch="x86_64-linux-gnu" ;;
+            aarch64) qemu_arch="aarch64-linux-gnu" ;;
+            *)       echo "❌ Unsupported arch: $arch"; exit 1 ;;
+          esac
+          asset="qemu-xtensa-softmmu-${{ env.QEMU_ESP32_FILE_VERSION }}-${qemu_arch}.tar.xz"
+          url="https://github.com/espressif/qemu/releases/download/${{ env.QEMU_ESP32_TAG }}/${asset}"
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends xz-utils libsdl2-2.0-0
+          curl -fsSL --connect-timeout 30 --max-time 600 "$url" -o qemu-esp32.tar.xz
+          sudo mkdir -p /opt/qemu-esp32
+          sudo tar -xJf qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
+          sudo ln -sf /opt/qemu-esp32/bin/qemu-system-xtensa /usr/local/bin/qemu-system-xtensa
+          qemu-system-xtensa --version
+
+      - name: Start backend server
+        run: |
+          cd backend
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info 2>&1 | tee /tmp/backend.log &
+          echo $! > /tmp/backend_pid.txt
+
+          echo "Waiting for backend health check..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy!"
+              curl -s http://localhost:8000/health | python -m json.tool
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Backend failed to start"
+              cat /tmp/backend.log 2>/dev/null || true
+              exit 1
+            fi
+            sleep 2
+          done
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+          ENVIRONMENT: dev
+
+      - name: Run ESP32 compile tests (via Node.js harness)
+        run: npm run sim:test:esp32-blink-led
+        env:
+          BACKEND_URL: http://localhost:8000
+
+      - name: Run ESP32 end-to-end simulation test (compile + QEMU)
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════╗"
+          echo "║      ESP32 END-TO-END SIMULATION TEST                  ║"
+          echo "║  compile → flash image → QEMU → serial/GPIO events    ║"
+          echo "╚══════════════════════════════════════════════════════════╝"
+          echo ""
+          python test_esp32_sim.py
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+
+      - name: Stop backend server
+        if: always()
+        run: |
+          if [ -f /tmp/backend_pid.txt ]; then
+            PID=$(cat /tmp/backend_pid.txt)
+            kill "$PID" 2>/dev/null && sleep 2 || kill -9 "$PID" 2>/dev/null || true
+          fi
+
+      - name: Collect detailed diagnostics on failure
+        if: failure()
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════╗"
+          echo "║       ESP32 SIMULATION FAILURE DIAGNOSTICS              ║"
+          echo "╚══════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "── 1. Backend Server Logs ──"
+          if [ -f /tmp/backend.log ]; then
+            echo "(last 100 lines)"
+            tail -100 /tmp/backend.log
+          else
+            echo "(no backend log file found)"
+          fi
+          echo ""
+          echo "── 2. Arduino CLI ──"
+          arduino-cli version 2>/dev/null || echo "(not available)"
+          arduino-cli core list 2>/dev/null || echo "(core list failed)"
+          echo ""
+          echo "── 3. QEMU ──"
+          qemu-system-xtensa --version 2>/dev/null || echo "(not available)"
+          echo "  path: $(which qemu-system-xtensa 2>/dev/null || echo 'not found')"
+          echo "  QEMU_ESP32_PATH=$QEMU_ESP32_PATH"
+          echo ""
+          echo "── 4. Health Check ──"
+          curl -sf http://localhost:8000/health 2>/dev/null | python -m json.tool 2>/dev/null || echo "(backend not reachable)"
+          echo ""
+          echo "── 5. Quick Compile Probe ──"
+          curl -sf -X POST http://localhost:8000/api/v1/compile \
+            -H "Content-Type: application/json" \
+            -d '{"code":"void setup(){} void loop(){}","board":"wokwi-esp32-devkit-v1"}' 2>/dev/null \
+            | python -m json.tool 2>/dev/null || echo "(compile endpoint not reachable)"
+          echo ""
+          echo "── 6. Running Processes ──"
+          ps aux | grep -iE "uvicorn|python|qemu|arduino" | grep -v grep || echo "(none)"
+          echo ""
+          echo "── 7. Environment ──"
+          echo "  QEMU_ESP32_PATH=${QEMU_ESP32_PATH:-unset}"
+          echo "  ENVIRONMENT=${ENVIRONMENT:-unset}"
+          echo "  PATH=${PATH}"
+        env:
+          QEMU_ESP32_PATH: /usr/local/bin/qemu-system-xtensa
+          ENVIRONMENT: dev

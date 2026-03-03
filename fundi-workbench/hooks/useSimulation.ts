@@ -871,7 +871,9 @@ export function useSimulation(
           };
           rafRef.current = requestAnimationFrame(scheduleFlush);
         } catch (err) {
-          console.error(err);
+          console.error('[ESP32/RP2040 Engine] start failed:', err);
+          const msg = err instanceof Error ? err.message : String(err);
+          appendSerialLine(`[error] Simulation engine failed to start: ${msg}`);
         }
       };
 

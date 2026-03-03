@@ -203,6 +203,8 @@ class SimulationSessionManager:
                     "type": "error",
                     "message": f"Flash image creation failed: {exc}",
                 })
+                session.status = "stopped"
+                session.updated_at = time.time()
                 return
 
             flash_path = Path(temp_dir) / "esp32_flash.bin"
@@ -270,6 +272,8 @@ class SimulationSessionManager:
                 "stream": "stderr",
                 "line": f"[sim] ESP32 simulation error: {type(exc).__name__}: {exc}",
             })
+            session.status = "stopped"
+            session.updated_at = time.time()
 
     # ─── Fallback non-QEMU run loop (for boards without QEMU support) ─
 
