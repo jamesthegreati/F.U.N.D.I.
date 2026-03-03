@@ -355,7 +355,7 @@ export function TerminalPanel({
   const isESP32 = boardType?.toLowerCase().includes('esp32')
 
   // Circuit validation hook
-  const validation = useCircuitValidation({ enabled: true })
+  const validation = useCircuitValidation()
 
   const availableTabs = useMemo(() => {
     const base: TerminalTab[] = ['serial', 'upload', 'assistant', 'validation', 'logic']
