@@ -10,7 +10,6 @@ import {
   findSegmentIndex,
   moveSegment,
   snapPointToGrid,
-  avoidParallelOverlaps,
   WOKWI_GRID_PX,
   type ComponentBounds,
   type PinObstacle,
@@ -316,8 +315,8 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
 
         const points = calculateOrthogonalPoints(start, end, waypoints, {
           firstLeg: 'auto',
-          obstacles: componentBounds,
-          pinObstacles: pinObstacles,
+          obstacles: [],
+          pinObstacles: [],
           excludeIds,
           excludePinIds,
           gridSize: routingGrid,
@@ -326,21 +325,8 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
       })
       .filter((x): x is { id: string; color: string; points: WirePoint[] } => Boolean(x));
 
-    // Prevent PARALLEL overlaps between different wires (perpendicular crossings OK).
-    // Skip wires whose paths were manually set by the user — the user's intent must
-    // be preserved and should never be silently shifted by the auto-spacing pass.
-    const userWaypointedIds = new Set(
-      connections.filter((c) => c.points && c.points.length > 0).map((c) => c.id)
-    );
-    const autoRouted = base.filter((w) => !userWaypointedIds.has(w.id));
-    const adjusted = avoidParallelOverlaps(
-      autoRouted.map((w) => ({ id: w.id, points: w.points })),
-      { gridSize: routingGrid, maxLanes: 10 }
-    );
-
     return base.map((w) => {
-      const points = (!userWaypointedIds.has(w.id) && adjusted.get(w.id)) ? adjusted.get(w.id)! : w.points;
-      return { ...w, points, d: pointsToPathD(points) };
+      return { ...w, points: w.points, d: pointsToPathD(w.points) };
     });
   }, [connections, getPinPoint, wirePointOverrides, gridSize, componentBounds, pinObstacles]);
 
@@ -589,8 +575,8 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
 
     const points = calculateOrthogonalPoints(creating.fromPoint, end, creating.waypoints, {
       firstLeg: 'auto',
-      obstacles: componentBounds,
-      pinObstacles: pinObstacles,
+      obstacles: [],
+      pinObstacles: [],
       excludeIds: [creating.from.partId, creating.hoveredPin?.partId].filter(Boolean) as string[],
       excludePinIds,
       gridSize,
