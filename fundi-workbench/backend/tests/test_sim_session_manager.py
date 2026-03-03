@@ -73,6 +73,50 @@ class SimulationSessionManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(len(error_events) > 0,
                         "Expected at least one error event from failed QEMU launch")
 
+    async def test_esp32_session_stops_on_not_implemented_error(self) -> None:
+        """A NotImplementedError from asyncio.create_subprocess_exec (Windows
+        SelectorEventLoop) must be converted to a RuntimeError with a helpful
+        message and must transition the session to 'stopped'."""
+        import base64
+        dummy_payload = base64.b64encode(b"\xe9\x01\x02\x20" + b"\x00" * 100).decode()
+
+        mock_runner = AsyncMock()
+        mock_runner.start.side_effect = RuntimeError(
+            "asyncio subprocess is not supported with the current event loop. "
+            "On Windows, uvicorn must use the ProactorEventLoop"
+        )
+        with patch(
+            "app.services.sim_session_manager.Esp32QemuRunner",
+            return_value=mock_runner,
+        ):
+            manager = SimulationSessionManager()
+            session = await manager.create_session(
+                board="wokwi-esp32-devkit-v1",
+                artifact_type="merged-flash",
+                artifact_payload=dummy_payload,
+                simulation_hints={"engine": "esp32"},
+            )
+
+            await manager.start(session.id)
+            for _ in range(30):
+                await asyncio.sleep(0.1)
+                current = await manager.get_session(session.id)
+                if current and current.status == "stopped":
+                    break
+
+        current = await manager.get_session(session.id)
+        self.assertIsNotNone(current)
+        self.assertEqual(current.status, "stopped")
+
+        events = []
+        while not current.queue.empty():
+            events.append(current.queue.get_nowait())
+
+        error_events = [e for e in events if e.get("type") == "error"]
+        self.assertTrue(len(error_events) > 0,
+                        "Expected error event for NotImplementedError (Windows loop) QEMU failure")
+        self.assertIn("ProactorEventLoop", error_events[0].get("message", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

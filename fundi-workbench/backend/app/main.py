@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import platform
 import shutil
 import sys
 from contextlib import asynccontextmanager
+
+# On Windows, the default SelectorEventLoop does not support
+# asyncio.create_subprocess_exec (used for QEMU).  Switch to
+# ProactorEventLoop before uvicorn creates the event loop.
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
