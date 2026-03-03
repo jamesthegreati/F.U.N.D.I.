@@ -67,6 +67,7 @@ import { cn } from '@/utils/cn'
 import { getInteractiveComponentManager } from '@/utils/simulation/interactiveComponents'
 import { useTheme } from '@/components/ThemeProvider'
 import { FundiCodeEditor } from '@/components/editor/FundiCodeEditor'
+import { esp32PinToGpio } from '@/utils/simulation/engines/esp32/esp32PinMap'
 
 const nodeTypes = {
   arduino: ArduinoNode,
@@ -1465,7 +1466,8 @@ export default function Home() {
     const normalizePinName = (pinId: string) => pinId.trim().toUpperCase()
     const inferFixedPinValue = (pinId: string): boolean | null => {
       const p = normalizePinName(pinId)
-      if (p === 'GND' || p === 'GROUND') return false
+      // Handle plain and numbered GND pins: GND, GND.1, GND.2, GROUND, GROUND.1 ...
+      if (p === 'GND' || p === 'GROUND' || /^GND\.\d+$/.test(p) || /^GROUND\.\d+$/.test(p)) return false
       if (p === 'VCC' || p === '5V' || p === '3V3' || p === '3.3V' || p === 'VIN') return true
       return null
     }
@@ -1478,6 +1480,15 @@ export default function Home() {
         const pinNum = parseInt(pinId, 10)
         const v = pinStates[pinNum]
         return typeof v === 'boolean' ? v : null
+      }
+      // ESP32 pins: "D2", "D13", "TX0", "GPIO23", etc. (from esp32PinMap)
+      if (mcuPart?.type.includes('esp32')) {
+        const gpio = esp32PinToGpio(pinId)
+        // ESP32 has GPIOs 0-39 (GPIO 40+ are reserved / input-only high-range)
+        if (gpio !== null && gpio >= 0 && gpio <= 39) {
+          const v = pinStates[gpio]
+          return typeof v === 'boolean' ? v : null
+        }
       }
       // RP2040 Pi Pico GPIO pins: "GP0"..."GP29"
       const gpMatch = pinId.match(/^GP(\d+)$/i)
@@ -1565,6 +1576,12 @@ export default function Home() {
         if (typeof pin13Val === 'boolean') {
           states[mcuPart.id]['13'] = pin13Val
         }
+      } else if (mcuPart.type.includes('esp32')) {
+        // GPIO 2 = built-in LED on most ESP32 DevKit boards
+        const gpio2Val = pinStates[2]
+        if (typeof gpio2Val === 'boolean') {
+          states[mcuPart.id]['D2'] = gpio2Val
+        }
       }
     }
 
@@ -1645,7 +1662,6 @@ export default function Home() {
           if (!isPassThrough) {
             // This is an active component (LED, servo, etc.) - assign PWM value
             states[partId] = pwmValue
-            console.log(`[PWM] Mapped pin ${pinNum} (value=${pwmValue}) to ${partId} via ${pinId}`)
           }
         }
         
@@ -1665,6 +1681,22 @@ export default function Home() {
   }, [circuitParts, connections, pwmStates])
 
   // (removed noisy debug logging for smoother canvas performance)
+
+  // Compute human-readable board display name from current circuit parts.
+  // Matches canonical types: wokwi-arduino-uno/nano/mega, wokwi-esp32-devkit-v1, wokwi-pi-pico.
+  const boardDisplayName = useMemo(() => {
+    const mcu = circuitParts.find(
+      (p) => p.type.includes('arduino') || p.type.includes('esp32') || p.type.includes('pi-pico'),
+    )
+    if (!mcu) return 'No Board'
+    const t = mcu.type.toLowerCase()
+    if (t.includes('arduino-mega')) return 'Arduino Mega'
+    if (t.includes('arduino-nano')) return 'Arduino Nano'
+    if (t.includes('arduino-uno')) return 'Arduino Uno'
+    if (t.includes('esp32')) return 'ESP32 DevKit'
+    if (t.includes('pi-pico')) return 'Pi Pico'
+    return 'Unknown Board'
+  }, [circuitParts])
 
   // Prepare project data for publishing
   const prepareProjectForPublish = useCallback(() => {
@@ -1724,7 +1756,7 @@ export default function Home() {
         </div>
 
         {/* Center - Device Status */}
-        <StatusBadge deviceName="Arduino Uno" isConnected={true} />
+        <StatusBadge deviceName={boardDisplayName} isConnected={simIsRunning} />
 
         {/* Right - Actions */}
         <div className="flex items-center gap-2">
