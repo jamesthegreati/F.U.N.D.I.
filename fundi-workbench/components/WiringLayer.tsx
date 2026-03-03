@@ -70,10 +70,16 @@ function isEventInsideContainer(e: MouseEvent | PointerEvent, container: HTMLEle
 }
 
 function getPinElFromPoint(x: number, y: number): HTMLElement | null {
-  const el = document.elementFromPoint(x, y);
-  if (!el) return null;
-  const pin = (el as HTMLElement).closest?.('[data-fundi-pin="true"]') as HTMLElement | null;
-  return pin;
+  // Use elementsFromPoint to look through ALL layers at the cursor position.
+  // This ensures pins are found even when a wire SVG overlay is on top of them.
+  const els = document.elementsFromPoint(x, y);
+  for (const el of els) {
+    if (!(el instanceof HTMLElement)) continue;
+    if (el.matches('[data-fundi-pin="true"]')) return el;
+    const pin = el.closest('[data-fundi-pin="true"]') as HTMLElement | null;
+    if (pin) return pin;
+  }
+  return null;
 }
 
 function getPinRefFromEl(pinEl: HTMLElement): PinRef | null {
@@ -416,7 +422,7 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
         }
       }
 
-      const pinEl = (e.target as HTMLElement | null)?.closest?.('[data-fundi-pin="true"]') as HTMLElement | null;
+      const pinEl = getPinElFromPoint(e.clientX, e.clientY);
       const pinRef = pinEl ? getPinRefFromEl(pinEl) : null;
 
       // If we're creating and click a pin, complete the wire.
@@ -636,6 +642,10 @@ function WiringLayer({ containerRef, wirePointOverrides, isSimulating }: WiringL
                   onPointerEnter={() => setHoveredId(w.id)}
                   onPointerLeave={() => setHoveredId((prev) => (prev === w.id ? null : prev))}
                   onPointerDown={(e) => {
+                    // If a pin is underneath this wire, yield to the pin so it can
+                    // receive the click for connection creation (Wokwi-style priority).
+                    if (getPinElFromPoint(e.clientX, e.clientY)) return;
+
                     e.stopPropagation();
                     e.preventDefault();
 
