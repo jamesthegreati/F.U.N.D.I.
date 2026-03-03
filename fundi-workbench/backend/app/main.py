@@ -12,6 +12,7 @@ from app.api.endpoints.compile import router as compile_router
 from app.api.endpoints.generate import router as generate_router
 from app.api.endpoints.ai_tools import router as ai_tools_router
 from app.api.endpoints.simulate import router as simulate_router
+from app.api.endpoints.component_library import router as components_router
 from app.core.config import settings
 from app.services.compiler import CompilerService
 
@@ -98,6 +99,7 @@ app.include_router(generate_router)
 app.include_router(compile_router)
 app.include_router(ai_tools_router)
 app.include_router(simulate_router)
+app.include_router(components_router)
 
 
 @app.get("/health")
