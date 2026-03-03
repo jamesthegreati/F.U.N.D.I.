@@ -349,11 +349,462 @@
     "category": "input",
     "pins": ["R1", "R2", "R3", "R4", "C1", "C2", "C3", "C4"],
     "pinDescriptions": {
-      "R1-R4": "Row pins",
-      "C1-C4": "Column pins"
+      "R1-R4": "Row pins - connect to digital pins",
+      "C1-C4": "Column pins - connect to digital pins"
     },
     "width": 90,
     "height": 100,
     "libraries": ["Keypad"]
+  },
+
+  "wokwi-arduino-mega": {
+    "displayName": "Arduino Mega 2560",
+    "category": "mcu",
+    "pins": {
+      "digital": ["0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","45","46","47","48","49","50","51","52","53"],
+      "analog": ["A0","A1","A2","A3","A4","A5","A6","A7","A8","A9","A10","A11","A12","A13","A14","A15"],
+      "power": ["5V","3.3V","VIN"],
+      "ground": ["GND.1","GND.2","GND.3","GND.4","GND.5"]
+    },
+    "pinDescriptions": {
+      "0": "Digital 0 (RX0)", "1": "Digital 1 (TX0)",
+      "20": "I2C SDA", "21": "I2C SCL",
+      "50": "SPI MISO", "51": "SPI MOSI", "52": "SPI SCK", "53": "SPI SS"
+    },
+    "pwmPins": ["2","3","4","5","6","7","8","9","10","11","12","13","44","45","46"],
+    "width": 400,
+    "height": 200
+  },
+
+  "wokwi-pi-pico": {
+    "displayName": "Raspberry Pi Pico",
+    "category": "mcu",
+    "pins": {
+      "gpio": ["GP0","GP1","GP2","GP3","GP4","GP5","GP6","GP7","GP8","GP9","GP10","GP11","GP12","GP13","GP14","GP15","GP16","GP17","GP18","GP19","GP20","GP21","GP22","GP26","GP27","GP28"],
+      "power": ["3V3","VSYS","VBUS"],
+      "ground": ["GND.1","GND.2","GND.3","GND.4","GND.5","GND.6","GND.7","GND.8"]
+    },
+    "pinDescriptions": {
+      "GP0": "UART0 TX / I2C0 SDA", "GP1": "UART0 RX / I2C0 SCL",
+      "GP4": "I2C0 SDA / SPI0 RX", "GP5": "I2C0 SCL / SPI0 CSn",
+      "GP26": "ADC0", "GP27": "ADC1", "GP28": "ADC2"
+    },
+    "width": 100,
+    "height": 200
+  },
+
+  "wokwi-attiny85": {
+    "displayName": "ATtiny85",
+    "category": "mcu",
+    "pins": ["PB0","PB1","PB2","PB3","PB4","VCC","GND"],
+    "pinDescriptions": {
+      "PB0": "Digital 0 (SDA)", "PB1": "Digital 1 (PWM)",
+      "PB2": "Digital 2 (SCL/ADC1)", "PB3": "Digital 3 (ADC3)",
+      "PB4": "Digital 4 (ADC2)", "VCC": "Power 5V", "GND": "Ground"
+    },
+    "width": 40,
+    "height": 30
+  },
+
+  "wokwi-dht22": {
+    "displayName": "DHT22 Temperature/Humidity Sensor",
+    "category": "input",
+    "pins": ["VCC", "SDA", "NC", "GND"],
+    "pinDescriptions": {
+      "VCC": "Power supply (3.3-5V)",
+      "SDA": "Data signal - connect to digital pin",
+      "NC": "Not connected",
+      "GND": "Ground"
+    },
+    "attrs": {"temperature": "25", "humidity": "50"},
+    "width": 35,
+    "height": 45,
+    "libraries": ["DHT sensor library"]
+  },
+
+  "wokwi-ds18b20": {
+    "displayName": "DS18B20 Temperature Sensor",
+    "category": "input",
+    "pins": ["VCC", "DQ", "GND"],
+    "pinDescriptions": {
+      "VCC": "Power supply (3-5.5V)",
+      "DQ": "Data (OneWire) - needs 4.7kΩ pull-up to VCC",
+      "GND": "Ground"
+    },
+    "attrs": {"temperature": "25"},
+    "width": 15,
+    "height": 30,
+    "libraries": ["OneWire", "DallasTemperature"]
+  },
+
+  "wokwi-ds1307": {
+    "displayName": "DS1307 RTC Module",
+    "category": "input",
+    "pins": ["GND", "VCC", "SDA", "SCL"],
+    "pinDescriptions": {
+      "GND": "Ground", "VCC": "Power (5V)",
+      "SDA": "I2C Data - connect to A4 on Uno",
+      "SCL": "I2C Clock - connect to A5 on Uno"
+    },
+    "width": 35,
+    "height": 30,
+    "libraries": ["RTClib"]
+  },
+
+  "wokwi-mpu6050": {
+    "displayName": "MPU6050 Accelerometer/Gyroscope",
+    "category": "input",
+    "pins": ["VCC", "GND", "SCL", "SDA", "XDA", "XCL", "AD0", "INT"],
+    "pinDescriptions": {
+      "VCC": "Power (3.3V or 5V)", "GND": "Ground",
+      "SCL": "I2C Clock", "SDA": "I2C Data",
+      "INT": "Interrupt output", "AD0": "I2C address select"
+    },
+    "width": 35,
+    "height": 25,
+    "libraries": ["Adafruit MPU6050", "Wire"]
+  },
+
+  "wokwi-photoresistor-sensor": {
+    "displayName": "Photoresistor (LDR)",
+    "category": "input",
+    "pins": ["VCC", "OUT", "GND"],
+    "pinDescriptions": {
+      "VCC": "Power supply (3.3-5V)",
+      "OUT": "Analog output - connect to analog pin",
+      "GND": "Ground"
+    },
+    "attrs": {"lux": "500"},
+    "width": 20,
+    "height": 25
+  },
+
+  "wokwi-ntc-temperature-sensor": {
+    "displayName": "NTC Temperature Sensor",
+    "category": "input",
+    "pins": ["VCC", "OUT", "GND"],
+    "pinDescriptions": {
+      "VCC": "Power supply", "OUT": "Analog output", "GND": "Ground"
+    },
+    "attrs": {"temperature": "25"},
+    "width": 20,
+    "height": 25
+  },
+
+  "wokwi-ir-receiver": {
+    "displayName": "IR Receiver",
+    "category": "input",
+    "pins": ["GND", "VCC", "DAT"],
+    "pinDescriptions": {
+      "GND": "Ground", "VCC": "Power (3.3-5V)",
+      "DAT": "Data output - connect to digital pin"
+    },
+    "width": 20,
+    "height": 25,
+    "libraries": ["IRremote"]
+  },
+
+  "wokwi-ir-remote": {
+    "displayName": "IR Remote Control",
+    "category": "input",
+    "pins": [],
+    "description": "Virtual remote that sends IR codes to wokwi-ir-receiver",
+    "width": 50,
+    "height": 100
+  },
+
+  "wokwi-analog-joystick": {
+    "displayName": "Analog Joystick",
+    "category": "input",
+    "pins": ["VCC", "VERT", "HORIZ", "SEL", "GND"],
+    "pinDescriptions": {
+      "VCC": "Power (5V)", "GND": "Ground",
+      "VERT": "Vertical axis analog output",
+      "HORIZ": "Horizontal axis analog output",
+      "SEL": "Button press (active LOW)"
+    },
+    "width": 45,
+    "height": 45
+  },
+
+  "wokwi-ky-040": {
+    "displayName": "Rotary Encoder (KY-040)",
+    "category": "input",
+    "pins": ["CLK", "DT", "SW", "VCC", "GND"],
+    "pinDescriptions": {
+      "CLK": "Clock signal (encoder A)", "DT": "Data signal (encoder B)",
+      "SW": "Push button (active LOW)", "VCC": "Power (5V)", "GND": "Ground"
+    },
+    "width": 30,
+    "height": 30
+  },
+
+  "wokwi-hx711": {
+    "displayName": "HX711 Load Cell Amplifier",
+    "category": "input",
+    "pins": ["VCC", "DT", "SCK", "GND"],
+    "pinDescriptions": {
+      "VCC": "Power (3.3-5V)", "DT": "Data - connect to digital pin",
+      "SCK": "Clock - connect to digital pin", "GND": "Ground"
+    },
+    "width": 30,
+    "height": 20,
+    "libraries": ["HX711"]
+  },
+
+  "wokwi-pushbutton-6mm": {
+    "displayName": "6mm Tactile Button",
+    "category": "input",
+    "pins": ["1.l", "2.l", "1.r", "2.r"],
+    "pinDescriptions": {
+      "1.l": "Terminal 1 left", "2.l": "Terminal 2 left",
+      "1.r": "Terminal 1 right", "2.r": "Terminal 2 right"
+    },
+    "width": 12,
+    "height": 12
+  },
+
+  "wokwi-dip-switch-8": {
+    "displayName": "8-Position DIP Switch",
+    "category": "input",
+    "pins": ["1", "2", "3", "4", "5", "6", "7", "8", "1a", "2a", "3a", "4a", "5a", "6a", "7a", "8a"],
+    "pinDescriptions": {
+      "1-8": "Switch input terminals",
+      "1a-8a": "Switch output terminals"
+    },
+    "width": 50,
+    "height": 15
+  },
+
+  "wokwi-slide-potentiometer": {
+    "displayName": "Slide Potentiometer",
+    "category": "input",
+    "pins": ["VCC", "SIG", "GND"],
+    "pinDescriptions": {
+      "VCC": "Power supply", "SIG": "Wiper output - connect to analog input", "GND": "Ground"
+    },
+    "width": 80,
+    "height": 20
+  },
+
+  "wokwi-lcd2004": {
+    "displayName": "LCD 20x4",
+    "category": "display",
+    "pins": {
+      "i2c": ["GND", "VCC", "SDA", "SCL"],
+      "parallel": ["VSS", "VDD", "V0", "RS", "RW", "E", "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A", "K"]
+    },
+    "pinDescriptions": {
+      "GND": "Ground (I2C)", "VCC": "Power 5V (I2C)",
+      "SDA": "I2C Data", "SCL": "I2C Clock"
+    },
+    "width": 150,
+    "height": 55,
+    "libraries": ["LiquidCrystal_I2C"]
+  },
+
+  "wokwi-ili9341": {
+    "displayName": "ILI9341 TFT Display (240x320)",
+    "category": "display",
+    "pins": ["VCC", "GND", "CS", "RESET", "DC", "MOSI", "SCK", "LED", "MISO"],
+    "pinDescriptions": {
+      "VCC": "Power (3.3V)", "GND": "Ground",
+      "CS": "SPI Chip Select", "DC": "Data/Command",
+      "MOSI": "SPI Data In (pin 11)", "SCK": "SPI Clock (pin 13)",
+      "MISO": "SPI Data Out (pin 12)", "RESET": "Reset", "LED": "Backlight"
+    },
+    "width": 70,
+    "height": 90,
+    "libraries": ["Adafruit ILI9341", "Adafruit GFX"]
+  },
+
+  "wokwi-tm1637-7segment": {
+    "displayName": "TM1637 4-Digit 7-Segment",
+    "category": "display",
+    "pins": ["CLK", "DIO", "VCC", "GND"],
+    "pinDescriptions": {
+      "CLK": "Clock - connect to digital pin", "DIO": "Data - connect to digital pin",
+      "VCC": "Power (5V)", "GND": "Ground"
+    },
+    "width": 55,
+    "height": 30,
+    "libraries": ["TM1637Display"]
+  },
+
+  "wokwi-max7219-matrix": {
+    "displayName": "MAX7219 LED Matrix (8x8)",
+    "category": "display",
+    "pins": ["VCC", "GND", "DIN", "CS", "CLK"],
+    "pinDescriptions": {
+      "VCC": "Power (5V)", "GND": "Ground",
+      "DIN": "SPI Data In", "CS": "Chip Select", "CLK": "Clock"
+    },
+    "width": 40,
+    "height": 40,
+    "libraries": ["LedControl"]
+  },
+
+  "wokwi-led-bar-graph": {
+    "displayName": "LED Bar Graph (10 segments)",
+    "category": "output",
+    "pins": ["A1","C1","A2","C2","A3","C3","A4","C4","A5","C5","A6","C6","A7","C7","A8","C8","A9","C9","A10","C10"],
+    "pinDescriptions": {
+      "A1-A10": "Anode pins for each LED segment",
+      "C1-C10": "Cathode pins for each LED segment"
+    },
+    "width": 35,
+    "height": 30
+  },
+
+  "wokwi-led-ring": {
+    "displayName": "NeoPixel LED Ring",
+    "category": "output",
+    "pins": ["GND", "VCC", "DIN", "DOUT"],
+    "pinDescriptions": {
+      "GND": "Ground", "VCC": "Power (5V)",
+      "DIN": "Data In - connect to digital pin",
+      "DOUT": "Data Out - chain to next ring"
+    },
+    "width": 60,
+    "height": 60,
+    "libraries": ["Adafruit NeoPixel"]
+  },
+
+  "wokwi-neopixel-matrix": {
+    "displayName": "NeoPixel Matrix",
+    "category": "output",
+    "pins": ["GND", "VCC", "DIN", "DOUT"],
+    "pinDescriptions": {
+      "GND": "Ground", "VCC": "Power (5V)",
+      "DIN": "Data In", "DOUT": "Data Out"
+    },
+    "width": 80,
+    "height": 80,
+    "libraries": ["Adafruit NeoPixel", "Adafruit NeoMatrix"]
+  },
+
+  "wokwi-stepper-motor": {
+    "displayName": "Bipolar Stepper Motor",
+    "category": "motor",
+    "pins": ["A+", "A-", "B+", "B-"],
+    "pinDescriptions": {
+      "A+": "Coil A positive", "A-": "Coil A negative",
+      "B+": "Coil B positive", "B-": "Coil B negative"
+    },
+    "width": 45,
+    "height": 45,
+    "libraries": ["Stepper"]
+  },
+
+  "wokwi-a4988": {
+    "displayName": "A4988 Stepper Driver",
+    "category": "motor",
+    "pins": ["ENABLE", "MS1", "MS2", "MS3", "RESET", "SLEEP", "STEP", "DIR", "GND.1", "VDD", "1B", "1A", "2A", "2B", "GND.2", "VMOT"],
+    "pinDescriptions": {
+      "STEP": "Step signal - one pulse = one step",
+      "DIR": "Direction control", "ENABLE": "Enable/disable driver",
+      "VMOT": "Motor power (8-35V)", "VDD": "Logic power (3.3-5V)",
+      "1A": "Motor coil A+", "1B": "Motor coil A-",
+      "2A": "Motor coil B+", "2B": "Motor coil B-"
+    },
+    "width": 20,
+    "height": 40
+  },
+
+  "wokwi-biaxial-stepper": {
+    "displayName": "Biaxial Stepper Motor",
+    "category": "motor",
+    "pins": ["A1.1", "A1.2", "B1.1", "B1.2", "A2.1", "A2.2", "B2.1", "B2.2"],
+    "pinDescriptions": {
+      "A1.1-B1.2": "Motor 1 coil connections",
+      "A2.1-B2.2": "Motor 2 coil connections"
+    },
+    "width": 45,
+    "height": 45
+  },
+
+  "wokwi-74hc595": {
+    "displayName": "74HC595 Shift Register (SIPO)",
+    "category": "ic",
+    "pins": ["Q0","Q1","Q2","Q3","Q4","Q5","Q6","Q7","GND","Q7S","MR","SHCP","STCP","OE","DS","VCC"],
+    "pinDescriptions": {
+      "DS": "Serial data input (connect to digital pin)",
+      "SHCP": "Shift register clock (connect to digital pin)",
+      "STCP": "Storage register clock / latch (connect to digital pin)",
+      "OE": "Output enable (active LOW, connect to GND)",
+      "MR": "Master reset (active LOW, connect to VCC)",
+      "Q0-Q7": "Parallel outputs", "Q7S": "Serial output (for daisy-chain)",
+      "VCC": "Power (5V)", "GND": "Ground"
+    },
+    "width": 25,
+    "height": 40
+  },
+
+  "wokwi-74hc165": {
+    "displayName": "74HC165 Shift Register (PISO)",
+    "category": "ic",
+    "pins": ["SH","CLK","E","SER","A","B","C","D","QH","GND","VCC","H","G","F","QHn","CLKn"],
+    "pinDescriptions": {
+      "SH": "Shift/Load (LOW=load, HIGH=shift)",
+      "CLK": "Clock input", "SER": "Serial data input",
+      "A-H": "Parallel data inputs", "QH": "Serial data output",
+      "QHn": "Inverted serial output",
+      "VCC": "Power (5V)", "GND": "Ground"
+    },
+    "width": 25,
+    "height": 40
+  },
+
+  "wokwi-nlsf595": {
+    "displayName": "NLSF595 LED Driver",
+    "category": "ic",
+    "pins": ["Q0","Q1","Q2","Q3","Q4","Q5","Q6","Q7","GND","Q7S","MR","SHCP","STCP","OE","DS","VCC"],
+    "pinDescriptions": {
+      "DS": "Serial data input", "SHCP": "Shift clock", "STCP": "Latch clock",
+      "Q0-Q7": "LED outputs (constant current)", "VCC": "Power", "GND": "Ground"
+    },
+    "width": 25,
+    "height": 40
+  },
+
+  "wokwi-microsd-card": {
+    "displayName": "MicroSD Card Module",
+    "category": "storage",
+    "pins": ["CD", "DO", "GND", "SCK", "VCC", "DI", "CS"],
+    "pinDescriptions": {
+      "VCC": "Power (3.3-5V)", "GND": "Ground",
+      "CS": "SPI Chip Select", "DI": "SPI MOSI",
+      "DO": "SPI MISO", "SCK": "SPI Clock",
+      "CD": "Card detect"
+    },
+    "width": 25,
+    "height": 30,
+    "libraries": ["SD", "SPI"]
+  },
+
+  "wokwi-franzininho": {
+    "displayName": "Franzininho (ATtiny85)",
+    "category": "mcu",
+    "pins": ["PB0","PB1","PB2","PB3","PB4","VCC","GND"],
+    "pinDescriptions": {
+      "PB0": "Digital 0", "PB1": "Digital 1 (PWM/LED)",
+      "PB2": "Digital 2", "PB3": "Digital 3", "PB4": "Digital 4",
+      "VCC": "Power", "GND": "Ground"
+    },
+    "width": 55,
+    "height": 35
+  },
+
+  "wokwi-nano-rp2040-connect": {
+    "displayName": "Arduino Nano RP2040 Connect",
+    "category": "mcu",
+    "pins": {
+      "digital": ["D2","D3","D4","D5","D6","D7","D8","D9","D10","D11","D12","D13"],
+      "analog": ["A0","A1","A2","A3","A4","A5","A6","A7"],
+      "power": ["3V3","VIN"],
+      "ground": ["GND.1","GND.2"]
+    },
+    "width": 180,
+    "height": 55
   }
 }

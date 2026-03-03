@@ -1,9 +1,56 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from app.services.runtime_state import get_state_snapshot
+
+
+def _circuit_analysis(snapshot: dict) -> str:
+    """Produce a brief analysis of the current circuit to guide the AI."""
+    components = snapshot.get("components") or []
+    connections = snapshot.get("connections") or []
+    if not components:
+        return "CANVAS: Empty — no components placed yet."
+
+    type_counts: dict[str, int] = {}
+    for c in components:
+        t = str(c.get("type") or "unknown")
+        type_counts[t] = type_counts.get(t, 0) + 1
+
+    has_mcu = any(
+        "arduino" in str(c.get("type", "")).lower()
+        or "esp32" in str(c.get("type", "")).lower()
+        or "pico" in str(c.get("type", "")).lower()
+        for c in components
+    )
+
+    # Identify unconnected parts
+    connected_ids = set()
+    for conn in connections:
+        fr = conn.get("from") or {}
+        to = conn.get("to") or {}
+        connected_ids.add(fr.get("partId", ""))
+        connected_ids.add(to.get("partId", ""))
+
+    unconnected = [
+        c.get("id", "?")
+        for c in components
+        if c.get("id", "") not in connected_ids
+        and not str(c.get("type", "")).endswith("breadboard")
+        and not str(c.get("type", "")).endswith("breadboard-mini")
+    ]
+
+    lines = [
+        f"CANVAS: {len(components)} components, {len(connections)} wires.",
+        f"Parts: {', '.join(f'{v}× {k}' for k, v in type_counts.items())}.",
+    ]
+    if not has_mcu:
+        lines.append("⚠ No microcontroller detected — suggest adding one.")
+    if unconnected:
+        lines.append(f"⚠ Unconnected parts: {', '.join(unconnected[:8])}.")
+
+    return " ".join(lines)
 
 
 def build_llm_context_block(
@@ -21,6 +68,11 @@ def build_llm_context_block(
 
     if include_runtime_state:
         snapshot = get_state_snapshot()
+
+        # Compact circuit analysis for quick situational awareness
+        analysis = _circuit_analysis(snapshot)
+        blocks.append(analysis)
+
         blocks.append(
             "FUNDI_WORKSPACE_STATE (authoritative, may be truncated):\n"
             + json.dumps(snapshot, ensure_ascii=False)

@@ -903,3 +903,175 @@ def validate_wiring() -> WiringValidationResponse:
         summary=summary
     )
 
+
+# ============================================================================
+# Circuit Analysis & Teaching Suggestions
+# ============================================================================
+
+
+class CircuitAnalysisRequest(BaseModel):
+    """Request to analyze the current circuit for teaching suggestions."""
+    components: List[Dict[str, Any]] = Field(default_factory=list)
+    connections: List[Dict[str, Any]] = Field(default_factory=list)
+    code: str = Field(default="")
+    teacher_mode: bool = Field(default=True)
+
+
+class TeachingSuggestion(BaseModel):
+    """A single teaching suggestion."""
+    type: str = Field(description="hint | warning | next_step | concept")
+    message: str
+    priority: int = Field(default=0, description="Higher = more important")
+
+
+class CircuitAnalysisResponse(BaseModel):
+    """Analysis results with teaching suggestions."""
+    suggestions: List[TeachingSuggestion]
+    circuit_summary: str
+
+
+def _analyze_circuit_for_teaching(
+    components: list,
+    connections: list,
+    code: str,
+) -> list[TeachingSuggestion]:
+    """Generate teaching suggestions based on circuit state (no LLM call)."""
+    suggestions: list[TeachingSuggestion] = []
+
+    comp_types = [str(c.get("type", "")) for c in components]
+    has_mcu = any("arduino" in t or "esp32" in t or "pico" in t for t in comp_types)
+    has_led = any("led" in t and "rgb" not in t for t in comp_types)
+    has_resistor = any("resistor" in t for t in comp_types)
+    has_button = any("button" in t or "pushbutton" in t for t in comp_types)
+    has_sensor = any(
+        t in comp_types for t in [
+            "wokwi-dht22", "wokwi-hc-sr04", "wokwi-ds18b20",
+            "wokwi-pir-motion-sensor", "wokwi-photoresistor-sensor",
+            "wokwi-mpu6050", "wokwi-ntc-temperature-sensor",
+        ]
+    )
+    has_display = any(
+        t in comp_types for t in [
+            "wokwi-lcd1602", "wokwi-lcd2004", "wokwi-ssd1306",
+            "wokwi-ili9341", "wokwi-7segment", "wokwi-tm1637-7segment",
+        ]
+    )
+
+    # Gather connected part IDs
+    connected_ids: set[str] = set()
+    for conn in connections:
+        fr = conn.get("from") or conn
+        to = conn.get("to") or conn
+        connected_ids.add(str(fr.get("partId", fr.get("source_part", ""))))
+        connected_ids.add(str(to.get("partId", to.get("target_part", ""))))
+
+    unconnected = [
+        c for c in components
+        if str(c.get("id", "")) not in connected_ids
+        and "breadboard" not in str(c.get("type", ""))
+    ]
+
+    # Empty canvas
+    if not components:
+        suggestions.append(TeachingSuggestion(
+            type="next_step",
+            message="Start by adding a microcontroller (e.g., Arduino Uno) from the Components panel, or ask me to build a circuit!",
+            priority=10,
+        ))
+        return suggestions
+
+    # No MCU
+    if not has_mcu:
+        suggestions.append(TeachingSuggestion(
+            type="warning",
+            message="Your circuit needs a microcontroller. Try adding an Arduino Uno — it's the brain that runs your code.",
+            priority=9,
+        ))
+
+    # LED without resistor
+    if has_led and not has_resistor:
+        suggestions.append(TeachingSuggestion(
+            type="warning",
+            message="⚡ Your LED needs a current-limiting resistor (220Ω) to prevent damage. Without it, too much current flows through the LED.",
+            priority=8,
+        ))
+
+    # Unconnected components
+    if unconnected and has_mcu:
+        names = [str(c.get("id", c.get("type", "?"))) for c in unconnected[:3]]
+        suggestions.append(TeachingSuggestion(
+            type="hint",
+            message=f"Some components aren't wired yet: {', '.join(names)}. Every component needs at least power and signal connections.",
+            priority=7,
+        ))
+
+    # Progressive suggestions based on complexity
+    if has_mcu and not has_led and not has_sensor and not has_display and len(components) <= 2:
+        suggestions.append(TeachingSuggestion(
+            type="next_step",
+            message="Great start with the microcontroller! Try adding an LED to learn about digital output, or a button for digital input.",
+            priority=5,
+        ))
+    elif has_mcu and has_led and not has_button and not has_sensor:
+        suggestions.append(TeachingSuggestion(
+            type="next_step",
+            message="Nice LED circuit! Ready for the next step? Add a pushbutton to make it interactive — you'll learn about digital input and INPUT_PULLUP.",
+            priority=4,
+        ))
+    elif has_mcu and has_button and not has_sensor:
+        suggestions.append(TeachingSuggestion(
+            type="next_step",
+            message="You're getting the hang of it! Try adding a sensor (DHT22 for temperature, or HC-SR04 for distance) to work with real-world data.",
+            priority=3,
+        ))
+    elif has_mcu and has_sensor and not has_display:
+        suggestions.append(TeachingSuggestion(
+            type="next_step",
+            message="Your sensor circuit is working — now let's display the data! Add an LCD1602 (I2C mode) or SSD1306 OLED to show readings.",
+            priority=3,
+        ))
+
+    # Code-specific hints
+    if code and "delay(" in code and "millis" not in code and len(code) > 200:
+        suggestions.append(TeachingSuggestion(
+            type="concept",
+            message="💡 Tip: Using delay() blocks your entire program. For more responsive code, learn about millis()-based timing — ask me to show you!",
+            priority=2,
+        ))
+
+    if code and "Serial.begin" in code and not any("serial" in t.lower() for t in comp_types):
+        suggestions.append(TeachingSuggestion(
+            type="hint",
+            message="Your code uses Serial output — check the Serial Monitor tab to see the data your Arduino is printing.",
+            priority=2,
+        ))
+
+    return suggestions
+
+
+@router.post("/api/v1/ai-tools/analyze-circuit", response_model=CircuitAnalysisResponse)
+async def analyze_circuit(request: CircuitAnalysisRequest):
+    """Analyze the current circuit and return teaching suggestions.
+
+    This is a lightweight, LLM-free analysis that runs locally for instant
+    feedback.  Used by the teacher mode to provide real-time guidance.
+    """
+    suggestions = _analyze_circuit_for_teaching(
+        request.components,
+        request.connections,
+        request.code,
+    )
+
+    # Sort by priority descending
+    suggestions.sort(key=lambda s: s.priority, reverse=True)
+
+    # Build summary
+    comp_count = len(request.components)
+    conn_count = len(request.connections)
+    summary = f"{comp_count} component{'s' if comp_count != 1 else ''}, {conn_count} wire{'s' if conn_count != 1 else ''}"
+
+    return CircuitAnalysisResponse(
+        suggestions=suggestions[:5],  # Limit to top 5
+        circuit_summary=summary,
+    )
+
