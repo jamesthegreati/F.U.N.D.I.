@@ -73,6 +73,10 @@ export interface ValidationContext {
   connections: Array<{ source: string; target: string; color: string }>;
   adjacency: Map<string, Set<string>>;
   boardType?: string;
+  /** The nanoid part ID of the board (needed because adjacency keys use part IDs, not types) */
+  boardPartId?: string;
+  /** Map from nanoid part ID → Wokwi part type (e.g. 'wokwi-resistor') */
+  partTypeMap: Map<string, string>;
 }
 
 // Component electrical specifications

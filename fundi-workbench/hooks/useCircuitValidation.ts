@@ -8,7 +8,10 @@ import type { ValidationResult } from '@/utils/validation/types';
  * Automatically validates circuit when parts or connections change
  */
 export function useCircuitValidation(options?: { debounceMs?: number; enabled?: boolean }) {
-  const { debounceMs = 500, enabled = true } = options || {};
+  const settings = useAppStore((state) => state.settings);
+  const enabledFromSettings = settings.enableElectricalValidation;
+  const debounceFromSettings = settings.validationDebounceMs;
+  const { debounceMs = debounceFromSettings, enabled = enabledFromSettings } = options || {};
 
   const circuitParts = useAppStore((state) => state.circuitParts);
   const connections = useAppStore((state) => state.connections);
@@ -43,7 +46,11 @@ export function useCircuitValidation(options?: { debounceMs?: number; enabled?: 
       try {
         const result = electricalValidator.validateCircuit(
           circuitParts,
-          circuitConnections
+          circuitConnections,
+          {
+            educationalMode: settings.educationalMode,
+            skipWarnings: !settings.showInfoValidations,
+          }
         );
         setValidationResult(result);
       } catch (error) {
@@ -55,7 +62,7 @@ export function useCircuitValidation(options?: { debounceMs?: number; enabled?: 
     }, debounceMs);
 
     return () => clearTimeout(timeoutId);
-  }, [circuitParts, circuitConnections, enabled, debounceMs]);
+  }, [circuitParts, circuitConnections, enabled, debounceMs, settings.educationalMode, settings.showInfoValidations]);
 
   return {
     validationResult,

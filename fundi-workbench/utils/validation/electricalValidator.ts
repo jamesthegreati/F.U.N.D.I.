@@ -12,10 +12,9 @@ import {
   is5VBoard,
   is5VTolerant,
   getTypicalVoltage,
-  getMaxVoltage,
   getTypicalCurrent,
 } from './componentSpecs';
-import { buildAdjacency, findConnectedBoardPinId } from '../simulation/net/NetGraph';
+import { buildAdjacency } from '../simulation/net/NetGraph';
 
 /**
  * Main electrical circuit validation engine
@@ -37,7 +36,6 @@ export class ElectricalValidator {
     connections: Array<{ source: string; target: string; color: string }>,
     options?: ValidationOptions
   ): ValidationResult {
-    const startTime = Date.now();
     const issues: ValidationIssue[] = [];
 
     // Build adjacency graph for net analysis
@@ -47,11 +45,21 @@ export class ElectricalValidator {
     }));
     const adjacency = buildAdjacency(connectionFormat);
 
+    // Build part ID → type lookup map (adjacency keys use nanoid part IDs, not types)
+    const partTypeMap = new Map<string, string>();
+    for (const part of parts) {
+      partTypeMap.set(part.id, part.type);
+    }
+
+    const boardPart = this.findBoardPart(parts);
+
     const context: ValidationContext = {
       parts,
       connections,
       adjacency,
-      boardType: this.findBoardType(parts),
+      boardType: boardPart?.type,
+      boardPartId: boardPart?.id,
+      partTypeMap,
     };
 
     // Run validation rules
@@ -94,9 +102,9 @@ export class ElectricalValidator {
    */
   private validateLEDCurrentLimiting(context: ValidationContext): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
-    const { parts, adjacency, boardType } = context;
+    const { parts, adjacency, boardType, boardPartId, partTypeMap } = context;
 
-    if (!boardType) return issues;
+    if (!boardType || !boardPartId) return issues;
 
     const leds = parts.filter(p => p.type === 'wokwi-led' || p.type === 'wokwi-rgb-led');
     const boardSpec = getComponentSpec(boardType);
@@ -107,16 +115,20 @@ export class ElectricalValidator {
       const anodeKey = `${led.id}:A`;
       const cathodeKey = `${led.id}:C`;
 
-      // Check if LED is connected to GPIO pin
-      const anodeGPIO = this.findConnectedGPIOPin(anodeKey, adjacency, boardType);
-      const cathodeGPIO = this.findConnectedGPIOPin(cathodeKey, adjacency, boardType);
+      // Check if LED is connected to GPIO pin (use boardPartId, not boardType)
+      const anodeGPIO = this.findConnectedGPIOPin(anodeKey, adjacency, boardPartId);
+      const cathodeGPIO = this.findConnectedGPIOPin(cathodeKey, adjacency, boardPartId);
 
       if (!anodeGPIO && !cathodeGPIO) continue; // Not GPIO-driven
 
-      // Check for resistor in series
-      const resistorsInPath = this.findResistorsInNet(anodeKey, adjacency);
+      // Check for resistor in series (use partTypeMap to resolve types from IDs)
+      const resistorsInPath = this.findResistorsInNet(anodeKey, adjacency, partTypeMap, parts);
 
       if (resistorsInPath.length === 0) {
+        // Also check cathode side for resistor
+        const cathodeResistors = this.findResistorsInNet(cathodeKey, adjacency, partTypeMap, parts);
+        if (cathodeResistors.length > 0) continue; // Resistor is on cathode side, OK
+
         const ledSpec = getLEDSpec(led.attrs?.color as string);
 
         issues.push({
@@ -184,9 +196,9 @@ export class ElectricalValidator {
    */
   private validateVoltageLevels(context: ValidationContext): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
-    const { parts, adjacency, boardType } = context;
+    const { parts, adjacency, boardType, boardPartId } = context;
 
-    if (!boardType) return issues;
+    if (!boardType || !boardPartId) return issues;
 
     // Check for 3.3V devices connected to 5V boards
     for (const part of parts) {
@@ -196,7 +208,7 @@ export class ElectricalValidator {
       // Check if component requires 3.3V but board provides 5V
       if (spec.vccOperating.max < 5.0 && is5VBoard(boardType)) {
         const vccKey = `${part.id}:VCC`;
-        const powerNet = this.inferNetVoltage(vccKey, adjacency, boardType);
+        const powerNet = this.inferNetVoltage(vccKey, adjacency);
 
         if (powerNet && powerNet > spec.vccOperating.max) {
           issues.push({
@@ -245,7 +257,7 @@ export class ElectricalValidator {
           const partPins = this.getPartPinKeys(part.id, adjacency);
 
           for (const pinKey of partPins) {
-            const connectedBoardPin = this.findConnectedGPIOPin(pinKey, adjacency, boardType);
+            const connectedBoardPin = this.findConnectedGPIOPin(pinKey, adjacency, boardPartId);
             if (connectedBoardPin) {
               issues.push({
                 id: generateIssueId(),
@@ -270,24 +282,24 @@ export class ElectricalValidator {
    */
   private validateShortCircuits(context: ValidationContext): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
-    const { adjacency, boardType } = context;
+    const { adjacency, boardType, boardPartId, partTypeMap } = context;
 
-    if (!boardType) return issues;
+    if (!boardType || !boardPartId) return issues;
 
-    // Find all power and ground nets
+    // Find all power and ground nets (use boardPartId for adjacency keys)
     const powerPins = ['5V', 'VCC', '3.3V', '3V3', 'VIN'];
     const groundPins = ['GND', 'GROUND'];
 
     for (const powerPin of powerPins) {
-      const powerKey = `${boardType}:${powerPin}`;
+      const powerKey = `${boardPartId}:${powerPin}`;
 
       for (const groundPin of groundPins) {
-        const groundKey = `${boardType}:${groundPin}`;
+        const groundKey = `${boardPartId}:${groundPin}`;
 
         // Check if power and ground are in the same net
         if (this.areConnected(powerKey, groundKey, adjacency)) {
           // Find components in the path
-          const pathComponents = this.findComponentsInPath(powerKey, groundKey, adjacency);
+          const pathComponents = this.findComponentsInPath(powerKey, groundKey, adjacency, partTypeMap);
 
           // Check if there's meaningful resistance in the path
           const hasResistor = pathComponents.some(c => c.type === 'wokwi-resistor');
@@ -355,7 +367,7 @@ export class ElectricalValidator {
   /**
    * Detect reverse polarity on polarized components
    */
-  private validateReversePolarity(context: ValidationContext): ValidationIssue[] {
+  private validateReversePolarity(_context: ValidationContext): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     // TODO: Implement polarity checking for electrolytic capacitors, diodes, etc.
     return issues;
@@ -364,7 +376,7 @@ export class ElectricalValidator {
   /**
    * Detect floating/unconnected inputs
    */
-  private validateFloatingPins(context: ValidationContext): ValidationIssue[] {
+  private validateFloatingPins(_context: ValidationContext): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     // TODO: Implement floating pin detection for important inputs
     return issues;
@@ -426,18 +438,22 @@ export class ElectricalValidator {
     return { partId, pinId };
   }
 
-  private findBoardType(parts: Array<{ type: string }>): string | undefined {
+  private findBoardPart(parts: Array<{ id: string; type: string }>): { id: string; type: string } | undefined {
     return parts.find(p =>
       p.type.includes('arduino') ||
       p.type.includes('esp32') ||
       p.type.includes('pico')
-    )?.type;
+    );
   }
 
+  /**
+   * Walk the net from pinKey looking for a board GPIO pin.
+   * boardPartId is the nanoid of the board part (NOT the type string).
+   */
   private findConnectedGPIOPin(
     pinKey: string,
     adjacency: Map<string, Set<string>>,
-    boardType: string
+    boardPartId: string
   ): string | null {
     const queue = [pinKey];
     const visited = new Set([pinKey]);
@@ -446,8 +462,8 @@ export class ElectricalValidator {
       const current = queue.shift()!;
       const [partId, pinId] = current.split(':');
 
-      // Check if this is a board GPIO pin
-      if (partId === boardType && pinId && !['GND', '5V', 'VCC', '3.3V', '3V3', 'VIN', 'AREF'].includes(pinId)) {
+      // Check if this is a board GPIO pin (compare against actual part ID)
+      if (partId === boardPartId && pinId && !['GND', '5V', 'VCC', '3.3V', '3V3', 'VIN', 'AREF'].includes(pinId)) {
         return pinId;
       }
 
@@ -465,9 +481,15 @@ export class ElectricalValidator {
     return null;
   }
 
+  /**
+   * Walk the net from pinKey looking for resistors.
+   * Uses partTypeMap to resolve nanoid part IDs to Wokwi types.
+   */
   private findResistorsInNet(
     pinKey: string,
-    adjacency: Map<string, Set<string>>
+    adjacency: Map<string, Set<string>>,
+    partTypeMap: Map<string, string>,
+    parts: Array<{ id: string; attrs?: Record<string, unknown> }>
   ): Array<{ id: string; attrs?: Record<string, unknown> }> {
     const resistors: Array<{ id: string; attrs?: Record<string, unknown> }> = [];
     const queue = [pinKey];
@@ -477,8 +499,11 @@ export class ElectricalValidator {
       const current = queue.shift()!;
       const [partId] = current.split(':');
 
-      if (partId.includes('resistor') || partId.includes('wokwi-resistor')) {
-        resistors.push({ id: partId });
+      // Look up the actual part type from the ID
+      const partType = partTypeMap.get(partId);
+      if (partType === 'wokwi-resistor') {
+        const part = parts.find(p => p.id === partId);
+        resistors.push({ id: partId, attrs: part?.attrs });
       }
 
       const neighbors = adjacency.get(current);
@@ -498,14 +523,13 @@ export class ElectricalValidator {
   private inferNetVoltage(
     pinKey: string,
     adjacency: Map<string, Set<string>>,
-    boardType: string
   ): number | null {
     const queue = [pinKey];
     const visited = new Set([pinKey]);
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-      const [partId, pinId] = current.split(':');
+      const [, pinId] = current.split(':');
 
       // Check for power pins
       if (pinId === '5V' || pinId === 'VCC') return 5.0;
@@ -555,9 +579,11 @@ export class ElectricalValidator {
   private findComponentsInPath(
     start: string,
     end: string,
-    adjacency: Map<string, Set<string>>
+    adjacency: Map<string, Set<string>>,
+    partTypeMap: Map<string, string>
   ): Array<{ id: string; type: string }> {
     const components: Array<{ id: string; type: string }> = [];
+    const seen = new Set<string>();
     const queue = [start];
     const visited = new Set([start]);
 
@@ -565,8 +591,9 @@ export class ElectricalValidator {
       const current = queue.shift()!;
       const [partId] = current.split(':');
 
-      if (partId && partId !== start.split(':')[0] && partId !== end.split(':')[0]) {
-        components.push({ id: partId, type: 'unknown' });
+      if (partId && partId !== start.split(':')[0] && partId !== end.split(':')[0] && !seen.has(partId)) {
+        seen.add(partId);
+        components.push({ id: partId, type: partTypeMap.get(partId) || 'unknown' });
       }
 
       if (current === end) break;

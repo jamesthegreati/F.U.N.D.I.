@@ -65,6 +65,16 @@ export type AppSettings = {
   defaultBoardTarget: string
   geminiApiKeyOverride: string | null
   backendUrl: string
+  // Circuit validation settings
+  enableElectricalValidation: boolean
+  educationalMode: boolean
+  showInfoValidations: boolean
+  validationDebounceMs: number
+  // AI & assistant settings
+  teacherModeEnabled: boolean
+  // Auto-save
+  autoSaveEnabled: boolean
+  autoSaveIntervalMs: number
 }
 
 export type AppState = {
@@ -269,6 +279,13 @@ const defaultSettings: AppSettings = {
   defaultBoardTarget: 'wokwi-arduino-uno',
   geminiApiKeyOverride: null,
   backendUrl: '',
+  enableElectricalValidation: true,
+  educationalMode: true,
+  showInfoValidations: true,
+  validationDebounceMs: 500,
+  teacherModeEnabled: false,
+  autoSaveEnabled: true,
+  autoSaveIntervalMs: 30000,
 }
 
 function createDefaultProject(name: string = 'Untitled Project'): Project {
@@ -991,9 +1008,13 @@ export const useAppStore = create<AppState>()(
 
       // Settings
       updateSettings: (newSettings) => {
-        set((state) => ({
-          settings: { ...state.settings, ...newSettings },
-        }))
+        const merged = { ...get().settings, ...newSettings }
+        const patch: Record<string, unknown> = { settings: merged }
+        // Keep the top-level teacherMode flag in sync with settings
+        if ('teacherModeEnabled' in newSettings) {
+          patch.teacherMode = merged.teacherModeEnabled
+        }
+        set(patch as Partial<AppState>)
       },
 
       applyGeneratedCircuit: (parts, newConnections) => {
