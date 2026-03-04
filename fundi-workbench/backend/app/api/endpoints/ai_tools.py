@@ -935,7 +935,7 @@ def _analyze_circuit_for_teaching(
     connections: list,
     code: str,
 ) -> list[TeachingSuggestion]:
-    """Generate teaching suggestions based on circuit state (no LLM call)."""
+    """Generate Socratic teaching suggestions based on circuit state (no LLM call)."""
     suggestions: list[TeachingSuggestion] = []
 
     comp_types = [str(c.get("type", "")) for c in components]
@@ -975,74 +975,74 @@ def _analyze_circuit_for_teaching(
     if not components:
         suggestions.append(TeachingSuggestion(
             type="next_step",
-            message="Start by adding a microcontroller (e.g., Arduino Uno) from the Components panel, or ask me to build a circuit!",
+            message="What kind of circuit would you like to explore first? Try asking me to help you build something, or drag an Arduino Uno onto the canvas to start.",
             priority=10,
         ))
         return suggestions
 
-    # No MCU
+    # No MCU — Socratic: make them think about why it's needed
     if not has_mcu:
         suggestions.append(TeachingSuggestion(
             type="warning",
-            message="Your circuit needs a microcontroller. Try adding an Arduino Uno — it's the brain that runs your code.",
+            message="What would control the behaviour of your components without a microcontroller? What do you think an Arduino Uno does that makes it the 'brain' of a circuit?",
             priority=9,
         ))
 
-    # LED without resistor
+    # LED without resistor — Socratic: guide them to discover Ohm's Law
     if has_led and not has_resistor:
         suggestions.append(TeachingSuggestion(
             type="warning",
-            message="⚡ Your LED needs a current-limiting resistor (220Ω) to prevent damage. Without it, too much current flows through the LED.",
+            message="Interesting — your LED has no resistor. If a typical LED allows 20 mA and Arduino outputs 5 V, what does Ohm's Law (R = V/I) tell you would happen without a current-limiting resistor?",
             priority=8,
         ))
 
-    # Unconnected components
+    # Unconnected components — guide, don't tell
     if unconnected and has_mcu:
-        names = [str(c.get("id", c.get("type", "?"))) for c in unconnected[:3]]
+        names = ", ".join(str(c.get("type", "?")).replace("wokwi-", "") for c in unconnected[:2])
         suggestions.append(TeachingSuggestion(
             type="hint",
-            message=f"Some components aren't wired yet: {', '.join(names)}. Every component needs at least power and signal connections.",
+            message=f"You have a {names} that isn't wired up yet. What pins does it need — power (VCC/GND) and a signal pin? Ask me to trace the connections with you.",
             priority=7,
         ))
 
-    # Progressive suggestions based on complexity
+    # Progressive Socratic challenges
     if has_mcu and not has_led and not has_sensor and not has_display and len(components) <= 2:
         suggestions.append(TeachingSuggestion(
             type="next_step",
-            message="Great start with the microcontroller! Try adding an LED to learn about digital output, or a button for digital input.",
+            message="Your microcontroller is ready. What's the simplest way to know it's working — what output could you add to give it something to blink, buzz, or display?",
             priority=5,
         ))
     elif has_mcu and has_led and not has_button and not has_sensor:
         suggestions.append(TeachingSuggestion(
             type="next_step",
-            message="Nice LED circuit! Ready for the next step? Add a pushbutton to make it interactive — you'll learn about digital input and INPUT_PULLUP.",
+            message="Your LED is responding to the code — great! Now, what if a user needed to control it manually? What component lets a human send a signal to a pin?",
             priority=4,
         ))
     elif has_mcu and has_button and not has_sensor:
         suggestions.append(TeachingSuggestion(
             type="next_step",
-            message="You're getting the hang of it! Try adding a sensor (DHT22 for temperature, or HC-SR04 for distance) to work with real-world data.",
+            message="You've got input AND output working! What if you wanted to measure something from the physical world — temperature, distance, or light? Which sensor would fit your project?",
             priority=3,
         ))
     elif has_mcu and has_sensor and not has_display:
         suggestions.append(TeachingSuggestion(
             type="next_step",
-            message="Your sensor circuit is working — now let's display the data! Add an LCD1602 (I2C mode) or SSD1306 OLED to show readings.",
+            message="Your sensor is gathering data — where should that data go? What component could display readings so a user can read them without a computer attached?",
             priority=3,
         ))
 
-    # Code-specific hints
+    # Code-specific Socratic hints
     if code and "delay(" in code and "millis" not in code and len(code) > 200:
         suggestions.append(TeachingSuggestion(
             type="concept",
-            message="💡 Tip: Using delay() blocks your entire program. For more responsive code, learn about millis()-based timing — ask me to show you!",
+            message="Your code uses delay() — what do you think happens to the rest of your program while it's waiting? What if you needed to read a button press during that wait?",
             priority=2,
         ))
 
     if code and "Serial.begin" in code and not any("serial" in t.lower() for t in comp_types):
         suggestions.append(TeachingSuggestion(
             type="hint",
-            message="Your code uses Serial output — check the Serial Monitor tab to see the data your Arduino is printing.",
+            message="Your code calls Serial.begin() — have you opened the Serial Monitor tab yet? What data is your Arduino trying to send?",
             priority=2,
         ))
 

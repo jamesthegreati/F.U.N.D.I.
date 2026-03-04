@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import threading
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.security import is_safe_filename, is_safe_serial_port
 from app.services.compiler import CompilerService
 
 router = APIRouter()
-
+logger = logging.getLogger(__name__)
 
 class CompileRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=100000, description="Arduino sketch code")
@@ -228,3 +231,114 @@ def upload_arduino(req: UploadRequest) -> UploadResponse:
     if not up.success:
         return UploadResponse(success=False, error=up.error or "Upload failed", output=up.output)
     return UploadResponse(success=True, error=None, output=up.output)
+
+
+@router.websocket("/api/v1/arduino/serial-monitor")
+async def hardware_serial_monitor(websocket: WebSocket, port: str, baud_rate: int = 9600) -> None:
+    """WebSocket endpoint for real-time hardware serial monitoring.
+
+    Streams bytes from a connected serial device (Arduino/ESP32) to the client
+    and forwards any text received from the client back to the device.
+
+    Query params:
+        port      – Serial port address (e.g. COM3, /dev/ttyUSB0).
+        baud_rate – Baud rate (default 9600).
+    """
+    if not is_safe_serial_port(port):
+        await websocket.close(code=4000, reason="Invalid port")
+        return
+
+    await websocket.accept()
+
+    # Try to import pyserial at runtime so the rest of the backend still works
+    # even if it isn't installed (graceful degradation).
+    try:
+        import serial  # type: ignore[import-untyped]
+    except ImportError:
+        await websocket.send_text(
+            "[ERROR] pyserial is not installed on the backend. "
+            "Add 'pyserial' to requirements.txt and restart."
+        )
+        await websocket.close()
+        return
+
+    try:
+        ser = serial.Serial(port.strip(), baud_rate, timeout=0.1)
+    except Exception as exc:  # noqa: BLE001
+        await websocket.send_text(f"[ERROR] Could not open {port}: {exc}")
+        await websocket.close()
+        return
+
+    # Unbounded queue: reader uses non-blocking put via call_soon_threadsafe to avoid
+    # blocking the background thread when the consumer falls behind.
+    line_queue: asyncio.Queue[str | None] = asyncio.Queue()
+    stop_event = threading.Event()
+    loop = asyncio.get_event_loop()
+
+    def _reader_thread() -> None:
+        """Background thread: read from serial, push decoded lines to the asyncio queue."""
+        buf = b""
+        while not stop_event.is_set():
+            try:
+                waiting = ser.in_waiting
+                chunk = ser.read(waiting if waiting > 0 else 1)
+                if chunk:
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        text = line.rstrip(b"\r").decode("utf-8", errors="replace")
+                        # Non-blocking: drop item if the consumer is far behind.
+                        loop.call_soon_threadsafe(line_queue.put_nowait, text)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Serial reader error on %s: %s", port, exc)
+                break
+        # Signal EOF to the async sender.
+        try:
+            loop.call_soon_threadsafe(line_queue.put_nowait, None)
+        except Exception:  # noqa: BLE001
+            pass
+
+    reader_thread = threading.Thread(target=_reader_thread, daemon=True)
+    reader_thread.start()
+
+    try:
+        while True:
+            # Race: new serial line vs. incoming WS message.
+            queue_task: asyncio.Task[str | None] = asyncio.create_task(line_queue.get())
+            recv_task: asyncio.Task[str] = asyncio.create_task(websocket.receive_text())
+
+            done, pending = await asyncio.wait(
+                {queue_task, recv_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for t in pending:
+                t.cancel()
+
+            if queue_task in done:
+                serial_line = queue_task.result()
+                if serial_line is None:
+                    # Serial port closed / error.
+                    break
+                await websocket.send_text(serial_line)
+
+            if recv_task in done:
+                try:
+                    msg = recv_task.result()
+                    if msg:
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, ser.write, msg.encode("utf-8")
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Serial WS receive error on %s: %s", port, exc)
+                    break
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        stop_event.set()
+        try:
+            ser.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Serial port close error on %s: %s", port, exc)
+        reader_thread.join(timeout=2.0)
