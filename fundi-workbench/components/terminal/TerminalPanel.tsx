@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Terminal, Bot, Activity, Wifi, Upload, AlertTriangle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Terminal, Bot, Activity, Wifi, Upload, AlertTriangle, Unplug, PlugZap, Trash2, ArrowDownToLine, Send } from 'lucide-react'
 import { CommandInterface } from './CommandInterface'
 import { SerialMonitor } from './SerialMonitor'
 import { LogicAnalyzerPanel } from '@/components/LogicAnalyzerPanel'
@@ -17,6 +17,7 @@ const ARDUINO_UPLOAD_BOARDS = [
   { id: 'wokwi-arduino-uno', label: 'Arduino Uno' },
   { id: 'wokwi-arduino-nano', label: 'Arduino Nano' },
   { id: 'wokwi-arduino-mega', label: 'Arduino Mega' },
+  { id: 'wokwi-esp32-devkit-v1', label: 'ESP32 DevKit V1' },
 ] as const
 
 function normalizeBoardType(partType: string): string {
@@ -213,111 +214,310 @@ function ArduinoUploadTab({ isActive }: { isActive: boolean }) {
   }, [code, detectedBoard, detectedCount, files, selectedBoard, selectedPort])
 
   return (
-    <div className="h-full p-3">
-      <div className="mb-3">
-        <div className="text-xs font-semibold text-ide-text">Arduino Upload</div>
-        <div className="mt-0.5 text-[11px] text-ide-text-muted">
-          Upload supports Uno/Nano/Mega only.
+    <div className="h-full overflow-y-auto p-3 space-y-4">
+      {/* ── Upload section ── */}
+      <div>
+        <div className="mb-3">
+          <div className="text-xs font-semibold text-ide-text">Hardware Upload</div>
+          <div className="mt-0.5 text-[11px] text-ide-text-muted">
+            Supports Arduino Uno/Nano/Mega and ESP32 DevKit V1.
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[11px] font-medium text-ide-text-muted mb-1">Board</label>
+            <select
+              value={selectedBoard}
+              onChange={(e) => setSelectedBoard(e.target.value)}
+              disabled={boardLocked}
+              className="w-full rounded-md border border-ide-border bg-ide-panel-surface px-2 py-1.5 text-xs text-ide-text outline-none focus:ring-2 focus:ring-ide-accent/30"
+            >
+              {ARDUINO_UPLOAD_BOARDS.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+            <div className="mt-1 text-[11px] text-ide-text-muted">
+              {detectedCount === 0
+                ? 'No supported board detected in circuit.'
+                : detectedCount > 1
+                  ? `Multiple boards detected (${detectedCount}).`
+                  : boardLocked
+                    ? `Detected in circuit: ${detectedBoard} (locked)`
+                    : `Detected in circuit: ${detectedBoard}`}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[11px] font-medium text-ide-text-muted">Port</label>
+              <button
+                type="button"
+                onClick={refreshPorts}
+                disabled={isLoadingPorts}
+                className={cn(
+                  'text-[11px] rounded px-2 py-1 border border-ide-border transition-colors',
+                  isLoadingPorts
+                    ? 'text-ide-text-subtle cursor-not-allowed'
+                    : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover',
+                )}
+              >
+                {isLoadingPorts ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            <select
+              value={selectedPort}
+              onChange={(e) => setSelectedPort(e.target.value)}
+              className="w-full rounded-md border border-ide-border bg-ide-panel-surface px-2 py-1.5 text-xs text-ide-text outline-none focus:ring-2 focus:ring-ide-accent/30"
+            >
+              <option value="">Select a port…</option>
+              {ports.map((p) => (
+                <option key={p.address} value={p.address}>
+                  {p.label ? `${p.label} (${p.address})` : p.address}
+                </option>
+              ))}
+            </select>
+            {ports.length === 0 && (
+              <div className="mt-1 text-[11px] text-ide-text-muted">
+                No ports found. Plug in your device and close any other Serial Monitor.
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={compileAndUpload}
+            disabled={isUploading || detectedCount !== 1}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors',
+              isUploading || detectedCount !== 1
+                ? 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
+                : 'bg-ide-success text-white hover:bg-ide-success/90',
+            )}
+          >
+            {isUploading ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                Uploading…
+              </>
+            ) : (
+              <>
+                <Upload className="h-3.5 w-3.5" />
+                Compile &amp; Upload
+              </>
+            )}
+          </button>
+
+          {uploadError && (
+            <div className="rounded-md border border-ide-error/30 bg-ide-error/10 px-2.5 py-2 text-xs text-ide-error">
+              {uploadError}
+            </div>
+          )}
+
+          {uploadOutput && (
+            <pre className="max-h-40 overflow-auto rounded-md border border-ide-border bg-ide-panel-surface px-2.5 py-2 text-[11px] text-ide-text whitespace-pre-wrap">
+              {uploadOutput}
+            </pre>
+          )}
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div>
-          <label className="block text-[11px] font-medium text-ide-text-muted mb-1">Board</label>
+      {/* ── Hardware Serial Monitor ── */}
+      <HardwareSerialMonitor port={selectedPort} />
+    </div>
+  )
+}
+
+/* ─── Hardware Serial Monitor (WebSocket) ────────────────────────────────── */
+
+function HardwareSerialMonitor({ port }: { port: string }) {
+  const [baudRate, setBaudRate] = useState(9600)
+  const [lines, setLines] = useState<string[]>([])
+  const [inputValue, setInputValue] = useState('')
+  const [connected, setConnected] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
+
+  const wsRef = useRef<WebSocket | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [lines, autoScroll])
+
+  const connect = useCallback(() => {
+    if (!port) { setError('Select a port first.'); return }
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
+
+    setError(null)
+    setLines([])
+
+    const rawBase = getBackendUrl()
+    const wsBase = rawBase.replace(/^http/, 'ws')
+    const url = `${wsBase}/api/v1/arduino/serial-monitor?port=${encodeURIComponent(port)}&baud_rate=${baudRate}`
+
+    const ws = new WebSocket(url)
+    wsRef.current = ws
+
+    ws.onopen = () => setConnected(true)
+    ws.onmessage = (ev) => {
+      const text = String(ev.data || '')
+      if (text.startsWith('[ERROR]')) {
+        setError(text.replace('[ERROR] ', ''))
+        ws.close()
+        return
+      }
+      setLines(prev => [...prev.slice(-500), text])
+    }
+    ws.onerror = () => { setError('WebSocket connection error.'); setConnected(false) }
+    ws.onclose = () => setConnected(false)
+  }, [port, baudRate])
+
+  const disconnect = useCallback(() => {
+    wsRef.current?.close()
+    wsRef.current = null
+    setConnected(false)
+  }, [])
+
+  useEffect(() => () => { wsRef.current?.close() }, [])
+
+  const sendInput = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || !inputValue) return
+    wsRef.current.send(inputValue + '\n')
+    setInputValue('')
+  }, [inputValue])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendInput() }
+  }, [sendInput])
+
+  return (
+    <div className="rounded-lg border border-ide-border/40 bg-ide-panel-surface/50 overflow-hidden">
+      <div className="flex items-center justify-between border-b border-ide-border/40 bg-ide-panel-bg/50 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <div className={cn(
+            'h-2 w-2 rounded-full transition-colors',
+            connected ? 'bg-ide-success animate-pulse' : 'bg-ide-text-subtle/40'
+          )} />
+          <span className="text-[11px] font-medium text-ide-text-muted">Hardware Serial</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <select
-            value={selectedBoard}
-            onChange={(e) => setSelectedBoard(e.target.value)}
-            disabled={boardLocked}
-            className="w-full rounded-md border border-ide-border bg-ide-panel-surface px-2 py-1.5 text-xs text-ide-text outline-none focus:ring-2 focus:ring-ide-accent/30"
+            value={baudRate}
+            onChange={(e) => setBaudRate(Number(e.target.value))}
+            disabled={connected}
+            className="h-6 rounded border border-ide-border bg-ide-panel-bg px-1 text-[10px] text-ide-text-muted outline-none disabled:opacity-50"
           >
-            {ARDUINO_UPLOAD_BOARDS.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label}
-              </option>
+            {[9600, 19200, 38400, 57600, 115200].map(b => (
+              <option key={b} value={b}>{b}</option>
             ))}
           </select>
-          <div className="mt-1 text-[11px] text-ide-text-muted">
-            {detectedCount === 0
-              ? 'No Arduino Uno/Nano/Mega detected in circuit.'
-              : detectedCount > 1
-                ? `Multiple Arduino boards detected (${detectedCount}).`
-                : boardLocked
-                  ? `Detected in circuit: ${detectedBoard} (locked)`
-                  : `Detected in circuit: ${detectedBoard}`}
-          </div>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-[11px] font-medium text-ide-text-muted">Port</label>
+          {connected ? (
             <button
               type="button"
-              onClick={refreshPorts}
-              disabled={isLoadingPorts}
+              onClick={disconnect}
+              title="Disconnect"
+              className="flex h-6 items-center gap-1 rounded px-2 text-[10px] font-medium text-ide-error hover:bg-ide-error/10 transition-colors"
+            >
+              <Unplug className="h-3 w-3" />
+              Disconnect
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={connect}
+              disabled={!port}
+              title="Connect to serial port"
               className={cn(
-                'text-[11px] rounded px-2 py-1 border border-ide-border transition-colors',
-                isLoadingPorts
-                  ? 'text-ide-text-subtle cursor-not-allowed'
-                  : 'text-ide-text-muted hover:text-ide-text hover:bg-ide-panel-hover',
+                'flex h-6 items-center gap-1 rounded px-2 text-[10px] font-medium transition-colors',
+                port
+                  ? 'text-ide-success hover:bg-ide-success/10'
+                  : 'text-ide-text-subtle/40 cursor-not-allowed',
               )}
             >
-              {isLoadingPorts ? 'Refreshing…' : 'Refresh'}
+              <PlugZap className="h-3 w-3" />
+              Connect
             </button>
-          </div>
-          <select
-            value={selectedPort}
-            onChange={(e) => setSelectedPort(e.target.value)}
-            className="w-full rounded-md border border-ide-border bg-ide-panel-surface px-2 py-1.5 text-xs text-ide-text outline-none focus:ring-2 focus:ring-ide-accent/30"
+          )}
+          <button
+            type="button"
+            onClick={() => setLines([])}
+            title="Clear"
+            className="flex h-6 w-6 items-center justify-center rounded text-ide-text-subtle hover:bg-ide-panel-hover hover:text-ide-text-muted transition-colors"
           >
-            <option value="">Select a port…</option>
-            {ports.map((p) => (
-              <option key={p.address} value={p.address}>
-                {p.label ? `${p.label} (${p.address})` : p.address}
-              </option>
-            ))}
-          </select>
-          {ports.length === 0 && (
-            <div className="mt-1 text-[11px] text-ide-text-muted">
-              No ports found. Plug in the Arduino and close Arduino IDE/Serial Monitor if it’s open.
-            </div>
-          )}
+            <Trash2 className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAutoScroll(true); if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }}
+            title={autoScroll ? 'Auto-scroll on' : 'Scroll to bottom'}
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded transition-colors',
+              autoScroll ? 'text-ide-success bg-ide-success/10' : 'text-ide-text-subtle hover:bg-ide-panel-hover'
+            )}
+          >
+            <ArrowDownToLine className="h-3 w-3" />
+          </button>
         </div>
+      </div>
 
-        <button
-          type="button"
-          onClick={compileAndUpload}
-          disabled={isUploading || detectedCount !== 1}
-          className={cn(
-            'w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors',
-            isUploading || detectedCount !== 1
-              ? 'bg-ide-panel-hover text-ide-text-subtle cursor-not-allowed'
-              : 'bg-ide-success text-white hover:bg-ide-success/90',
-          )}
-        >
-          {isUploading ? (
-            <>
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              Uploading…
-            </>
-          ) : (
-            <>
-              <Upload className="h-3.5 w-3.5" />
-              Compile & Upload
-            </>
-          )}
-        </button>
-
-        {uploadError && (
-          <div className="rounded-md border border-ide-error/30 bg-ide-error/10 px-2.5 py-2 text-xs text-ide-error">
-            {uploadError}
+      <div
+        ref={scrollRef}
+        onScroll={() => {
+          if (!scrollRef.current) return
+          const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+          if (scrollHeight - scrollTop - clientHeight > 30) setAutoScroll(false)
+        }}
+        className="h-32 overflow-y-auto bg-ide-panel-bg px-3 py-2 font-mono text-[11px]"
+      >
+        {error ? (
+          <div className="text-ide-error">{error}</div>
+        ) : lines.length === 0 ? (
+          <div className="text-ide-text-subtle/50">
+            {connected ? 'Waiting for serial output…' : 'Connect to see real hardware output'}
           </div>
+        ) : (
+          lines.map((line, i) => (
+            <div key={i} className="text-ide-success leading-relaxed">{line || '\u00A0'}</div>
+          ))
         )}
+      </div>
 
-        {uploadOutput && (
-          <pre className="max-h-48 overflow-auto rounded-md border border-ide-border bg-ide-panel-surface px-2.5 py-2 text-[11px] text-ide-text whitespace-pre-wrap">
-            {uploadOutput}
-          </pre>
-        )}
+      <div className="border-t border-ide-border/40 px-2 py-1.5">
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={!connected}
+            placeholder={connected ? 'Send to serial…' : 'Connect first'}
+            className={cn(
+              'h-6 flex-1 rounded border bg-ide-panel-surface px-2 font-mono text-[11px]',
+              'text-ide-text placeholder:text-ide-text-subtle outline-none transition-colors',
+              connected
+                ? 'border-ide-border hover:border-ide-border-focus focus:border-ide-accent'
+                : 'border-ide-border/40 cursor-not-allowed opacity-50'
+            )}
+          />
+          <button
+            type="button"
+            onClick={sendInput}
+            disabled={!connected || !inputValue}
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded transition-colors',
+              connected && inputValue
+                ? 'bg-ide-accent text-white hover:bg-ide-accent/80'
+                : 'bg-ide-panel-hover text-ide-text-subtle/40 cursor-not-allowed'
+            )}
+          >
+            <Send className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </div>
   )

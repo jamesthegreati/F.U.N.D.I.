@@ -5,3 +5,4 @@ pydantic-settings
 python-multipart
 httpx
 python-dotenv
+pyserial

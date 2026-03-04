@@ -123,6 +123,7 @@ class CompilerService:
             "wokwi-arduino-uno",
             "wokwi-arduino-nano",
             "wokwi-arduino-mega",
+            "wokwi-esp32-devkit-v1",
         }
     )
 
@@ -537,7 +538,7 @@ class CompilerService:
             return UploadResult(
                 success=False,
                 error=(
-                    "Upload currently supports Arduino AVR boards only (Uno/Nano/Mega). "
+                    "Upload supports Arduino AVR boards (Uno/Nano/Mega) and ESP32 DevKit V1. "
                     f"Requested: {board}"
                 ),
             )

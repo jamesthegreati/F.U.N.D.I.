@@ -263,7 +263,7 @@ function ContextBar() {
   )
 }
 
-/* ─── Teacher Hints (real-time suggestions) ───────────────────────────── */
+/* ─── Teacher Hints (real-time Socratic nudges) ───────────────────────── */
 
 interface TeachingSuggestion {
   type: string
@@ -271,10 +271,86 @@ interface TeachingSuggestion {
   priority: number
 }
 
+const HINT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  warning: AlertCircle,
+  next_step: ChevronRight,
+  concept: Lightbulb,
+  hint: BookOpen,
+}
+
+function TeacherHintCard({
+  hint,
+  onAsk,
+  onDismiss,
+}: {
+  hint: TeachingSuggestion
+  onAsk: (prompt: string) => void
+  onDismiss: () => void
+}) {
+  const [visible, setVisible] = useState(false)
+
+  // Trigger entrance animation after mount
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  const Icon = HINT_ICONS[hint.type] ?? Lightbulb
+
+  const colorClass =
+    hint.type === 'warning'
+      ? 'border-ide-warning/20 bg-ide-warning/[0.06] text-ide-warning'
+      : hint.type === 'next_step'
+        ? 'border-ide-accent/20 bg-ide-accent/[0.06] text-ide-accent'
+        : hint.type === 'concept'
+          ? 'border-ide-info/20 bg-ide-info/[0.06] text-ide-info'
+          : 'border-ide-border/30 bg-ide-panel-hover/30 text-ide-text-muted'
+
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-2 rounded-lg border px-3 py-2 text-[11px] leading-relaxed',
+        'transition-all duration-300 ease-out',
+        colorClass,
+        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1',
+      )}
+    >
+      <Icon className="mt-0.5 h-3 w-3 shrink-0 opacity-70" />
+      <span className="flex-1 opacity-90">{hint.message}</span>
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onAsk(hint.message)}
+          title="Discuss this with FUNDI"
+          className={cn(
+            'rounded px-1.5 py-0.5 text-[9px] font-medium transition-colors',
+            hint.type === 'warning'
+              ? 'bg-ide-warning/15 hover:bg-ide-warning/25'
+              : hint.type === 'next_step'
+                ? 'bg-ide-accent/15 hover:bg-ide-accent/25'
+                : 'bg-current/10 hover:bg-current/20',
+          )}
+        >
+          Explore →
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          title="Dismiss"
+          className="rounded px-1 py-0.5 text-[9px] opacity-40 transition-opacity hover:opacity-70"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function TeacherHints({ onAsk }: { onAsk: (prompt: string) => void }) {
   const parts = useAppStore((s) => s.circuitParts)
   const connections = useAppStore((s) => s.connections)
   const code = useAppStore((s) => s.code)
+  const files = useAppStore((s) => s.files)
   const teacherMode = useAppStore((s) => s.teacherMode)
 
   const [hints, setHints] = useState<TeachingSuggestion[]>([])
@@ -285,73 +361,67 @@ function TeacherHints({ onAsk }: { onAsk: (prompt: string) => void }) {
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
 
-    if (!teacherMode) return
+    if (!teacherMode) {
+      queueMicrotask(() => setHints([]))
+      return
+    }
 
     timerRef.current = setTimeout(() => {
       const baseUrl = getBackendUrl()
+      // Send the full active code (up to 3000 chars) for richer context
+      const activeCode = files.find(f => f.isMain)?.content ?? code
       fetch(`${baseUrl}/api/v1/ai-tools/analyze-circuit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          components: parts.map(p => ({ id: p.id, type: p.type })),
+          components: parts.map(p => ({ id: p.id, type: p.type, attrs: p.attrs ?? {} })),
           connections: connections.map(c => ({ from: c.from, to: c.to })),
-          code: code.slice(0, 2000),
+          code: activeCode.slice(0, 3000),
           teacher_mode: true,
         }),
       })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-          if (data?.suggestions) setHints(data.suggestions)
+          if (data?.suggestions) {
+            // Reset dismissed when hints refresh so new context always shows
+            setDismissed(prev => {
+              const incoming = new Set((data.suggestions as TeachingSuggestion[]).map(h => h.message))
+              const kept = new Set([...prev].filter(m => incoming.has(m)))
+              return kept
+            })
+            setHints(data.suggestions)
+          }
         })
         .catch(() => { /* silent — hints are best-effort */ })
-    }, 1500) // 1.5s debounce
+    }, 1800) // 1.8 s debounce
 
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [parts, connections, code, teacherMode])
+  }, [parts, connections, code, files, teacherMode])
 
   const visibleHints = hints.filter(h => !dismissed.has(h.message)).slice(0, 2)
   if (!teacherMode || visibleHints.length === 0) return null
 
   return (
-    <div className="border-b border-ide-border/40 bg-ide-accent/[0.03] px-3 py-2 space-y-1.5">
+    <div className="border-b border-ide-border/30 bg-gradient-to-b from-ide-accent/[0.02] to-transparent px-3 py-2.5 space-y-1.5">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <GraduationCap className="h-2.5 w-2.5 text-ide-accent/50" />
+        <span className="text-[9px] font-medium uppercase tracking-wider text-ide-text-subtle/60">
+          Socratic prompts
+        </span>
+      </div>
       {visibleHints.map((hint) => (
-        <div
+        <TeacherHintCard
           key={hint.message}
-          className={cn(
-            'flex items-start gap-2 rounded-md px-2.5 py-1.5 text-[11px] leading-relaxed',
-            hint.type === 'warning' ? 'bg-ide-warning/10 text-ide-warning' :
-            hint.type === 'next_step' ? 'bg-ide-accent/10 text-ide-accent' :
-            hint.type === 'concept' ? 'bg-ide-info/10 text-ide-info' :
-            'bg-ide-panel-hover/50 text-ide-text-muted'
-          )}
-        >
-          <Lightbulb className="mt-0.5 h-3 w-3 shrink-0" />
-          <span className="flex-1">{hint.message}</span>
-          <div className="flex items-center gap-1 shrink-0">
-            {hint.type === 'next_step' && (
-              <button
-                type="button"
-                onClick={() => onAsk(hint.message)}
-                className="rounded px-1.5 py-0.5 text-[9px] font-medium bg-ide-accent/20 text-ide-accent hover:bg-ide-accent/30 transition-colors"
-              >
-                Ask
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setDismissed(prev => new Set(prev).add(hint.message))}
-              className="rounded px-1 py-0.5 text-[9px] text-ide-text-subtle hover:text-ide-text-muted transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+          hint={hint}
+          onAsk={onAsk}
+          onDismiss={() => setDismissed(prev => new Set(prev).add(hint.message))}
+        />
       ))}
     </div>
   )
 }
 
-/* ─── Welcome Screen ──────────────────────────────────────────────────── */
+
 
 const BUILDER_SUGGESTIONS = [
   { icon: Zap, label: 'Blink an LED', prompt: 'Build a simple LED blink circuit with an Arduino Uno' },
@@ -361,10 +431,10 @@ const BUILDER_SUGGESTIONS = [
 ]
 
 const TEACHER_SUGGESTIONS = [
-  { icon: BookOpen, label: 'How LEDs work', prompt: 'Teach me how LEDs work and why we need resistors' },
-  { icon: Lightbulb, label: 'Explain PWM', prompt: 'Explain PWM (Pulse Width Modulation) and demonstrate with an LED dimmer' },
-  { icon: Zap, label: "Ohm's Law", prompt: "Teach me Ohm's Law with a practical circuit example" },
-  { icon: Cpu, label: 'Digital vs Analog', prompt: 'Explain the difference between digital and analog signals with examples' },
+  { icon: BookOpen, label: 'Why does an LED need a resistor?', prompt: 'I have an LED. What happens if I connect it directly to 5V without a resistor?' },
+  { icon: Lightbulb, label: 'What is PWM really?', prompt: "I've heard of PWM but I don't fully understand it. Can you guide me through it with a real example?" },
+  { icon: Zap, label: "Walk me through Ohm's Law", prompt: "Can you help me understand Ohm's Law step by step using a circuit we build together?" },
+  { icon: Cpu, label: 'Digital vs Analog pins', prompt: 'What is the difference between a digital and an analog pin on an Arduino? When would I use each?' },
 ]
 
 function WelcomeScreen({ teacherMode, onSuggestion }: { teacherMode: boolean; onSuggestion: (prompt: string) => void }) {
@@ -385,11 +455,11 @@ function WelcomeScreen({ teacherMode, onSuggestion }: { teacherMode: boolean; on
             }
           </div>
           <h3 className="text-sm font-semibold text-ide-text">
-            {teacherMode ? 'FUNDI Teacher' : 'FUNDI Assistant'}
+            {teacherMode ? 'FUNDI Tutor' : 'FUNDI Assistant'}
           </h3>
           <p className="mt-1 text-[11px] text-ide-text-muted leading-relaxed">
             {teacherMode
-              ? 'Learn electronics concepts step by step. I\'ll explain the why behind every circuit.'
+              ? "I'll guide you with questions to help you discover how electronics work — not just tell you the answer."
               : 'Describe what you want to build. I\'ll generate the code and wiring.'
             }
           </p>
@@ -412,7 +482,10 @@ function WelcomeScreen({ teacherMode, onSuggestion }: { teacherMode: boolean; on
         </div>
 
         <p className="mt-4 text-center text-[9px] text-ide-text-subtle/50">
-          Type a prompt below or pick a suggestion • /help for commands
+          {teacherMode
+            ? 'Ask a question or describe a concept you want to explore'
+            : 'Type a prompt below or pick a suggestion • /help for commands'
+          }
         </p>
       </div>
     </div>
