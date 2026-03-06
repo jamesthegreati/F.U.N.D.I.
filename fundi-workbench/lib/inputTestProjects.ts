@@ -670,8 +670,8 @@ void loop() {
   // ── Motion & IMU ─────────────────────────────────────────────────────────
   {
     id: 'mpu6050-test',
-    name: 'MPU6050 IMU Test',
-    description: 'Read accelerometer and gyroscope from MPU6050 on I2C (A4/A5); print all 6 axes to Serial.',
+    name: 'MPU6050 IMU Test (Arduino Uno)',
+    description: 'Read accelerometer and gyroscope from MPU6050 on I2C (SDA=A4, SCL=A5); print all 6 axes to Serial. Uses raw Wire.h — no external library needed.',
     difficulty: 'intermediate',
     tags: ['mpu6050', 'imu', 'i2c', 'accelerometer', 'gyroscope'],
     estimatedTime: '15 min',
@@ -690,38 +690,195 @@ void loop() {
         ['imu1:SDA', 'uno:A4', 'yellow', []],
       ],
     },
-    code: `// MPU6050 IMU Test
-// Requires: Adafruit MPU6050 + Adafruit Unified Sensor libraries
+    code: `// MPU6050 IMU Test (Arduino Uno)
+// Raw Wire.h — no external library required.
+// SDA → A4, SCL → A5 (Uno / Nano default I2C pins)
+// Click the MPU6050 on the canvas to adjust simulated sensor values.
 
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
 #include <Wire.h>
 
-Adafruit_MPU6050 mpu;
+static const uint8_t MPU_ADDR = 0x68;
+
+// Write one byte to a register
+void writeReg(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  Wire.endTransmission();
+}
+
+// Read a signed 16-bit word from two consecutive registers (big-endian)
+int16_t readWord(uint8_t reg) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  Wire.endTransmission(false);          // repeated-start (no STOP)
+  Wire.requestFrom(MPU_ADDR, (uint8_t)2);
+  int16_t hi = Wire.available() ? Wire.read() : 0;
+  int16_t lo = Wire.available() ? Wire.read() : 0;
+  return (int16_t)((hi << 8) | lo);
+}
 
 void setup() {
   Serial.begin(9600);
-  if (!mpu.begin()) {
-    Serial.println("ERROR: MPU6050 not found!");
+  Wire.begin();
+
+  // Wake MPU6050: clear SLEEP bit in PWR_MGMT_1 (0x6B)
+  writeReg(0x6B, 0x00);
+  delay(100);
+
+  // Verify WHO_AM_I register (0x75) — should be 0x68
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x75);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, (uint8_t)1);
+  uint8_t whoAmI = Wire.available() ? Wire.read() : 0xFF;
+
+  if (whoAmI != 0x68) {
+    Serial.print("ERROR: MPU6050 not found! WHO_AM_I=0x");
+    Serial.println(whoAmI, HEX);
     while (1) delay(10);
   }
-  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
-  mpu.setGyroRange(MPU6050_RANGE_250_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+
   Serial.println("MPU6050 Test Ready");
+  Serial.println("Adjust sensor values by clicking the MPU6050 on the canvas.");
 }
 
 void loop() {
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+  // Raw register addresses:
+  //   0x3B-0x3C  ACCEL_XOUT  |  0x3D-0x3E  ACCEL_YOUT  |  0x3F-0x40  ACCEL_ZOUT
+  //   0x43-0x44  GYRO_XOUT   |  0x45-0x46  GYRO_YOUT   |  0x47-0x48  GYRO_ZOUT
+  // Sensitivity defaults (FS_SEL = 0):
+  //   Accel: 16384 LSB/g   |   Gyro: 131 LSB/(°/s)
+  int16_t ax = readWord(0x3B);
+  int16_t ay = readWord(0x3D);
+  int16_t az = readWord(0x3F);
+  int16_t gx = readWord(0x43);
+  int16_t gy = readWord(0x45);
+  int16_t gz = readWord(0x47);
 
-  Serial.print("Accel X: "); Serial.print(a.acceleration.x, 2);
-  Serial.print("  Y: ");     Serial.print(a.acceleration.y, 2);
-  Serial.print("  Z: ");     Serial.print(a.acceleration.z, 2);
-  Serial.print(" m/s²  |  Gyro X: "); Serial.print(g.gyro.x, 2);
-  Serial.print("  Y: ");     Serial.print(g.gyro.y, 2);
-  Serial.print("  Z: ");     Serial.print(g.gyro.z, 2);
-  Serial.println(" rad/s");
+  float accelX = ax / 16384.0f;
+  float accelY = ay / 16384.0f;
+  float accelZ = az / 16384.0f;
+  float gyroX  = gx / 131.0f;
+  float gyroY  = gy / 131.0f;
+  float gyroZ  = gz / 131.0f;
+
+  Serial.print("Accel X: "); Serial.print(accelX, 2);
+  Serial.print("  Y: ");     Serial.print(accelY, 2);
+  Serial.print("  Z: ");     Serial.print(accelZ, 2);
+  Serial.print(" g  |  Gyro X: "); Serial.print(gyroX, 2);
+  Serial.print("  Y: ");     Serial.print(gyroY, 2);
+  Serial.print("  Z: ");     Serial.print(gyroZ, 2);
+  Serial.println(" deg/s");
+
+  delay(500);
+}`,
+  },
+
+  {
+    id: 'mpu6050-esp32-test',
+    name: 'MPU6050 IMU Test (ESP32)',
+    description: 'Read accelerometer and gyroscope from MPU6050 on ESP32 I2C (SDA=GPIO21, SCL=GPIO22); print all 6 axes to Serial at 115200 baud. Uses raw Wire.h — no external library needed.',
+    difficulty: 'intermediate',
+    tags: ['mpu6050', 'imu', 'i2c', 'accelerometer', 'gyroscope', 'esp32', 'non-avr'],
+    estimatedTime: '15 min',
+    diagram: {
+      version: 1,
+      author: 'FUNDI Tests',
+      editor: 'wokwi',
+      parts: [
+        { type: 'wokwi-esp32-devkit-v1', id: 'esp', top: 0, left: 0 },
+        { type: 'wokwi-mpu6050', id: 'imu1', top: -140, left: 260 },
+      ],
+      connections: [
+        ['imu1:VCC', 'esp:3V3', 'red', []],
+        ['imu1:GND', 'esp:GND.1', 'black', []],
+        ['imu1:SCL', 'esp:IO22', 'blue', []],
+        ['imu1:SDA', 'esp:IO21', 'yellow', []],
+      ],
+    },
+    code: `// MPU6050 IMU Test (ESP32)
+// Raw Wire.h — no external library required.
+// SDA → GPIO21, SCL → GPIO22 (ESP32 default I2C pins)
+// Click the MPU6050 on the canvas to adjust simulated sensor values.
+
+#include <Wire.h>
+
+static const uint8_t MPU_ADDR = 0x68;
+
+// Write one byte to a register
+void writeReg(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  Wire.endTransmission();
+}
+
+// Read a signed 16-bit word from two consecutive registers (big-endian)
+int16_t readWord(uint8_t reg) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  Wire.endTransmission(false);          // repeated-start (no STOP)
+  Wire.requestFrom(MPU_ADDR, (uint8_t)2);
+  int16_t hi = Wire.available() ? Wire.read() : 0;
+  int16_t lo = Wire.available() ? Wire.read() : 0;
+  return (int16_t)((hi << 8) | lo);
+}
+
+void setup() {
+  Serial.begin(115200);
+  // ESP32 default I2C: SDA = GPIO21, SCL = GPIO22
+  Wire.begin(21, 22);
+
+  // Wake MPU6050: clear SLEEP bit in PWR_MGMT_1 (0x6B)
+  writeReg(0x6B, 0x00);
+  delay(100);
+
+  // Verify WHO_AM_I register (0x75) — should be 0x68
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x75);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, (uint8_t)1);
+  uint8_t whoAmI = Wire.available() ? Wire.read() : 0xFF;
+
+  if (whoAmI != 0x68) {
+    Serial.print("ERROR: MPU6050 not found! WHO_AM_I=0x");
+    Serial.println(whoAmI, HEX);
+    while (1) delay(10);
+  }
+
+  Serial.println("MPU6050 Test Ready (ESP32)");
+  Serial.println("Adjust sensor values by clicking the MPU6050 on the canvas.");
+}
+
+void loop() {
+  // Raw register addresses:
+  //   0x3B-0x3C  ACCEL_XOUT  |  0x3D-0x3E  ACCEL_YOUT  |  0x3F-0x40  ACCEL_ZOUT
+  //   0x43-0x44  GYRO_XOUT   |  0x45-0x46  GYRO_YOUT   |  0x47-0x48  GYRO_ZOUT
+  // Sensitivity defaults (FS_SEL = 0):
+  //   Accel: 16384 LSB/g   |   Gyro: 131 LSB/(°/s)
+  int16_t ax = readWord(0x3B);
+  int16_t ay = readWord(0x3D);
+  int16_t az = readWord(0x3F);
+  int16_t gx = readWord(0x43);
+  int16_t gy = readWord(0x45);
+  int16_t gz = readWord(0x47);
+
+  float accelX = ax / 16384.0f;
+  float accelY = ay / 16384.0f;
+  float accelZ = az / 16384.0f;
+  float gyroX  = gx / 131.0f;
+  float gyroY  = gy / 131.0f;
+  float gyroZ  = gz / 131.0f;
+
+  Serial.print("Accel X: "); Serial.print(accelX, 2);
+  Serial.print("  Y: ");     Serial.print(accelY, 2);
+  Serial.print("  Z: ");     Serial.print(accelZ, 2);
+  Serial.print(" g  |  Gyro X: "); Serial.print(gyroX, 2);
+  Serial.print("  Y: ");     Serial.print(gyroY, 2);
+  Serial.print("  Z: ");     Serial.print(gyroZ, 2);
+  Serial.println(" deg/s");
+
   delay(500);
 }`,
   },
@@ -1035,7 +1192,7 @@ export const INPUT_TEST_CATEGORIES: InputTestCategory[] = [
   },
   {
     name: 'Motion & IMU',
-    ids: ['mpu6050-test', 'rotary-encoder-test'],
+    ids: ['mpu6050-test', 'mpu6050-esp32-test', 'rotary-encoder-test'],
   },
   {
     name: 'Communication & Control',

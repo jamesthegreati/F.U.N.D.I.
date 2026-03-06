@@ -61,6 +61,8 @@ _HEADER_TO_LIBRARY: dict[str, str] = {
     "Keypad.h": "Keypad",
     # Common dependency for many Adafruit libraries (sometimes shows up separately)
     "Adafruit_Sensor.h": "Adafruit Unified Sensor",
+    # MPU6050 IMU
+    "Adafruit_MPU6050.h": "Adafruit MPU6050",
 
     # OLED / graphics
     "Adafruit_GFX.h": "Adafruit GFX Library",
