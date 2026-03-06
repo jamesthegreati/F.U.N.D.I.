@@ -897,6 +897,10 @@ export function useSimulation(
         const bus = getI2CBus();
         bus.resetAll();
         bus.clearLog();
+        // Reset singleton I2C device trackers BEFORE the setup loop so that
+        // getMPU6050() / getDS1307() etc. create fresh instances with the
+        // up-to-date readValues closures captured below.
+        resetMPU6050();
 
         // --- I2C / LCD Setup ---
         for (const part of circuitParts) {
@@ -968,7 +972,6 @@ export function useSimulation(
         speakerDevicesRef.current = []; // Init speaker list
         ili9341DevicesRef.current = [];
         resetILI9341Registry();
-        resetMPU6050();
         hx711DevicesRef.current = [];
         stepperDevicesRef.current = [];
         a4988DevicesRef.current = [];
