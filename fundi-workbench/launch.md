@@ -29,6 +29,8 @@ $env:FUNDI_AUTO_BOOTSTRAP_CORES = "0"
 $env:FUNDI_CORE_INSTALL_RETRIES = "4"
 $env:FUNDI_CORE_INSTALL_TIMEOUT_S = "12000"
 $env:FUNDI_ARDUINO_NETWORK_TIMEOUT_S = "900"
+$env:FUNDI_COMPILE_VERBOSE = "1"
+$env:FUNDI_COMPILE_STREAM_LOGS = "1"
 .\venv\Scripts\Activate.ps1
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -50,8 +52,10 @@ export ARDUINO_SKETCHBOOK_DIR="C:/Users/henry/Documents/Arduino"
 export ARDUINO_LIBRARIES_DIR="C:/Users/henry/Documents/Arduino/libraries"
 export FUNDI_AUTO_BOOTSTRAP_CORES="0"
 export FUNDI_CORE_INSTALL_RETRIES="4"
-export FUNDI_CORE_INSTALL_TIMEOUT_S="1200"
-export FUNDI_ARDUINO_NETWORK_TIMEOUT_S="900"
+export FUNDI_CORE_INSTALL_TIMEOUT_S="3600"
+export FUNDI_ARDUINO_NETWORK_TIMEOUT_S="2700"
+export FUNDI_COMPILE_VERBOSE="1"
+export FUNDI_COMPILE_STREAM_LOGS="1"
 source venv/Scripts/activate
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --loop asyncio
 ```

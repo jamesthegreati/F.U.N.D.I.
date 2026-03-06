@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import subprocess
 import threading
@@ -83,6 +84,8 @@ _CORE_PACKAGE_INDEX_URLS: dict[str, list[str]] = {
     "esp32:esp32": ["https://espressif.github.io/arduino-esp32/package_esp32_index.json"],
 }
 
+logger = logging.getLogger(__name__)
+
 
 class CompilerService:
     """Compile Arduino/ESP32 sketches using arduino-cli.
@@ -136,6 +139,82 @@ class CompilerService:
     def get_available_libraries(self) -> set[str]:
         """Return the set of available pre-installed libraries."""
         return AVAILABLE_LIBRARIES.copy()
+
+    @staticmethod
+    def _env_flag(name: str, default: bool) -> bool:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _run_cli_command(
+        self,
+        cmd: list[str],
+        *,
+        timeout_s: int,
+        stream_output: bool,
+        log_prefix: str,
+    ) -> subprocess.CompletedProcess[str]:
+        if not stream_output:
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=timeout_s,
+            )
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        def _consume(pipe: Optional[object], sink: list[str], is_stderr: bool) -> None:
+            if pipe is None:
+                return
+            for line in iter(pipe.readline, ""):
+                sink.append(line)
+                text_line = line.rstrip()
+                if not text_line:
+                    continue
+                if is_stderr:
+                    logger.info("[%s][stderr] %s", log_prefix, text_line)
+                else:
+                    logger.info("[%s][stdout] %s", log_prefix, text_line)
+            pipe.close()
+
+        stdout_thread = threading.Thread(target=_consume, args=(proc.stdout, stdout_chunks, False), daemon=True)
+        stderr_thread = threading.Thread(target=_consume, args=(proc.stderr, stderr_chunks, True), daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
+
+        try:
+            proc.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            stdout_thread.join(timeout=1)
+            stderr_thread.join(timeout=1)
+            raise
+
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=proc.returncode,
+            stdout="".join(stdout_chunks),
+            stderr="".join(stderr_chunks),
+        )
 
     def compile(self, code: str, board: str, files: Optional[dict[str, str]] = None) -> CompileResult:
         """Compile Arduino sketch with optional multi-file support.
@@ -249,8 +328,24 @@ class CompilerService:
 
                 # Non-AVR boards (RP2040, ESP32) need much longer for first compile.
                 timeout_s = 120 if engine == "avr" else 600
+                verbose_compile = self._env_flag("FUNDI_COMPILE_VERBOSE", default=engine != "avr")
+                stream_compile_logs = self._env_flag("FUNDI_COMPILE_STREAM_LOGS", default=verbose_compile)
+
+                logger.info(
+                    "[Compile] start board=%s fqbn=%s engine=%s timeout_s=%s verbose=%s stream_logs=%s",
+                    board,
+                    fqbn,
+                    engine,
+                    timeout_s,
+                    verbose_compile,
+                    stream_compile_logs,
+                )
+
+                compile_attempt = 0
 
                 def run_compile() -> subprocess.CompletedProcess[str]:
+                    nonlocal compile_attempt
+                    compile_attempt += 1
                     cmd = self._cli_cmd(
                         arduino_cli,
                         "compile",
@@ -260,23 +355,34 @@ class CompilerService:
                         str(out_dir),
                         "--no-color",
                     )
+                    if verbose_compile:
+                        cmd.append("--verbose")
                     library_dirs = self._resolve_library_dirs()
                     for library_dir in library_dirs:
                         cmd.extend(["--libraries", library_dir])
                     cmd.append(str(sketch_dir))
-                    return subprocess.run(
+                    command_display = subprocess.list2cmdline(cmd)
+                    logger.info("[Compile] attempt=%s command=%s", compile_attempt, command_display)
+                    attempt_started = time.perf_counter()
+                    proc_result = self._run_cli_command(
                         cmd,
-                        capture_output=True,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        check=False,
-                        timeout=timeout_s,
+                        timeout_s=timeout_s,
+                        stream_output=stream_compile_logs,
+                        log_prefix=f"compile:{board}:attempt-{compile_attempt}",
                     )
+                    elapsed_s = time.perf_counter() - attempt_started
+                    logger.info(
+                        "[Compile] attempt=%s returncode=%s duration_s=%.2f",
+                        compile_attempt,
+                        proc_result.returncode,
+                        elapsed_s,
+                    )
+                    return proc_result
 
                 try:
                     proc = run_compile()
                 except subprocess.TimeoutExpired:
+                    logger.warning("[Compile] timeout board=%s timeout_s=%s", board, timeout_s)
                     return CompileResult(
                         success=False,
                         error=f"Compilation timed out after {timeout_s // 60} minutes. The code may be too complex or the board core may need a first-time build (try again)."
@@ -315,7 +421,7 @@ class CompilerService:
                             except subprocess.TimeoutExpired:
                                 return CompileResult(
                                     success=False,
-                                    error="Compilation timed out after 2 minutes (after installing board core).",
+                                    error=f"Compilation timed out after {timeout_s // 60} minutes (after installing board core).",
                                 )
                             except Exception as exc:  # noqa: BLE001
                                 return CompileResult(
@@ -349,6 +455,12 @@ class CompilerService:
                             stdout_core = (proc_core_retry.stdout or "").strip()
                             combined = "\n".join([s for s in [stderr_core, stdout_core] if s]) or combined
                         else:
+                            if core_err and "timeout" in core_err.lower():
+                                core_err = (
+                                    core_err
+                                    + "\nCore download appears slow/interrupted. Run one-time bootstrap separately with larger timeouts: "
+                                    "`python bootstrap_board_cores.py`."
+                                )
                             combined = (
                                 (combined or "Compilation failed.")
                                 + "\n\nHint: install board core with `arduino-cli core install "
@@ -377,7 +489,7 @@ class CompilerService:
                         except subprocess.TimeoutExpired:
                             return CompileResult(
                                 success=False,
-                                error="Compilation timed out after 2 minutes (after installing libraries).",
+                                error=f"Compilation timed out after {timeout_s // 60} minutes (after installing libraries).",
                             )
                         except Exception as exc:  # noqa: BLE001
                             return CompileResult(
@@ -999,8 +1111,7 @@ class CompilerService:
             flash_path.write_bytes(flash_data)
             return flash_path
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning("ESP32 flash image merge failed: %s", exc)
+            logger.warning("ESP32 flash image merge failed: %s", exc)
             # Fall back to just the app binary
             if bin_candidates:
                 return sorted(bin_candidates, key=lambda p: p.name.lower())[0]
@@ -1098,14 +1209,23 @@ class CompilerService:
         extra_urls = _CORE_PACKAGE_INDEX_URLS.get(pkg, [])
         retries = max(1, int(os.environ.get("FUNDI_CORE_INSTALL_RETRIES", "3")))
         timeout_s = max(120, int(os.environ.get("FUNDI_CORE_INSTALL_TIMEOUT_S", "900")))
+        stream_logs = self._env_flag("FUNDI_COMPILE_STREAM_LOGS", True)
         last_out = ""
 
         try:
             with self._global_core_install_lock(timeout_s=max(120, timeout_s)):
                 with _LIB_INSTALL_LOCK:
                     for attempt in range(1, retries + 1):
+                        logger.info(
+                            "[CoreInstall] package=%s attempt=%s/%s timeout_s=%s",
+                            pkg,
+                            attempt,
+                            retries,
+                            timeout_s,
+                        )
+                        attempt_started = time.perf_counter()
                         try:
-                            subprocess.run(
+                            update_proc = self._run_cli_command(
                                 self._cli_cmd_with_additional_urls(
                                     arduino_cli,
                                     extra_urls,
@@ -1113,15 +1233,18 @@ class CompilerService:
                                     "update-index",
                                     "--no-color",
                                 ),
-                                capture_output=True,
-                                text=True,
-                                encoding="utf-8",
-                                errors="replace",
-                                check=False,
-                                timeout=240,
+                                timeout_s=240,
+                                stream_output=stream_logs,
+                                log_prefix=f"core-install:{pkg}:update-index:attempt-{attempt}",
                             )
+                            if update_proc.returncode != 0:
+                                logger.warning(
+                                    "[CoreInstall] update-index exited with code %s for package=%s",
+                                    update_proc.returncode,
+                                    pkg,
+                                )
 
-                            proc = subprocess.run(
+                            proc = self._run_cli_command(
                                 self._cli_cmd_with_additional_urls(
                                     arduino_cli,
                                     extra_urls,
@@ -1130,19 +1253,38 @@ class CompilerService:
                                     pkg,
                                     "--no-color",
                                 ),
-                                capture_output=True,
-                                text=True,
-                                encoding="utf-8",
-                                errors="replace",
-                                check=False,
-                                timeout=timeout_s,
+                                timeout_s=timeout_s,
+                                stream_output=stream_logs,
+                                log_prefix=f"core-install:{pkg}:attempt-{attempt}",
                             )
                         except subprocess.TimeoutExpired:
-                            last_out = f"timeout after {timeout_s}s (attempt {attempt}/{retries})"
+                            elapsed_s = time.perf_counter() - attempt_started
+                            logger.warning(
+                                "[CoreInstall] timeout package=%s attempt=%s/%s elapsed_s=%.2f timeout_s=%s",
+                                pkg,
+                                attempt,
+                                retries,
+                                elapsed_s,
+                                timeout_s,
+                            )
+                            last_out = (
+                                f"timeout after {timeout_s}s (attempt {attempt}/{retries}); "
+                                f"elapsed {elapsed_s:.1f}s"
+                            )
                             continue
                         except Exception as exc:
                             last_out = f"unexpected install error (attempt {attempt}/{retries}): {exc}"
                             continue
+
+                        elapsed_s = time.perf_counter() - attempt_started
+                        logger.info(
+                            "[CoreInstall] package=%s attempt=%s/%s returncode=%s duration_s=%.2f",
+                            pkg,
+                            attempt,
+                            retries,
+                            proc.returncode,
+                            elapsed_s,
+                        )
 
                         out_raw = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
                         out = out_raw.lower()
